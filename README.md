@@ -10,6 +10,8 @@
 - **Parallel Execution**: Generate multiple conversations efficiently using multithreading.
 - **Save in JSONL Format**: Export datasets directly for downstream applications.
 
+**Note**: This is the initial version, but I will add more generators and evaluators soon.
+
 ---
 
 ## Installation
