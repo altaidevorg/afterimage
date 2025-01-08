@@ -302,7 +302,7 @@ class ConversationGenerator(BaseGenerator):
                 )
 
         num_generated = 0
-        pbar = tqdm(n_conversations, desc="Generating...")
+        pbar = tqdm(total=n_conversations, desc="Generating...", unit="conversation")
 
         def save_conversations(conversations):
             if save_to and conversations:
