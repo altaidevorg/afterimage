@@ -8,3 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+
+# generated data files
+*.json
+*.jsonl
