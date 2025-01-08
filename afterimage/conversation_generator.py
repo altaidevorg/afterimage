@@ -233,7 +233,7 @@ class ConversationGenerator(BaseGenerator):
                 conversations.append(
                     {
                         "conversations": conversation,
-                        "context": gen_instructions["context"],
+                        "context": gen_instructions.context,
                     }
                 )
 
@@ -332,17 +332,21 @@ class ConversationGenerator(BaseGenerator):
                 for future in as_completed(futures):
                     try:
                         conversations = future.result()
-                        save_conversations(conversations)
-                        num_generated += len(conversations)
-                        pbar.update(num_generated)
-                        if num_generated >= n_conversations:
-                            executor.shutdown(wait=False, cancel_futures=True)
-
                     except Exception as e:
                         warnings.warn(f"Exception in future: {e}")
+                    else:
+                        save_conversations(conversations)
+                        num_generated += len(conversations)
+                        pbar.update(len(conversations))
+                        if num_generated >= n_conversations:
+                            pbar.close()
+                            print(
+                                "Done! If the script does not exits automatically, you can kill this terminal safely"
+                            )
+                            raise StopIteration
 
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, StopIteration):
             warnings.warn("Waiting for graceful shutdown")
-            executor.shutdown(wait=True, cancel_futures=True)
+
         finally:
             pbar.close()

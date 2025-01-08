@@ -103,7 +103,7 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
                 response_schema=InstructionsSchema,
             ),
         ).text
-        instructions = json.loads(instructions_str)
+        instructions = json.loads(instructions_str)["instructions"]
 
         return GeneratedInstructions(instructions=instructions, context=full_context)
 
