@@ -1,7 +1,7 @@
 import json
 import random
 import warnings
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, CancelledError
 from typing import Any, Dict, List
 
 import google.generativeai as genai
@@ -302,7 +302,7 @@ class ConversationGenerator(BaseGenerator):
                 )
 
         num_generated = 0
-        pbar = tqdm(n_conversations, desc="Generating conversations...")
+        pbar = tqdm(n_conversations, desc="Generating...")
 
         def save_conversations(conversations):
             if save_to and conversations:
@@ -333,20 +333,21 @@ class ConversationGenerator(BaseGenerator):
                     try:
                         conversations = future.result()
                     except Exception as e:
-                        warnings.warn(f"Exception in future: {e}")
+                        if not isinstance(e, CancelledError):
+                            warnings.warn(f"Exception in future: {e}")
                     else:
                         save_conversations(conversations)
                         num_generated += len(conversations)
                         pbar.update(len(conversations))
                         if num_generated >= n_conversations:
                             pbar.close()
-                            print(
-                                "Done! If the script does not exits automatically, you can kill this terminal safely"
-                            )
-                            raise StopIteration
+                            print("Done! Waiting for graceful shutdown...")
+                            for pending_future in futures:
+                                pending_future.cancel()
 
-        except (KeyboardInterrupt, StopIteration):
-            warnings.warn("Waiting for graceful shutdown")
+        except KeyboardInterrupt:
+            pbar.close()
+            warnings.warn("Interrupted! Waiting for graceful shutdown...")
 
         finally:
             pbar.close()
