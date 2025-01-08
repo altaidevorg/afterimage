@@ -1,0 +1,30 @@
+[project]
+name = "afterimage"
+version = "0.1.1"
+keywords = ["afterimage", "synthetic", "dataset-generation", "synthetic-dataset"]
+authors = [
+    { name = "Yusuf Sarıgöz", email = "yusufsarigoz@gmail.com"}
+]
+description = "Create synthetic datasets based on your documents"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "google-generativeai>=0.8.3",
+    "letsearch-client>=0.1.1",
+    "pydantic>=2.10.4",
+    "tqdm>=4.67.1",
+]
+
+[project.urls]
+homepage = "https://github.com/monatis/afterimage"
+project = "https://github.com/monatis/afterimage"
+repository = "https://github.com/monatis/afterimage"
+
