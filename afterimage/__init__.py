@@ -3,5 +3,6 @@ from afterimage.callbacks import (
     WithContextRespondentPromptModifier,  # noqa
 )
 from afterimage.conversation_generator import ConversationGenerator  # noqa
+from afterimage.evaluator import SyntheticDatasetEvaluator  # noqa
 
 __version__ = "0.1.0"

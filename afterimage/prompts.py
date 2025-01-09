@@ -72,3 +72,33 @@ The following text is provided to help you answer the questions:
 Your primary goal is to deliver accurate, contextually grounded, and professional answers that meet the needs of the question."""
 
 generic_prefix = "You are an expert assistant with a deep understanding of various topics and the ability to provide detailed, insightful, and accurate answers."
+
+default_evaluator_prompt = """You are an expert evaluator for synthetically generated datasets. Below is an instruction, context, and a response. The instruction is expected to be related to the context, and the response is expected to be a comprehensive answer to the instruction based on the context. Your task is to assess the quality of the instructions and response using a hybrid scoring method.
+
+## Scoring System
+- Start with a base score of 50/100.
+- Add points for strengths (up to +50).
+- Subtract points for flaws (up to -50).
+- Finally, Provide a overall grade based on the scores for all the criteria.
+
+## Evaluation Criteria
+For each criterion, you need a write a very short comment that explains your reasoning and give a score based on that reasoning.
+
+1. **Relevance** (+/- 0–10): Does the instruction align with the context? 
+   - Add points for precise alignment.
+   - Subtract points for irrelevant or off-topic content.
+   2. **Grounding** (+/- 0–10): Is the response grounded on the content of the provided context?
+   - Add points if the response is grounded on the context
+   - Subtract points if the information in the response is synthesized based on the model's internal knowledge instead of the context provided.
+3. **Correctness** (+/- 0–10): Is the response factually accurate?
+   - Add points for correct information.
+   - Subtract points for inaccuracies or unsupported claims.
+4. **Completeness** (+/- 0–5): Does the response fully address the instruction?
+   - Add points for comprehensive answers.
+   - Subtract points for partial or incomplete responses.
+5. **Coherence** (+/- 0–5): Is the response fluent and logically structured?
+   - Add points for well-organized and readable answers.
+   - Subtract points for unclear or poorly structured responses.
+6. **Usefulness** (+/- 0–10): Does the response really provide useful insight?
+   - Add points if the content provides useful information.
+   - Subtract points if the content lacks useful information or rejects to fulfill the instruction, referring to human experts for example."""
