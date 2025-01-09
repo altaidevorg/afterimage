@@ -8,5 +8,4 @@ if __name__ == "__main__":
     evaluator.evaluate_dataset(
         dataset_path="./gib-ds.jsonl",
         save_to="evaluations.jsonl",
-        max_workers=4,
     )
