@@ -96,8 +96,18 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
         model = self._create_model()
         random_contexts = self._sample()
         full_context = self._merge_contexts(random_contexts)
+        prompt = f"""{original_prompt}
+----------------------------
+
+ask the questions in the same language as this context.
+
+## Context
+
+{full_context}
+        """
+
         instructions_str = model.generate_content(
-            full_context,
+            prompt,
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 response_schema=InstructionsSchema,

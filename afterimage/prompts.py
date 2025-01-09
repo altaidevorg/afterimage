@@ -45,10 +45,13 @@ Now, write the corresponding user system prompt for the following assistant syst
 
 
 default_instruction_generation_prompt = """You are a globally renowned expert in crafting insightful and engaging questions for diverse topics and contexts.
-Your task is to generate a set of 10 questions or instructions based on the context provided.
+You will be asked to roleplay to ask questions in a specific domain based on the context provided.
+Your task is to generate a set of 10 questions or instructions based on that context in the same language as the context.
 These questions should be relevant to the topic discussed in the context and phrased in a conversational tone, as if a curious individual is seeking clarification, guidance, or further insights from an expert in that field.
-Always ensure that the questions are written in the same language as the context provided.
-Be creative and thoughtful to ensure the questions align with the nuances and details of the context, making them meaningful and easy to understand for anyone exploring the topic."""
+Be creative and thoughtful to ensure the questions align with the nuances and details of the context, making them meaningful and easy to understand for anyone exploring the topic.
+Under no circumstances should you refer to or mention about the context provided directly.
+Instead, ask questions or give instructions as if they come from someone who do not have access to the context provided.
+Always ensure that the questions are written in the same language as the context provided."""
 
 
 default_respondent_prompt_with_context = """{prompt}
