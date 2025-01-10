@@ -13,6 +13,7 @@ from .base import (
     BaseRespondentPromptModifierCallback,
 )
 from .common import default_model_name, default_safety_settings
+from .evaluator import GradeSchema, SyntheticDatasetEvaluator
 from .prompts import (
     example_correspondent_prompt,
     example_respondent_prompt,
@@ -33,6 +34,7 @@ class ConversationGenerator(BaseGenerator):
         correspondent_prompt=None,
         model_name=None,
         safety_settings=None,
+        auto_improve=True,
     ):
         """Initializes the ConversationGenerator.
 
@@ -59,6 +61,16 @@ class ConversationGenerator(BaseGenerator):
             correspondent_prompt
             if correspondent_prompt is not None
             else self.create_correspondent_prompt(self.respondent_prompt)
+        )
+
+        self.evaluator = (
+            SyntheticDatasetEvaluator(
+                api_key=api_key,
+                model_name=self.model_name,
+                safety_settings=self.safety_settings,
+            )
+            if auto_improve
+            else None
         )
 
         self.initiators = []
@@ -230,12 +242,29 @@ class ConversationGenerator(BaseGenerator):
                     respondent_prompt=respondent_prompt,
                 )
 
-                conversations.append(
-                    {
+                evaluation_grade = GradeSchema.NEEDS_IMPROVEMENT
+                while (
+                    self.evaluator and evaluation_grade == GradeSchema.NEEDS_IMPROVEMENT
+                ):
+                    conversation_row = {
                         "conversations": conversation,
                         "context": gen_instructions.context,
                     }
-                )
+
+                    evaluation = self.evaluator.evaluate_row(conversation_row)
+                    if evaluation["overall_grade"] == GradeSchema.NEEDS_IMPROVEMENT:
+                        conversation = self.go(
+                            turns=turns,
+                            first_question=instruction,
+                            check_for_near_duplicates=check_for_near_duplicates,
+                            correspondent_prompt=correspondent_prompt,
+                            respondent_prompt=respondent_prompt,
+                        )
+                    else:
+                        evaluation_grade = evaluation["overall_grade"]
+                        conversation_row = evaluation
+
+                conversations.append(conversation_row)
 
             return conversations
 
