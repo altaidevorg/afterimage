@@ -5,4 +5,4 @@ from afterimage.callbacks import (
 from afterimage.conversation_generator import ConversationGenerator  # noqa
 from afterimage.evaluator import SyntheticDatasetEvaluator  # noqa
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"
