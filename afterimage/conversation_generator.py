@@ -30,11 +30,12 @@ class ConversationGenerator(BaseGenerator):
     def __init__(
         self,
         respondent_prompt,
-        api_key=None,
+        api_key,
         correspondent_prompt=None,
         model_name=None,
         safety_settings=None,
         auto_improve=True,
+        evaluator_model_name=None,
     ):
         """Initializes the ConversationGenerator.
 
@@ -66,7 +67,9 @@ class ConversationGenerator(BaseGenerator):
         self.evaluator = (
             SyntheticDatasetEvaluator(
                 api_key=api_key,
-                model_name=self.model_name,
+                model_name=evaluator_model_name
+                if evaluator_model_name is not None
+                else self.model_name,
                 safety_settings=self.safety_settings,
             )
             if auto_improve
