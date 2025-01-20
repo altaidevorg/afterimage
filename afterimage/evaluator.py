@@ -1,39 +1,20 @@
 import json
 import warnings
-from enum import Enum
-from concurrent.futures import ThreadPoolExecutor, as_completed, CancelledError
 from collections import Counter
-from tqdm import tqdm
-from typing import Dict, TypedDict, Any
+from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed
+from typing import Any, Dict, List
+from .types import ConversationWithContext, EvaluatedConversationWithContext
 import google.generativeai as genai
+from tqdm import tqdm
+
 from .common import default_model_name, default_safety_settings
 from .prompts import default_evaluator_prompt
-
-
-class GradeSchema(str, Enum):
-    GOOD = "good"
-    NEEDS_IMPROVEMENT = "needs_improvement"
-    PERFECT = "perfect"
-
-
-class EvaluationEntrySchema(TypedDict):
-    comment: str
-    score: int
-
-
-class EvaluationSchema(TypedDict):
-    relevance: EvaluationEntrySchema
-    grounding: EvaluationEntrySchema
-    correctness: EvaluationEntrySchema
-    completeness: EvaluationEntrySchema
-    coherence: EvaluationEntrySchema
-    usefulness: EvaluationEntrySchema
-    overall_grade: GradeSchema
+from .types import EvaluationSchema
 
 
 class SyntheticDatasetEvaluator:
     def __init__(
-        self, api_key: str, model_name: str = None, safety_settings: Dict = None
+        self, api_key: str, model_name: str = None, safety_settings: List = None
     ):
         """Initialize the evaluator with model configurations."""
         assert api_key is not None, "You must provide an API key"
@@ -44,13 +25,16 @@ class SyntheticDatasetEvaluator:
         )
         genai.configure(api_key=self.api_key)
 
-    def evaluate_row(self, row: Dict[str, Any]) -> EvaluationSchema:
+    def evaluate_row(
+        self, row: ConversationWithContext
+    ) -> EvaluatedConversationWithContext:
         """Evaluate a single row using the LLM."""
         model = genai.GenerativeModel(
             model_name=self.model_name,
             system_instruction=default_evaluator_prompt,
             safety_settings=self.safety_settings,
         )
+        row_dict = row.model_dump() if isinstance(row, ConversationWithContext) else row
         prompt = """Here's the instruction-response-context combination that you are asked to evaluate based on the aforementioned criteria.
 
 ## Instruction
@@ -64,9 +48,9 @@ class SyntheticDatasetEvaluator:
 ## Response
 {response}"""
         compiled_prompt = prompt.format(
-            instruction=row["conversations"][0]["content"],
-            context=row["context"],
-            response=row["conversations"][1]["content"],
+            instruction=row_dict["conversations"][0]["content"],
+            context=row_dict["context"],
+            response=row_dict["conversations"][1]["content"],
         )
         evaluation_output = model.generate_content(
             compiled_prompt,
@@ -77,19 +61,18 @@ class SyntheticDatasetEvaluator:
         try:
             evaluation = json.loads(evaluation_output)
             assert len(evaluation) == 7
-        except Exception:
+        except Exception as e:
+            print(e)
             return self.evaluate_row(row)
         else:
-            overall_grade = evaluation.pop("overall_grade")
             final_score = 50 + sum(
                 [v["score"] for v in evaluation.values() if isinstance(v, Dict)]
             )
-            row_copy = row.copy()
-            row_copy["evaluation"] = evaluation
-            row_copy["overall_grade"] = overall_grade
-            row_copy["final_score"] = final_score
+            evaluation["final_score"] = final_score
 
-            return row_copy
+            return EvaluatedConversationWithContext(
+                evaluation=evaluation, final_score=final_score, **row.dict()
+            )
 
     def evaluate_dataset(
         self,
@@ -111,7 +94,7 @@ class SyntheticDatasetEvaluator:
             if save_to and evaluations:
                 with open(save_to, "a+", encoding="utf8") as f:
                     for evaluation in evaluations:
-                        f.write(json.dumps(evaluation, ensure_ascii=False) + "\n")
+                        f.write(evaluation.model_dump_json() + "\n")
 
         try:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -119,17 +102,21 @@ class SyntheticDatasetEvaluator:
 
                 for future in as_completed(futures):
                     try:
-                        evaluation = future.result()
+                        evaluated_conversation = future.result()
                     except Exception as e:
                         if not isinstance(e, CancelledError):
                             warnings.warn(f"Exception in future: {e}")
                     else:
                         if show_summary:
-                            evaluations.append(evaluation["overall_grade"])
-                            total_score += evaluation["final_score"]
+                            evaluations.append(
+                                evaluated_conversation.evaluation["overall_grade"]
+                            )
+                            total_score += evaluated_conversation.evaluation[
+                                "final_score"
+                            ]
                         pbar.update(1)
                         if save_to:
-                            save_evaluations([evaluation])
+                            save_evaluations([evaluated_conversation])
 
         except KeyboardInterrupt:
             warnings.warn("Interrupted! Waiting for graceful shutdown...")

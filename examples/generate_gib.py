@@ -44,7 +44,7 @@ respondent_prompt_modifier = WithContextRespondentPromptModifier()
 # Generate conversations
 if __name__ == "__main__":
     conv_gen.generate(
-        num_dialogs=20000,  # Total dialogs to generate
+        num_dialogs=20,  # Total dialogs to generate
         max_turns=1,  # Max turns per conversation
         save_to="./gib-ds.jsonl",  # Save results in JSONL format
         instruction_generator_callback=instruction_generator_callback,
