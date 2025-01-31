@@ -46,7 +46,6 @@ class ConversationGenerator(BaseGenerator):
         safety_settings: List[Dict[str, str]] | None = None,
         auto_improve: bool = True,
         evaluator_model_name: str | None = None,
-        save_to: str | None = None,
     ):
         """Initialize the generator with API key(s).
 
@@ -58,7 +57,6 @@ class ConversationGenerator(BaseGenerator):
             safety_settings: Safety settings for the model
             auto_improve: Whether to try to improve low-quality generations
             evaluator_model_name: Model name for the evaluator when auto_improve is True
-            save_to: Path to save the generated dialogs in JSONL format
         """
         self.key_pool = (
             api_key
@@ -91,7 +89,6 @@ class ConversationGenerator(BaseGenerator):
         )
 
         self.initiators = []
-        self.file_lock = FileLock(f"{save_to}.lock") if save_to else None
 
     def create_correspondent_prompt(self, assistant_prompt: str) -> str:
         """Creates a correspondent prompt based on the assistant prompt.
@@ -317,6 +314,7 @@ class ConversationGenerator(BaseGenerator):
         self,
         num_dialogs: int = 5,
         max_turns: int = 3,
+        save_to: str | None = None,
         seed_instructions: List = [],
         add_examples: bool = False,
         num_random_examples: int = 3,
@@ -326,11 +324,12 @@ class ConversationGenerator(BaseGenerator):
         respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
         max_workers: int = 4,
     ) -> None:
-        """Generates multiple conversation dialogs and saves them if save_to was specified in constructor.
+        """Generates multiple conversation dialogs and saves them to a file if specified.
 
         Args:
             num_dialogs (int, optional): Number of dialogs to generate. Defaults to 5.
             max_turns (int, optional): Maximum number of turns per dialog. Defaults to 3.
+            save_to (str, optional): Path to save the generated dialogs in JSONL format. Defaults to None.
             seed_instructions (List, optional): Seed instructions to guide question generation. Defaults to [].
             add_examples (bool, optional): Whether to use seed instructions as examples. Defaults to False.
             num_random_examples (int, optional): Number of random examples to use. Defaults to 3.
@@ -362,25 +361,11 @@ class ConversationGenerator(BaseGenerator):
         num_generated = 0
         pbar = tqdm(total=n_conversations, desc="Generating...", unit="conversation")
 
-        counter_lock = Lock()
-        num_generated = 0
-
-        def update_progress(conversations):
-            nonlocal num_generated
-            with counter_lock:
-                num_generated += len(conversations)
-                pbar.update(len(conversations))
-
-                if num_generated >= n_conversations:
-                    return True
-            return False
-
         def save_conversations(conversations):
-            if self.file_lock and conversations:
-                with self.file_lock:
-                    with open(self.file_lock.path, "a+", encoding="utf8") as f:
-                        for conv in conversations:
-                            f.write(conv.model_dump_json(exclude_none=True) + "\n")
+            if save_to and conversations:
+                with open(save_to, "a+", encoding="utf8") as f:
+                    for conv in conversations:
+                        f.write(conv.model_dump_json(exclude_none=True) + "\n")
 
         try:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -409,9 +394,10 @@ class ConversationGenerator(BaseGenerator):
                             warnings.warn(f"Exception in future: {e}")
                     else:
                         save_conversations(conversations)
-                        should_stop = update_progress(conversations)
+                        num_generated += len(conversations)
+                        pbar.update(len(conversations))
 
-                        if should_stop:
+                        if num_generated >= n_conversations:
                             pbar.close()
                             print("Done! Waiting for graceful shutdown...")
                             for pending_future in futures:

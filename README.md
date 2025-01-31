@@ -67,7 +67,6 @@ Onlara asla 'gerçek bir avukata danışmalarını' ya da 'hukuki yardıma başv
 conv_gen = ConversationGenerator(
     respondent_prompt=respondent_prompt, 
     api_key=api_key,
-    save_to="awesome_dataset.jsonl"  # Specify save path in constructor
 )
 
 # Print the auto-generated correspondent prompt
@@ -98,6 +97,7 @@ conv_gen.generate(
     max_turns=3,                    # Max turns per conversation
     instruction_generator_callback=instruction_generator_callback,
     respondent_prompt_modifier=respondent_prompt_modifier,
+    save_to="awesome_dataset.jsonl"
 )
 
 print("Conversation dataset generated successfully!")
@@ -125,14 +125,14 @@ key_pool = SmartKeyPool(
 # Initialize generator with the key pool and save path
 generator = ConversationGenerator(
     respondent_prompt="You are an expert assistant...",
-    api_key=key_pool,
-    save_to="dataset.jsonl"  # Specify save path in constructor
+    api_key=key_pool,# Specify save path in constructor
 )
 
 # Generate conversations (keys will be automatically rotated)
 generator.generate(
     num_dialogs=1000,
-    max_turns=3
+    max_turns=3,
+    save_to="dataset.jsonl"  
 )
 
 # Check key usage statistics
@@ -159,7 +159,6 @@ The central class for managing dialog generation. Customize prompts, configure p
 - **`api_key`**: Either a single API key string or a SmartKeyPool instance.
 - **`correspondent_prompt`** (optional): Automatically generated if not provided.
 - **`model_name`** (optional): Specify the AI model to use.
-- **`save_to`** (optional): Path to save the generated dialogs in JSONL format.
 
 #### Methods
 

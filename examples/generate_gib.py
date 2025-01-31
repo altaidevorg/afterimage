@@ -24,7 +24,6 @@ Onlara asla 'gerçek bir mali müşavire danışmalarını' ya da 'hukuki yardı
 conv_gen = ConversationGenerator(
     respondent_prompt=respondent_prompt,
     api_key=api_key,
-    save_to="./gib-ds.jsonl",  # Save results in JSONL format
 )
 
 # Print the auto-generated correspondent prompt
@@ -52,6 +51,7 @@ if __name__ == "__main__":
         max_turns=3,  # Max turns per conversation
         instruction_generator_callback=instruction_generator_callback,
         respondent_prompt_modifier=respondent_prompt_modifier,
+        save_to="./gib-ds.jsonl",  # Save results in JSONL format
     )
 
     print("Conversation dataset generated successfully!")

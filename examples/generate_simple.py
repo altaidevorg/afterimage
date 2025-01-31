@@ -23,7 +23,6 @@ Onlara asla 'gerçek bir avukata danışmalarını' ya da 'hukuki yardıma başv
 conv_gen = ConversationGenerator(
     respondent_prompt=respondent_prompt,
     api_key=api_key,
-    save_to="awesome_dataset.jsonl",  # Save results in JSONL format
 )
 
 # Print the auto-generated correspondent prompt
@@ -54,6 +53,7 @@ conv_gen.generate(
     max_turns=3,  # Max turns per conversation
     instruction_generator_callback=instruction_generator_callback,
     respondent_prompt_modifier=respondent_prompt_modifier,
+    save_to="awesome_dataset.jsonl",  # Save results in JSONL format
 )
 
 print("Conversation dataset generated successfully!")
