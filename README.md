@@ -91,7 +91,7 @@ docs = [
 # Set up the instruction generator callback
 instruction_generator_callback = ContextualInstructionGeneratorCallback(
     api_key=api_key,
-    docs=docs,
+    documents=docs,
     num_random_contexts=3,  # Experiment with different values
 )
 
@@ -104,7 +104,6 @@ conv_gen.generate(
     max_turns=3,                    # Max turns per conversation
     instruction_generator_callback=instruction_generator_callback,
     respondent_prompt_modifier=respondent_prompt_modifier,
-    save_to="awesome_dataset.jsonl"
 )
 
 print("Conversation dataset generated successfully!")
@@ -139,7 +138,6 @@ generator = ConversationGenerator(
 generator.generate(
     num_dialogs=1000,
     max_turns=3,
-    save_to="dataset.jsonl"  
 )
 
 # Check key usage statistics
