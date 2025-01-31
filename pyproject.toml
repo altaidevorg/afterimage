@@ -1,6 +1,6 @@
 [project]
 name = "afterimage"
-version = "0.1.2"
+version = "0.2.0"
 keywords = ["afterimage", "synthetic", "dataset-generation", "synthetic-dataset"]
 authors = [
     { name = "Yusuf Sarıgöz", email = "yusufsarigoz@gmail.com"}
@@ -21,6 +21,7 @@ dependencies = [
     "letsearch-client>=0.1.1",
     "pydantic>=2.10.4",
     "tqdm>=4.67.1",
+    "filelock",
 ]
 
 [project.urls]

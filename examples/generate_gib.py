@@ -21,7 +21,11 @@ Onlara asla 'gerçek bir mali müşavire danışmalarını' ya da 'hukuki yardı
 """
 
 # Initialize the ConversationGenerator
-conv_gen = ConversationGenerator(respondent_prompt=respondent_prompt, api_key=api_key)
+conv_gen = ConversationGenerator(
+    respondent_prompt=respondent_prompt,
+    api_key=api_key,
+    save_to="./gib-ds.jsonl",  # Save results in JSONL format
+)
 
 # Print the auto-generated correspondent prompt
 print("Generated Correspondent Prompt:")
@@ -45,8 +49,7 @@ respondent_prompt_modifier = WithContextRespondentPromptModifier()
 if __name__ == "__main__":
     conv_gen.generate(
         num_dialogs=20,  # Total dialogs to generate
-        max_turns=1,  # Max turns per conversation
-        save_to="./gib-ds.jsonl",  # Save results in JSONL format
+        max_turns=3,  # Max turns per conversation
         instruction_generator_callback=instruction_generator_callback,
         respondent_prompt_modifier=respondent_prompt_modifier,
     )

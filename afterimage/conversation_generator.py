@@ -1,8 +1,9 @@
-import json
 import random
 import warnings
 from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed
 from typing import Dict, List
+from threading import Lock
+from filelock import FileLock
 
 import google.generativeai as genai
 from tqdm import tqdm
@@ -27,6 +28,7 @@ from .types import (
     GradeSchema,
     Role,
 )
+from .key_management import SmartKeyPool
 
 
 class ConversationGenerator(BaseGenerator):
@@ -38,27 +40,31 @@ class ConversationGenerator(BaseGenerator):
     def __init__(
         self,
         respondent_prompt: str,
-        api_key: str,
+        api_key: str | SmartKeyPool,
         correspondent_prompt: str | None = None,
         model_name: str | None = None,
         safety_settings: List[Dict[str, str]] | None = None,
         auto_improve: bool = True,
         evaluator_model_name: str | None = None,
+        save_to: str | None = None,
     ):
-        f"""Initializes the ConversationGenerator.
+        """Initialize the generator with API key(s).
 
         Args:
-            respondent_prompt (str): Template for generating respondent answers.
-            api_key (str): API key for the generative AI service.
-            correspondent_prompt (str, optional): Template for generating correspondent questions.
-                If not provided, it will be automatically generated from the respondent prompt.
-            model_name (str, optional): Model name to use. Defaults to "{default_model_name}".
-            safety_settings (list, optional): Safety settings for the model. Defaults to a pre-defined configuration .
-            auto_improve (bool, optional): Whether to try to improve low-quality generations with evaluator. Defaults to `True`.
-            evaluator_model_name (str, optional): Model name for the evaluator  when `auto_improve` is `True`. Defaults to `model_name`.
+            respondent_prompt: Template for generating respondent answers
+            api_key: Either a single API key string or a SmartKeyPool instance
+            correspondent_prompt: Template for generating correspondent questions
+            model_name: Model name to use
+            safety_settings: Safety settings for the model
+            auto_improve: Whether to try to improve low-quality generations
+            evaluator_model_name: Model name for the evaluator when auto_improve is True
+            save_to: Path to save the generated dialogs in JSONL format
         """
-        assert isinstance(api_key, str), "You must provide a valid API key"
-        genai.configure(api_key=api_key)
+        self.key_pool = (
+            api_key
+            if isinstance(api_key, SmartKeyPool)
+            else SmartKeyPool.from_single_key(api_key)
+        )
 
         self.model_name = model_name if model_name is not None else default_model_name
         self.safety_settings = (
@@ -74,7 +80,7 @@ class ConversationGenerator(BaseGenerator):
 
         self.evaluator = (
             SyntheticDatasetEvaluator(
-                api_key=api_key,
+                api_key=self.key_pool,
                 model_name=evaluator_model_name
                 if evaluator_model_name is not None
                 else self.model_name,
@@ -85,6 +91,7 @@ class ConversationGenerator(BaseGenerator):
         )
 
         self.initiators = []
+        self.file_lock = FileLock(f"{save_to}.lock") if save_to else None
 
     def create_correspondent_prompt(self, assistant_prompt: str) -> str:
         """Creates a correspondent prompt based on the assistant prompt.
@@ -101,30 +108,34 @@ class ConversationGenerator(BaseGenerator):
             new_assistant_prompt=assistant_prompt,
         )
 
-        model = genai.GenerativeModel(
-            "gemini-1.5-pro-latest", safety_settings=self.safety_settings
-        )
+        try:
+            api_key = self.key_pool.get_next_key()
+            genai.configure(api_key=api_key)
 
-        correspondent_prompt = model.generate_content(prompt).text
-
-        return correspondent_prompt
+            model = genai.GenerativeModel(
+                "gemini-1.5-pro-latest", safety_settings=self.safety_settings
+            )
+            correspondent_prompt = model.generate_content(prompt).text
+            return correspondent_prompt
+        except Exception as e:
+            self.key_pool.report_error(api_key)
+            raise e
 
     def create_model(self, prompt: str):
-        """Creates and initializes a chat model with the given prompt.
+        """Creates and initializes a chat model with the given prompt."""
+        try:
+            api_key = self.key_pool.get_next_key()
+            genai.configure(api_key=api_key)
 
-        Args:
-            prompt (str): System instruction for the chat model.
-
-        Returns:
-            GenerativeChat: A chat model instance ready to process messages.
-        """
-        model = genai.GenerativeModel(
-            self.model_name,
-            system_instruction=prompt,
-            safety_settings=self.safety_settings,
-        )
-
-        return model.start_chat(history=[])
+            model = genai.GenerativeModel(
+                self.model_name,
+                system_instruction=prompt,
+                safety_settings=self.safety_settings,
+            )
+            return model.start_chat(history=[])
+        except Exception as e:
+            self.key_pool.report_error(api_key)
+            raise e
 
     def ask(self, correspondent, answer) -> str:
         """Generates a question from the correspondent based on the given answer.
@@ -251,10 +262,12 @@ class ConversationGenerator(BaseGenerator):
                     respondent_prompt=respondent_prompt,
                 )
 
-                evaluation_grade = GradeSchema.NEEDS_IMPROVEMENT
-                while (
-                    self.evaluator and evaluation_grade == GradeSchema.NEEDS_IMPROVEMENT
-                ):
+                evaluation_grade = GradeSchema.NOT_ACCEPTABLE
+                while self.evaluator and evaluation_grade in [
+                    GradeSchema.NOT_ACCEPTABLE,
+                    GradeSchema.BAD,
+                    GradeSchema.NEEDS_IMPROVEMENT,
+                ]:
                     conversation_row = ConversationWithContext(
                         conversations=conversation,
                         context=gen_instructions.context,
@@ -263,10 +276,11 @@ class ConversationGenerator(BaseGenerator):
                         conversation_row
                     )
 
-                    if (
-                        evaluated_conversation.evaluation["overall_grade"]
-                        == GradeSchema.NEEDS_IMPROVEMENT
-                    ):
+                    if evaluated_conversation.evaluation["overall_grade"] in [
+                        GradeSchema.NOT_ACCEPTABLE,
+                        GradeSchema.BAD,
+                        GradeSchema.NEEDS_IMPROVEMENT,
+                    ]:
                         conversation = self.go(
                             turns=turns,
                             first_question=instruction,
@@ -278,7 +292,6 @@ class ConversationGenerator(BaseGenerator):
                         evaluation_grade = evaluated_conversation.evaluation[
                             "overall_grade"
                         ]
-
                         conversation_row = evaluated_conversation
 
                 conversations.append(conversation_row)
@@ -304,7 +317,6 @@ class ConversationGenerator(BaseGenerator):
         self,
         num_dialogs: int = 5,
         max_turns: int = 3,
-        save_to: str | None = None,
         seed_instructions: List = [],
         add_examples: bool = False,
         num_random_examples: int = 3,
@@ -314,12 +326,11 @@ class ConversationGenerator(BaseGenerator):
         respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
         max_workers: int = 4,
     ) -> None:
-        """Generates multiple conversation dialogs and saves them to a file if specified.
+        """Generates multiple conversation dialogs and saves them if save_to was specified in constructor.
 
         Args:
             num_dialogs (int, optional): Number of dialogs to generate. Defaults to 5.
             max_turns (int, optional): Maximum number of turns per dialog. Defaults to 3.
-            save_to (str, optional): Path to save the generated dialogs in JSONL format. Defaults to None.
             seed_instructions (List, optional): Seed instructions to guide question generation. Defaults to [].
             add_examples (bool, optional): Whether to use seed instructions as examples. Defaults to False.
             num_random_examples (int, optional): Number of random examples to use. Defaults to 3.
@@ -351,11 +362,25 @@ class ConversationGenerator(BaseGenerator):
         num_generated = 0
         pbar = tqdm(total=n_conversations, desc="Generating...", unit="conversation")
 
+        counter_lock = Lock()
+        num_generated = 0
+
+        def update_progress(conversations):
+            nonlocal num_generated
+            with counter_lock:
+                num_generated += len(conversations)
+                pbar.update(len(conversations))
+
+                if num_generated >= n_conversations:
+                    return True
+            return False
+
         def save_conversations(conversations):
-            if save_to and conversations:
-                with open(save_to, "a+", encoding="utf8") as f:
-                    for conv in conversations:
-                        f.write(conv.model_dump_json(exclude_none=True) + "\n")
+            if self.file_lock and conversations:
+                with self.file_lock:
+                    with open(self.file_lock.path, "a+", encoding="utf8") as f:
+                        for conv in conversations:
+                            f.write(conv.model_dump_json(exclude_none=True) + "\n")
 
         try:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -384,10 +409,9 @@ class ConversationGenerator(BaseGenerator):
                             warnings.warn(f"Exception in future: {e}")
                     else:
                         save_conversations(conversations)
-                        num_generated += len(conversations)
-                        pbar.update(len(conversations))
+                        should_stop = update_progress(conversations)
 
-                        if num_generated >= n_conversations:
+                        if should_stop:
                             pbar.close()
                             print("Done! Waiting for graceful shutdown...")
                             for pending_future in futures:

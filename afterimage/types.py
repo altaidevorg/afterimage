@@ -4,9 +4,11 @@ from pydantic import BaseModel
 
 
 class GradeSchema(str, Enum):
+    PERFECT = "perfect"
     GOOD = "good"
     NEEDS_IMPROVEMENT = "needs_improvement"
-    PERFECT = "perfect"
+    BAD = "bad"
+    NOT_ACCEPTABLE = "not_acceptable"
 
 
 class EvaluationEntrySchema(TypedDict):
@@ -44,7 +46,7 @@ class ConversationWithContext(Conversation):
 
 class EvaluatedConversationWithContext(ConversationWithContext):
     evaluation: Optional[EvaluationSchema]
-    final_score: Optional[int]
+    final_score: Optional[float]
 
 
 if __name__ == "__main__":

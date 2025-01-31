@@ -4,5 +4,6 @@ from afterimage.callbacks import (
 )
 from afterimage.conversation_generator import ConversationGenerator  # noqa
 from afterimage.evaluator import SyntheticDatasetEvaluator  # noqa
+from afterimage.key_management import SmartKeyPool  # noqa
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"

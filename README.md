@@ -7,6 +7,7 @@
 - **Customizable Prompts**: Create bespoke respondent and correspondent prompts for generating realistic conversations.
 - **Contextual Instruction Generation**: Leverage contextual documents to craft unique and relevant conversation starters.
 - **Dynamic Conversation Flow**: Simulate back-and-forth dialogs with adjustable turns and behaviors.
+- **Smart API Key Management**: Handle multiple API keys with automatic rotation, rate limiting, and error handling.
 - **Parallel Execution**: Generate multiple conversations efficiently using multithreading.
 - **Save in JSONL Format**: Export datasets directly for downstream applications.
 
@@ -26,7 +27,7 @@ pip install git+https://github.com/altaidevorg/afterimage.git
 
 ## Getting Started
 
-Here’s a step-by-step guide to start using **AfterImage**.
+Here's a step-by-step guide to start using **AfterImage**.
 
 ### 1. Setup
 
@@ -38,7 +39,7 @@ export GEMINI_API_KEY="your_api_key_here"
 
 **Note**: We currently support only the Gemini API, but we will support other LLM providers soon. Feel free to let me know your choice.
 
-### 2. Quickstart Script
+### 2. Quickstart Script (Single API Key)
 
 ```python
 import os
@@ -62,8 +63,12 @@ Hukuki kavramları doğru şekilde kullanmaya özen göster ama herkesin anlayab
 Onlara asla 'gerçek bir avukata danışmalarını' ya da 'hukuki yardıma başvurmalarını' tavsiye etme çünkü sen, tüm vatandaşların ve hukukçuların güvendiği, saygıdeğer bir hukukçusun.
 """
 
-# Initialize the ConversationGenerator
-conv_gen = ConversationGenerator(respondent_prompt=respondent_prompt, api_key=api_key)
+# Initialize the ConversationGenerator with save path
+conv_gen = ConversationGenerator(
+    respondent_prompt=respondent_prompt, 
+    api_key=api_key,
+    save_to="awesome_dataset.jsonl"  # Specify save path in constructor
+)
 
 # Print the auto-generated correspondent prompt
 print("Generated Correspondent Prompt:")
@@ -91,12 +96,53 @@ respondent_prompt_modifier = WithContextRespondentPromptModifier()
 conv_gen.generate(
     num_dialogs=100,                # Total dialogs to generate
     max_turns=3,                    # Max turns per conversation
-    save_to="awesome_dataset.jsonl",  # Save results in JSONL format
     instruction_generator_callback=instruction_generator_callback,
     respondent_prompt_modifier=respondent_prompt_modifier,
 )
 
 print("Conversation dataset generated successfully!")
+```
+
+### 3. Advanced Usage with Multiple API Keys
+
+```python
+import os
+from afterimage import ConversationGenerator, SmartKeyPool
+
+# Initialize a pool of API keys with rate limits
+key_pool = SmartKeyPool(
+    api_keys=[
+        "your-api-key-1",
+        "your-api-key-2",
+        "your-api-key-3"
+    ],
+    hourly_limit=1000,  # Optional: limit calls per hour per key
+    daily_limit=10000,  # Optional: limit calls per day per key
+    error_threshold=5,  # Optional: number of errors before key cooldown
+    cooldown_period=300  # Optional: seconds to wait after errors
+)
+
+# Initialize generator with the key pool and save path
+generator = ConversationGenerator(
+    respondent_prompt="You are an expert assistant...",
+    api_key=key_pool,
+    save_to="dataset.jsonl"  # Specify save path in constructor
+)
+
+# Generate conversations (keys will be automatically rotated)
+generator.generate(
+    num_dialogs=1000,
+    max_turns=3
+)
+
+# Check key usage statistics
+stats = key_pool.get_stats()
+for key, key_stats in stats.items():
+    print(f"Key {key[:8]}...")
+    print(f"  Hourly calls: {key_stats['hourly_calls']}")
+    print(f"  Daily calls: {key_stats['daily_calls']}")
+    print(f"  Active: {key_stats['is_active']}")
+    print(f"  Errors: {key_stats['error_count']}")
 ```
 
 ---
@@ -110,9 +156,10 @@ The central class for managing dialog generation. Customize prompts, configure p
 #### Initialization Parameters
 
 - **`respondent_prompt`**: The primary prompt for the respondent model.
-- **`api_key`**: API key for the generative model.
+- **`api_key`**: Either a single API key string or a SmartKeyPool instance.
 - **`correspondent_prompt`** (optional): Automatically generated if not provided.
 - **`model_name`** (optional): Specify the AI model to use.
+- **`save_to`** (optional): Path to save the generated dialogs in JSONL format.
 
 #### Methods
 
@@ -131,6 +178,32 @@ A callback for generating instructions based on contextual documents.
 ### 3. `WithContextRespondentPromptModifier`
 
 A callback for modifying respondent prompts dynamically based on instructions and contexts.
+
+### 4. `SmartKeyPool`
+
+Manages multiple API keys with intelligent rotation and error handling.
+
+#### Initialization Parameters
+
+- **`api_keys`**: List of API keys to manage
+- **`hourly_limit`** (optional): Maximum calls per hour per key
+- **`daily_limit`** (optional): Maximum calls per day per key
+- **`error_threshold`** (optional): Number of errors before key cooldown
+- **`cooldown_period`** (optional): Seconds to wait after errors
+
+#### Features
+
+- Automatic key rotation based on usage and availability
+- Optional rate limiting (hourly and daily)
+- Error tracking and automatic key cooldown
+- Usage statistics and monitoring
+- Thread-safe operations for concurrent access
+
+#### Methods
+
+- **`get_next_key()`**: Get the next available API key
+- **`report_error(key)`**: Report an error for a key
+- **`get_stats()`**: Get usage statistics for all keys
 
 ---
 

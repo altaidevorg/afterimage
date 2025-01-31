@@ -20,7 +20,11 @@ Onlara asla 'gerçek bir avukata danışmalarını' ya da 'hukuki yardıma başv
 """
 
 # Initialize the ConversationGenerator
-conv_gen = ConversationGenerator(respondent_prompt=respondent_prompt, api_key=api_key)
+conv_gen = ConversationGenerator(
+    respondent_prompt=respondent_prompt,
+    api_key=api_key,
+    save_to="awesome_dataset.jsonl",  # Save results in JSONL format
+)
 
 # Print the auto-generated correspondent prompt
 print("Generated Correspondent Prompt:")
@@ -48,7 +52,6 @@ respondent_prompt_modifier = WithContextRespondentPromptModifier()
 conv_gen.generate(
     num_dialogs=100,  # Total dialogs to generate
     max_turns=3,  # Max turns per conversation
-    save_to="awesome_dataset.jsonl",  # Save results in JSONL format
     instruction_generator_callback=instruction_generator_callback,
     respondent_prompt_modifier=respondent_prompt_modifier,
 )
