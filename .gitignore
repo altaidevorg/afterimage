@@ -12,3 +12,6 @@ wheels/
 # generated data files
 *.json
 *.jsonl
+
+# monitoring
+monitoring*

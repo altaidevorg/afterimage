@@ -6,10 +6,14 @@
 
 - **Customizable Prompts**: Create bespoke respondent and correspondent prompts for generating realistic conversations.
 - **Contextual Instruction Generation**: Leverage contextual documents to craft unique and relevant conversation starters.
-- **Dynamic Conversation Flow**: Simulate back-and-forth dialogs with adjustable turns and behaviors.
 - **Smart API Key Management**: Handle multiple API keys with automatic rotation, rate limiting, and error handling.
+- **Retrieval-Augmented Generation (RAG)**: Enhance responses with relevant context from vector databases.
+- **Flexible Document Providers**: Support multiple document sources (files, JSONL, directories, Qdrant).
+- **Multiple Storage Backends**: Store conversations in JSONL files or SQL databases (SQLite, PostgreSQL, MySQL).
 - **Parallel Execution**: Generate multiple conversations efficiently using multithreading.
 - **Save in JSONL Format**: Export datasets directly for downstream applications.
+- **Quality Analysis**: Comprehensive dataset quality checks with visualization support.
+- **Generation Monitoring**: Real-time monitoring of generation metrics with alerts and visualization.
 
 **Note**: This is the initial version, but I will add more generators and evaluators soon.
 
@@ -21,6 +25,9 @@ To install AfterImage, clone the repository and install the dependencies:
 
 ```bash
 pip install git+https://github.com/altaidevorg/afterimage.git
+
+# Optional: Install SQL storage dependencies
+pip install 'sqlalchemy>=2.0'  # For SQL storage support
 ```
 
 ---
@@ -145,89 +152,247 @@ for key, key_stats in stats.items():
     print(f"  Errors: {key_stats['error_count']}")
 ```
 
----
+### 4. Using Document Providers
 
-## Key Components
+AfterImage supports various document providers for contextual instruction generation:
 
-### 1. `ConversationGenerator`
+```python
+from afterimage.providers import (
+    JSONLDocumentProvider,
+    DirectoryDocumentProvider,
+    QdrantDocumentProvider,
+)
 
-The central class for managing dialog generation. Customize prompts, configure parameters, and manage output.
+# JSONL files
+jsonl_provider = JSONLDocumentProvider(
+    path_pattern="data/**/*.jsonl",
+    content_key="content",
+    recursive=True,
+)
 
-#### Initialization Parameters
+# Directory of text files
+dir_provider = DirectoryDocumentProvider(
+    directory="documents",
+    file_patterns=["*.txt", "*.md"],
+    recursive=True,
+)
 
-- **`respondent_prompt`**: The primary prompt for the respondent model.
-- **`api_key`**: Either a single API key string or a SmartKeyPool instance.
-- **`correspondent_prompt`** (optional): Automatically generated if not provided.
-- **`model_name`** (optional): Specify the AI model to use.
+# Qdrant vector database
+qdrant_provider = QdrantDocumentProvider(
+    client=qdrant_client,
+    collection_name="my_docs",
+    content_key="text",
+    filter={"must": [{"key": "language", "match": {"value": "en"}}]},
+)
 
-#### Methods
-
-- **`generate()`**: Main method for generating conversations.
-
-### 2. `ContextualInstructionGeneratorCallback`
-
-A callback for generating instructions based on contextual documents.
-
-#### Initialization Parameters
-
-- **`api_key`**: API key for the generative model.
-- **`docs`**: List of documents to use for context.
-- **`num_random_contexts`** (optional): Number of random contexts to include.
-
-### 3. `WithContextRespondentPromptModifier`
-
-A callback for modifying respondent prompts dynamically based on instructions and contexts.
-
-### 4. `SmartKeyPool`
-
-Manages multiple API keys with intelligent rotation and error handling.
-
-#### Initialization Parameters
-
-- **`api_keys`**: List of API keys to manage
-- **`hourly_limit`** (optional): Maximum calls per hour per key
-- **`daily_limit`** (optional): Maximum calls per day per key
-- **`error_threshold`** (optional): Number of errors before key cooldown
-- **`cooldown_period`** (optional): Seconds to wait after errors
-
-#### Features
-
-- Automatic key rotation based on usage and availability
-- Optional rate limiting (hourly and daily)
-- Error tracking and automatic key cooldown
-- Usage statistics and monitoring
-- Thread-safe operations for concurrent access
-
-#### Methods
-
-- **`get_next_key()`**: Get the next available API key
-- **`report_error(key)`**: Report an error for a key
-- **`get_stats()`**: Get usage statistics for all keys
-
----
-
-## Saving the Dataset
-
-The generated dataset is saved in **JSONL** format, making it easy to parse and use in various ML pipelines.
-
-Each conversation entry includes:
-
-- **Role**: Either `"user"` or `"assistant"`.
-- **Content**: The corresponding dialog message.
-
-Example output:
-
-```json
-{"conversations": [{"role": "user", "content": "What is the process for divorce?"}, {"role": "assistant", "content": "Under Turkish law, divorce involves..." }], "context": "The contextual document from which the conversation is synthesized"}
+# Use in instruction generator
+callback = ContextualInstructionGeneratorCallback(
+    api_key="your-key",
+    documents=qdrant_provider,
+    num_random_contexts=3,
+)
 ```
 
----
+### 5. Retrieval-Augmented Generation (RAG)
 
-## Tips for Effective Usage
+AfterImage supports various retrieval strategies for enhancing responses:
+
+```python
+from afterimage.retrievers import (
+    QdrantRetriever,
+    ChainedRetriever,
+    EnsembleRetriever,
+    CacheRetriever,
+)
+
+# Basic Qdrant retriever
+retriever = QdrantRetriever(
+    client=qdrant_client,
+    collection_name="knowledge_base",
+    embedding_model="all-MiniLM-L6-v2",
+)
+
+# Ensemble of retrievers with weights
+ensemble = EnsembleRetriever([
+    (retriever1, 0.7),
+    (retriever2, 0.3),
+])
+
+# Add caching for performance
+cached_retriever = CacheRetriever(
+    base_retriever=ensemble,
+    cache_size=1000,
+)
+
+# Use in conversation generator
+generator = ConversationGenerator(
+    respondent_prompt="You are an expert assistant...",
+    api_key="your-key",
+    respondent_prompt_modifier=WithRAGRespondentPromptModifier(
+        retriever=cached_retriever,
+    ),
+)
+```
+
+### 6. Storage Options
+
+AfterImage supports multiple storage backends for saving generated conversations:
+
+```python
+from afterimage.storage import JSONLStorage, SQLStorage
+
+# JSONL storage (default)
+jsonl_storage = JSONLStorage(
+    path="conversations.jsonl",  # Optional: uses datetime-based filename if not provided
+    encoding="utf-8"
+)
+
+# SQLite storage
+sqlite_storage = SQLStorage(
+    url="sqlite:///conversations.db",
+    table_name="my_conversations",
+    metadata_fields=["language", "domain"]  # Optional: fields to index
+)
+
+# PostgreSQL storage
+pg_storage = SQLStorage(
+    url="postgresql://user:pass@localhost/afterimage",
+    metadata_fields=["language", "quality_score"]
+)
+
+# Use in generator
+generator = ConversationGenerator(
+    respondent_prompt="You are an expert...",
+    api_key="your-key",
+    storage=sqlite_storage  # Specify storage backend
+)
+
+# Query conversations with filters
+conversations = sqlite_storage.load_conversations(
+    filters={
+        "metadata.language": "tr",
+        "metadata.domain": "legal"
+    },
+    order_by=[("timestamp", -1)],
+    limit=100
+)
+```
+
+### 7. Dataset Quality Analysis
+
+AfterImage provides comprehensive quality analysis for generated datasets:
+
+```python
+from afterimage.quality import QualityChecker
+from afterimage.storage import SQLStorage
+
+# Initialize storage and checker
+storage = SQLStorage("sqlite:///conversations.db")
+checker = QualityChecker(
+    storage=storage,
+    min_length=50,
+    max_length=2000,
+    language="tr",  # Optional: check language consistency
+    embedding_model="altaidevorg/bge-m3-distill-8l",  # Fast & efficient model
+)
+
+# Generate comprehensive report with visualizations
+report = checker.generate_report(
+    include_plots=True,
+    save_dir="quality_report"
+)
+
+# Access specific metrics
+length_stats = report["length_stats"]
+print(f"Mean assistant response length: {length_stats['assistant']['mean']:.0f} chars")
+
+coherence = report["coherence"]
+print(f"Mean Q&A coherence: {coherence['mean_coherence']:.2f}")
+
+if report["duplicates"]:
+    print(f"Found {len(report['duplicates'])} near-duplicate responses")
+
+# Check context utilization
+context_stats = report["context_relevance"]
+print(f"Mean context relevance: {context_stats['mean_relevance']:.2f}")
+```
+
+### 8. Tips for Effective Usage
 
 1. **Experiment with Prompts**: Tailor respondent and correspondent prompts to your use case.
 2. **Use Contextual Documents**: Provide domain-specific documents to enrich conversations.
 3. **Parallelize**: Increase `max_workers` in `generate()` for faster dataset creation.
+
+### 9. Generation Monitoring
+
+AfterImage provides real-time monitoring of generation metrics with customizable alerts:
+
+```python
+from afterimage.monitoring import GenerationMonitor
+from datetime import timedelta
+
+# Custom alert handler
+def slack_alert(alert):
+    print(f"Alert: {alert.name} - {alert.message}")
+    # Send to Slack, email, etc.
+
+# Initialize monitor
+monitor = GenerationMonitor(
+    log_dir="monitoring_logs",
+    alert_handlers=[slack_alert],
+    metrics_interval=60  # seconds
+)
+
+# Use in generator
+generator = ConversationGenerator(
+    respondent_prompt="You are an expert...",
+    api_key="your-key",
+    monitor=monitor
+)
+
+# Generate conversations (metrics will be tracked)
+generator.generate(num_dialogs=100)
+
+# Get metrics for last 5 minutes
+success_rate = monitor.get_metrics("success_rate", window=timedelta(minutes=5))
+print(f"Success rate: {success_rate['mean']:.1%}")
+
+# Generate visualizations
+figures = monitor.visualize_metrics(
+    window=timedelta(hours=1),
+    save_dir="monitoring_plots"
+)
+
+# Export metrics data
+monitor.export_metrics(
+    "metrics_export.xlsx",
+    format="excel",
+    window=timedelta(hours=24)
+)
+```
+
+#### Monitored Metrics
+
+- **Generation Time**: Time taken for each operation
+- **Success Rate**: Successful vs failed generations
+- **Error Rate**: Generation errors and types
+- **Token Usage**: Token consumption over time
+- **Conversation Length**: Number of turns per conversation
+
+#### Alert Conditions
+
+- Low success rate (< 80%)
+- High generation time (> 30s average)
+- High error rate (> 20%)
+- Token usage spikes (> 5000 tokens average)
+- Short conversations (< 2 turns average)
+
+#### Export Formats
+
+- JSON: Complete metrics data
+- CSV: Separate files for each metric
+- Excel: Multiple metrics as sheets
+- Parquet: Efficient columnar storage
 
 ---
 

@@ -102,3 +102,20 @@ For each criterion, you need a write a very short comment that explains your rea
 6. **Usefulness** (+/- 0–10): Does the response really provide useful insight?
    - Add points if the content provides useful information.
    - Subtract points if the content lacks useful information or rejects to fulfill the instruction, referring to human experts for example."""
+
+default_rag_respondent_prompt_with_context = """
+{prompt}
+
+Below is relevant information retrieved from our knowledge base that may help answer the question:
+---------
+{context}
+---------
+
+## Important Instructions
+1. Base your response primarily on the retrieved information above
+2. If the retrieved information is insufficient, acknowledge this and provide a general response
+3. Stay focused on the specific question asked
+4. Maintain the same tone and expertise level as specified in your role
+5. Never mention that you are using RAG or retrieved information - simply incorporate the knowledge naturally
+
+Remember to provide accurate, contextually relevant answers while maintaining your expert persona."""

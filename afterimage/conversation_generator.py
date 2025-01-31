@@ -1,9 +1,9 @@
 import random
 import warnings
 from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed
-from typing import Dict, List
+from typing import Dict, List, Optional
 from threading import Lock
-from filelock import FileLock
+import time
 
 import google.generativeai as genai
 from tqdm import tqdm
@@ -29,6 +29,8 @@ from .types import (
     Role,
 )
 from .key_management import SmartKeyPool
+from .storage import DatasetStorage, JSONLStorage
+from .monitoring import GenerationMonitor
 
 
 class ConversationGenerator(BaseGenerator):
@@ -46,6 +48,8 @@ class ConversationGenerator(BaseGenerator):
         safety_settings: List[Dict[str, str]] | None = None,
         auto_improve: bool = True,
         evaluator_model_name: str | None = None,
+        storage: Optional[DatasetStorage] = None,
+        monitor: Optional[GenerationMonitor] = None,
     ):
         """Initialize the generator with API key(s).
 
@@ -57,7 +61,11 @@ class ConversationGenerator(BaseGenerator):
             safety_settings: Safety settings for the model
             auto_improve: Whether to try to improve low-quality generations
             evaluator_model_name: Model name for the evaluator when auto_improve is True
+            storage: Storage implementation for saving conversations
+                    If None, creates JSONLStorage with datetime-based filename
+            monitor: GenerationMonitor instance for tracking generation metrics
         """
+        self.monitor = monitor
         self.key_pool = (
             api_key
             if isinstance(api_key, SmartKeyPool)
@@ -89,23 +97,18 @@ class ConversationGenerator(BaseGenerator):
         )
 
         self.initiators = []
+        self.storage = storage or JSONLStorage()
 
     def create_correspondent_prompt(self, assistant_prompt: str) -> str:
-        """Creates a correspondent prompt based on the assistant prompt.
-
-        Args:
-            assistant_prompt (str): The respondent's prompt used as context.
-
-        Returns:
-            str: The generated correspondent prompt.
-        """
-        prompt = correspondent_instruction_creation_prompt.format(
-            example_correspondent_prompt=example_correspondent_prompt,
-            example_respondent_prompt=example_respondent_prompt,
-            new_assistant_prompt=assistant_prompt,
-        )
-
+        """Creates a correspondent prompt based on the assistant prompt."""
+        start_time = time.time()
         try:
+            prompt = correspondent_instruction_creation_prompt.format(
+                example_correspondent_prompt=example_correspondent_prompt,
+                example_respondent_prompt=example_respondent_prompt,
+                new_assistant_prompt=assistant_prompt,
+            )
+
             api_key = self.key_pool.get_next_key()
             genai.configure(api_key=api_key)
 
@@ -113,13 +116,32 @@ class ConversationGenerator(BaseGenerator):
                 "gemini-1.5-pro-latest", safety_settings=self.safety_settings
             )
             correspondent_prompt = model.generate_content(prompt).text
+
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    metadata={"operation": "correspondent_prompt_creation"},
+                )
+
             return correspondent_prompt
         except Exception as e:
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    error=str(e),
+                    metadata={
+                        "operation": "correspondent_prompt_creation",
+                        "error_type": e.__class__.__name__,
+                    },
+                )
             self.key_pool.report_error(api_key)
-            raise e
+            raise
 
     def create_model(self, prompt: str):
         """Creates and initializes a chat model with the given prompt."""
+        start_time = time.time()
         try:
             api_key = self.key_pool.get_next_key()
             genai.configure(api_key=api_key)
@@ -129,34 +151,92 @@ class ConversationGenerator(BaseGenerator):
                 system_instruction=prompt,
                 safety_settings=self.safety_settings,
             )
-            return model.start_chat(history=[])
+            chat = model.start_chat(history=[])
+
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    metadata={"operation": "model_creation"},
+                )
+
+            return chat
+
         except Exception as e:
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    error=str(e),
+                    metadata={
+                        "operation": "model_creation",
+                        "error_type": e.__class__.__name__,
+                    },
+                )
             self.key_pool.report_error(api_key)
-            raise e
+            raise
 
     def ask(self, correspondent, answer) -> str:
-        """Generates a question from the correspondent based on the given answer.
+        """Generates a question from the correspondent based on the given answer."""
+        start_time = time.time()
+        try:
+            question = correspondent.send_message(answer).text
 
-        Args:
-            correspondent (GenerativeChat): The correspondent chat model.
-            answer (str): The answer provided by the respondent.
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    metadata={
+                        "operation": "question_generation",
+                        "answer_length": len(answer),
+                        "question_length": len(question),
+                    },
+                )
 
-        Returns:
-            str: The generated question.
-        """
-        return correspondent.send_message(answer).text
+            return question
+        except Exception as e:
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    error=str(e),
+                    metadata={
+                        "operation": "question_generation",
+                        "error_type": e.__class__.__name__,
+                    },
+                )
+            raise
 
     def answer(self, respondent, question) -> str:
-        """Generates an answer from the respondent based on the given question.
+        """Generates an answer from the respondent based on the given question."""
+        start_time = time.time()
+        try:
+            answer = respondent.send_message(question).text
 
-        Args:
-            respondent (GenerativeChat): The respondent chat model.
-            question (str): The question provided by the correspondent.
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    metadata={
+                        "operation": "answer_generation",
+                        "question_length": len(question),
+                        "answer_length": len(answer),
+                    },
+                )
 
-        Returns:
-            str: The generated answer.
-        """
-        return respondent.send_message(question).text
+            return answer
+        except Exception as e:
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    error=str(e),
+                    metadata={
+                        "operation": "answer_generation",
+                        "error_type": e.__class__.__name__,
+                    },
+                )
+            raise
 
     def go(
         self,
@@ -166,44 +246,82 @@ class ConversationGenerator(BaseGenerator):
         correspondent_prompt: str | None = None,
         respondent_prompt: str | None = None,
     ) -> List[ConversationEntry]:
-        """Simulates a multi-turn conversation between the correspondent and respondent.
+        """Simulates a multi-turn conversation between the correspondent and respondent."""
+        start_time = time.time()
+        total_tokens = 0
+        try:
+            if correspondent_prompt is None:
+                correspondent_prompt = self.correspondent_prompt
 
-        Args:
-            turns (int, optional): Number of turns in the conversation. Defaults to 5.
-            first_question (str, optional): The first question to start the conversation.
-            check_for_near_duplicates (bool, optional): Whether to check for near-duplicate questions.
-            correspondent_prompt (str, optional): Prompt template for the correspondent.
-            respondent_prompt (str, optional): Prompt template for the respondent.
+            if respondent_prompt is None:
+                respondent_prompt = self.respondent_prompt
 
-        Returns:
-            List[Dict[str, str]]: A list of conversation messages.
-        """
-        if correspondent_prompt is None:
-            correspondent_prompt = self.correspondent_prompt
+            correspondent = self.create_model(correspondent_prompt)
+            respondent = self.create_model(respondent_prompt)
+            conversation = []
 
-        if respondent_prompt is None:
-            respondent_prompt = self.respondent_prompt
+            # Track token usage if available
+            if hasattr(correspondent, "token_count"):
+                total_tokens += correspondent.token_count
+            if hasattr(respondent, "token_count"):
+                total_tokens += respondent.token_count
 
-        correspondent = self.create_model(correspondent_prompt)
-        respondent = self.create_model(respondent_prompt)
-        conversation = []
+            question = first_question or self.ask(
+                correspondent, "Ask your first question."
+            )
+            self.initiators.append(question)
+            conversation.append(ConversationEntry(role=Role.USER, content=question))
 
-        question = first_question or self.ask(correspondent, "Ask your first question.")
-        self.initiators.append(question)
-        conversation.append(ConversationEntry(role=Role.USER, content=question))
+            for turn in range(turns):
+                answer = self.answer(respondent, question)
+                if hasattr(respondent, "token_count"):
+                    total_tokens += respondent.token_count
 
-        for turn in range(turns):
-            answer = self.answer(respondent, question)
-            conversation.append(ConversationEntry(role=Role.ASSISTANT, content=answer))
-            if (turn + 1) == turns:
-                break
+                conversation.append(
+                    ConversationEntry(role=Role.ASSISTANT, content=answer)
+                )
 
-            else:
-                question = self.ask(correspondent, answer)
-                conversation.append(ConversationEntry(role=Role.USER, content=question))
-                self.initiators.append(question)
+                if (turn + 1) == turns:
+                    break
+                else:
+                    question = self.ask(correspondent, answer)
+                    if hasattr(correspondent, "token_count"):
+                        total_tokens += correspondent.token_count
 
-        return conversation
+                    conversation.append(
+                        ConversationEntry(role=Role.USER, content=question)
+                    )
+                    self.initiators.append(question)
+
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    tokens=total_tokens,
+                    turns=len(conversation) // 2,
+                    metadata={
+                        "operation": "conversation_generation",
+                        "planned_turns": turns,
+                        "actual_turns": len(conversation) // 2,
+                    },
+                )
+
+            return conversation
+
+        except Exception as e:
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    error=str(e),
+                    tokens=total_tokens,
+                    metadata={
+                        "operation": "conversation_generation",
+                        "error_type": e.__class__.__name__,
+                        "completed_turns": len(conversation) // 2,
+                    },
+                )
+            raise
 
     def generate_single(
         self,
@@ -314,7 +432,6 @@ class ConversationGenerator(BaseGenerator):
         self,
         num_dialogs: int = 5,
         max_turns: int = 3,
-        save_to: str | None = None,
         seed_instructions: List = [],
         add_examples: bool = False,
         num_random_examples: int = 3,
@@ -329,7 +446,6 @@ class ConversationGenerator(BaseGenerator):
         Args:
             num_dialogs (int, optional): Number of dialogs to generate. Defaults to 5.
             max_turns (int, optional): Maximum number of turns per dialog. Defaults to 3.
-            save_to (str, optional): Path to save the generated dialogs in JSONL format. Defaults to None.
             seed_instructions (List, optional): Seed instructions to guide question generation. Defaults to [].
             add_examples (bool, optional): Whether to use seed instructions as examples. Defaults to False.
             num_random_examples (int, optional): Number of random examples to use. Defaults to 3.
@@ -361,11 +477,9 @@ class ConversationGenerator(BaseGenerator):
         num_generated = 0
         pbar = tqdm(total=n_conversations, desc="Generating...", unit="conversation")
 
-        def save_conversations(conversations):
-            if save_to and conversations:
-                with open(save_to, "a+", encoding="utf8") as f:
-                    for conv in conversations:
-                        f.write(conv.model_dump_json(exclude_none=True) + "\n")
+        def save_conversations(conversations: List[ConversationWithContext]):
+            if conversations:
+                self.storage.save_conversations(conversations)
 
         try:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:

@@ -2,7 +2,7 @@ import json
 import warnings
 from collections import Counter
 from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed
-from typing import Dict, List
+from typing import List
 from .types import (
     ConversationWithContext,
     EvaluatedConversationWithContext,

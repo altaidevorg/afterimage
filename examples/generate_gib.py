@@ -37,7 +37,7 @@ with open("../scraping/data/gib/gib-ozelge.jsonl", encoding="utf8") as f:
 # Set up the instruction generator callback
 instruction_generator_callback = ContextualInstructionGeneratorCallback(
     api_key=api_key,
-    docs=docs,
+    documents=docs,
     num_random_contexts=1,  # Experiment with different values
 )
 
@@ -51,7 +51,6 @@ if __name__ == "__main__":
         max_turns=3,  # Max turns per conversation
         instruction_generator_callback=instruction_generator_callback,
         respondent_prompt_modifier=respondent_prompt_modifier,
-        save_to="./gib-ds.jsonl",  # Save results in JSONL format
     )
 
     print("Conversation dataset generated successfully!")

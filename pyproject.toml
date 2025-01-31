@@ -1,6 +1,6 @@
 [project]
 name = "afterimage"
-version = "0.2.0"
+version = "0.3.0"
 keywords = ["afterimage", "synthetic", "dataset-generation", "synthetic-dataset"]
 authors = [
     { name = "Yusuf Sarıgöz", email = "yusufsarigoz@gmail.com"}
@@ -22,6 +22,14 @@ dependencies = [
     "pydantic>=2.10.4",
     "tqdm>=4.67.1",
     "filelock",
+    "qdrant-client",
+    "sentence-transformers",
+    "matplotlib>=3.10.0",
+    "seaborn>=0.13.2",
+    "langdetect>=1.0.9",
+    "pandas>=2.0.0",
+    "openpyxl>=3.0.0",
+    "pyarrow>=14.0.1",
 ]
 
 [project.urls]
