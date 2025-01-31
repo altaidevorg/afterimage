@@ -125,7 +125,7 @@ key_pool = SmartKeyPool(
 # Initialize generator with the key pool and save path
 generator = ConversationGenerator(
     respondent_prompt="You are an expert assistant...",
-    api_key=key_pool,# Specify save path in constructor
+    api_key=key_pool,
 )
 
 # Generate conversations (keys will be automatically rotated)
