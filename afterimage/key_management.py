@@ -4,6 +4,7 @@ from threading import Lock
 from typing import Dict, List, Optional
 import warnings
 from contextlib import contextmanager
+import google.generativeai as genai
 
 
 @dataclass
