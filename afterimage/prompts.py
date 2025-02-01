@@ -87,19 +87,16 @@ For each criterion, you need a write a very short comment that explains your rea
 1. **Relevance** (+/- 0–10): Does the instruction align with the context? 
    - Add points for precise alignment.
    - Subtract points for irrelevant or off-topic content.
-   2. **Grounding** (+/- 0–10): Is the response grounded on the content of the provided context?
+   2. **Grounding** (+/- 0–15): Is the response grounded on the content of the provided context?
    - Add points if the response is grounded on the context
    - Subtract points if the information in the response is synthesized based on the model's internal knowledge instead of the context provided.
-3. **Correctness** (+/- 0–10): Is the response factually accurate?
+3. **Factuality** (+/- 0–10): Is the response factually accurate?
    - Add points for correct information.
    - Subtract points for inaccuracies or unsupported claims.
-4. **Completeness** (+/- 0–5): Does the response fully address the instruction?
-   - Add points for comprehensive answers.
-   - Subtract points for partial or incomplete responses.
-5. **Coherence** (+/- 0–5): Is the response fluent and logically structured?
-   - Add points for well-organized and readable answers.
-   - Subtract points for unclear or poorly structured responses.
-6. **Usefulness** (+/- 0–10): Does the response really provide useful insight?
+4. **Coherence** (+/- 0–5): Can the instruction and the response form a coherent conversation?
+   - Add points for a natural and easy-to-follow flow.
+   - Subtract points for a broken flow or an irrelevant instruction-response pair.
+5. **Helpfulness** (+/- 0–10): Does the response really provide useful insight?
    - Add points if the content provides useful information.
    - Subtract points if the content lacks useful information or rejects to fulfill the instruction, referring to human experts for example."""
 

@@ -12,35 +12,40 @@ import google.generativeai as genai
 from tqdm import tqdm
 from threading import Lock
 
-from .common import default_model_name, default_safety_settings
+from .providers import LLMProvider
 from .prompts import default_evaluator_prompt
 from .types import EvaluationSchema
 from .key_management import SmartKeyPool
+from .evaluation import (
+    BaseEvaluator,
+    CompositeEvaluator,
+    CoherenceEvaluator,
+    FactualityEvaluator,
+    GroundingEvaluator,
+    HelpfulnessEvaluator,
+    RelevanceEvaluator,
+    EvaluationMetric,
+    EvaluationResult,
+)
 
 
-class SyntheticDatasetEvaluator:
+class SimpleSyntheticDatasetEvaluator:
+    """Evaluates synthetic conversations.
+
+    This is maintained for backward compatibility.
+    Consider using the new evaluation system for new code.
+    """
+
     def __init__(
-        self,
-        api_key: str | SmartKeyPool,
-        model_name: str = None,
-        safety_settings: List = None,
+        self, api_key: str | SmartKeyPool, model_name=None, safety_settings=None
     ):
-        """Initialize the evaluator with model configurations.
-
-        Args:
-            api_key: Either a single API key string or a SmartKeyPool instance
-            model_name: Model name to use
-            safety_settings: Safety settings for the model
-        """
         self.key_pool = (
-            api_key
-            if isinstance(api_key, SmartKeyPool)
-            else SmartKeyPool.from_single_key(api_key)
+            SmartKeyPool.from_single_key(api_key)
+            if isinstance(api_key, str)
+            else api_key
         )
-        self.model_name = model_name if model_name else default_model_name
-        self.safety_settings = (
-            safety_settings if safety_settings else default_safety_settings
-        )
+        self.model_name = model_name
+        self.safety_settings = safety_settings
 
     def evaluate_row(
         self, row: ConversationWithContext
@@ -96,7 +101,7 @@ class SyntheticDatasetEvaluator:
 
                 try:
                     evaluation = json.loads(evaluation_output)
-                    assert len(evaluation) == 7
+                    assert len(evaluation) == 6
                 except Exception as e:
                     print(e)
                     return self.evaluate_row(row)
@@ -194,3 +199,91 @@ class SyntheticDatasetEvaluator:
             print(f"avg. score: {avg_score:.2f}")
             for grade, count in counter.most_common():
                 print(f"    - {grade}: {count}")
+
+
+class HybridSyntheticDatasetEvaluator:
+    """Modern evaluation system with SimpleSyntheticDatasetEvaluator-compatible interface."""
+
+    def __init__(
+        self,
+        llm: LLMProvider,
+        embedding_model: str = "altaidevorg/bge-m3-distill-8l",
+    ):
+        """Initialize evaluator with composite evaluation system.
+
+        Args:
+            llm: LLM provider for factuality and helpfulness checks
+            embedding_model: Model name for embedding-based evaluations
+        """
+        self.evaluator = CompositeEvaluator(
+            [
+                (CoherenceEvaluator(embedding_model), 1.0),
+                (FactualityEvaluator(llm), 1.0),
+                (GroundingEvaluator(embedding_model), 1.0),
+                (HelpfulnessEvaluator(llm), 1.0),
+                (RelevanceEvaluator(embedding_model), 1.0),
+            ]
+        )
+
+    def evaluate_row(
+        self, conversation: ConversationWithContext
+    ) -> EvaluatedConversationWithContext:
+        """Evaluate a single conversation using the composite evaluator.
+
+        Args:
+            conversation: Conversation to evaluate
+
+        Returns:
+            Evaluated conversation with detailed metrics
+        """
+        result = self.evaluator.evaluate(conversation)
+
+        # Convert evaluation results to EvaluationSchema format
+        evaluation = {
+            "coherence": {
+                "score": int(result.scores.get(EvaluationMetric.COHERENCE, 0) * 100),
+                "feedback": result.feedback.get(EvaluationMetric.COHERENCE, ""),
+            },
+            "grounding": {
+                "score": int(result.scores.get(EvaluationMetric.GROUNDING, 0) * 100),
+                "feedback": result.feedback.get(EvaluationMetric.GROUNDING, ""),
+            },
+            "relevance": {
+                "score": int(result.scores.get(EvaluationMetric.RELEVANCE, 0) * 100),
+                "feedback": result.feedback.get(EvaluationMetric.RELEVANCE, ""),
+            },
+            "factuality": {
+                "score": int(result.scores.get(EvaluationMetric.FACTUALITY, 0) * 100),
+                "feedback": result.feedback.get(EvaluationMetric.FACTUALITY, ""),
+            },
+            "helpfulness": {
+                "score": int(result.scores.get(EvaluationMetric.HELPFULNESS, 0) * 100),
+                "feedback": result.feedback.get(EvaluationMetric.HELPFULNESS, ""),
+            },
+            "overall_grade": (
+                GradeSchema.PERFECT
+                if result.overall_score >= 0.8
+                else GradeSchema.GOOD
+                if result.overall_score >= 0.05
+                else GradeSchema.NEEDS_IMPROVEMENT
+            ),
+        }
+
+        return EvaluatedConversationWithContext(
+            evaluation=evaluation,
+            final_score=result.overall_score,
+            **conversation.dict(),
+        )
+
+    def evaluate_dataset(
+        self, conversations: List[ConversationWithContext]
+    ) -> List[EvaluatedConversationWithContext]:
+        """Evaluate multiple conversations.
+
+        Args:
+            conversations: List of conversations to evaluate
+
+        Returns:
+            List of evaluated conversations
+        """
+        return [self.evaluate_row(conv) for conv in conversations]

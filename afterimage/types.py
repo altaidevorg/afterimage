@@ -12,17 +12,16 @@ class GradeSchema(str, Enum):
 
 
 class EvaluationEntrySchema(TypedDict):
-    comment: str
+    feedback: str
     score: int
 
 
 class EvaluationSchema(TypedDict):
-    relevance: EvaluationEntrySchema
-    grounding: EvaluationEntrySchema
-    correctness: EvaluationEntrySchema
-    completeness: EvaluationEntrySchema
     coherence: EvaluationEntrySchema
-    usefulness: EvaluationEntrySchema
+    factuality: EvaluationEntrySchema
+    grounding: EvaluationEntrySchema
+    helpfulness: EvaluationEntrySchema
+    relevance: EvaluationEntrySchema
     overall_grade: GradeSchema
 
 
@@ -46,7 +45,7 @@ class ConversationWithContext(Conversation):
 
 class EvaluatedConversationWithContext(ConversationWithContext):
     evaluation: Optional[EvaluationSchema]
-    final_score: Optional[float]
+    final_score: Optional[float] = 0.0
 
 
 if __name__ == "__main__":

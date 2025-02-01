@@ -1,11 +1,9 @@
 import random
 import warnings
 from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed
-from typing import Dict, List, Optional
-from threading import Lock
+from typing import Dict, List, Literal, Optional
 import time
 
-import google.generativeai as genai
 from tqdm import tqdm
 
 from .base import (
@@ -14,7 +12,7 @@ from .base import (
     BaseRespondentPromptModifierCallback,
 )
 from .common import default_model_name, default_safety_settings
-from .evaluator import SyntheticDatasetEvaluator
+from .evaluator import SimpleSyntheticDatasetEvaluator, HybridSyntheticDatasetEvaluator
 from .prompts import (
     correspondent_instruction_creation_prompt,
     example_correspondent_prompt,
@@ -29,8 +27,9 @@ from .types import (
     Role,
 )
 from .key_management import SmartKeyPool
-from .storage import DatasetStorage, JSONLStorage
+from .providers import ChatSession, LLMFactory
 from .monitoring import GenerationMonitor
+from .storage import DatasetStorage, JSONLStorage
 
 
 class ConversationGenerator(BaseGenerator):
@@ -48,6 +47,7 @@ class ConversationGenerator(BaseGenerator):
         safety_settings: List[Dict[str, str]] | None = None,
         auto_improve: bool = True,
         evaluator_model_name: str | None = None,
+        evaluator_method: Literal["simple", "hybrid"] = "simple",
         storage: Optional[DatasetStorage] = None,
         monitor: Optional[GenerationMonitor] = None,
     ):
@@ -61,6 +61,7 @@ class ConversationGenerator(BaseGenerator):
             safety_settings: Safety settings for the model
             auto_improve: Whether to try to improve low-quality generations
             evaluator_model_name: Model name for the evaluator when auto_improve is True
+            evaluator_method: method to be used for evaluation.
             storage: Storage implementation for saving conversations
                     If None, creates JSONLStorage with datetime-based filename
             monitor: GenerationMonitor instance for tracking generation metrics
@@ -84,23 +85,30 @@ class ConversationGenerator(BaseGenerator):
             else self.create_correspondent_prompt(self.respondent_prompt)
         )
 
-        self.evaluator = (
-            SyntheticDatasetEvaluator(
-                api_key=self.key_pool,
-                model_name=evaluator_model_name
+        self.evaluator = None
+        if auto_improve:
+            evaluator_model_name = (
+                evaluator_model_name
                 if evaluator_model_name is not None
-                else self.model_name,
-                safety_settings=self.safety_settings,
+                else self.model_name
             )
-            if auto_improve
-            else None
-        )
+            if evaluator_method == "simple":
+                self.evaluator = SimpleSyntheticDatasetEvaluator(
+                    api_key=self.key_pool,
+                    model_name=evaluator_model_name,
+                    safety_settings=self.safety_settings,
+                )
+            elif evaluator_method == "hybrid":
+                evaluator_llm = LLMFactory.create(
+                    "gemini", "gemini-1.5-flash-latest", self.key_pool
+                )
+                self.evaluator = HybridSyntheticDatasetEvaluator(evaluator_llm)
 
         self.initiators = []
         self.storage = storage or JSONLStorage()
 
     def create_correspondent_prompt(self, assistant_prompt: str) -> str:
-        """Creates a correspondent prompt based on the assistant prompt."""
+        """Create a correspondent prompt based on the assistant prompt."""
         start_time = time.time()
         try:
             prompt = correspondent_instruction_creation_prompt.format(
@@ -108,50 +116,52 @@ class ConversationGenerator(BaseGenerator):
                 example_respondent_prompt=example_respondent_prompt,
                 new_assistant_prompt=assistant_prompt,
             )
-
             api_key = self.key_pool.get_next_key()
-            genai.configure(api_key=api_key)
-
-            model = genai.GenerativeModel(
-                "gemini-1.5-pro-latest", safety_settings=self.safety_settings
+            model = LLMFactory.create(
+                "gemini", "gemini-1.5-pro-latest", safety_settings=self.safety_settings
             )
-            correspondent_prompt = model.generate_content(prompt).text
+
+            response = model.generate_content(prompt=prompt, temperature=0.7)
 
             if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=True,
-                    metadata={"operation": "correspondent_prompt_creation"},
-                )
-
-            return correspondent_prompt
-        except Exception as e:
-            if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=False,
-                    error=str(e),
+                self.monitor.record_metric(
+                    "prompt_generation_time",
+                    time.time() - start_time,
                     metadata={
-                        "operation": "correspondent_prompt_creation",
-                        "error_type": e.__class__.__name__,
+                        "prompt_type": "correspondent",
+                        "success": True,
                     },
                 )
-            self.key_pool.report_error(api_key)
+
+            return response.text
+        except Exception as e:
+            if self.monitor:
+                self.monitor.record_metric(
+                    "prompt_generation_time",
+                    time.time() - start_time,
+                    metadata={
+                        "prompt_type": "correspondent",
+                        "success": False,
+                        "error": str(e),
+                    },
+                )
+            model.key_pool.report_error(api_key)
             raise
 
-    def create_model(self, prompt: str):
+    def create_model(self, prompt: str) -> ChatSession:
         """Creates and initializes a chat model with the given prompt."""
         start_time = time.time()
         try:
             api_key = self.key_pool.get_next_key()
-            genai.configure(api_key=api_key)
-
-            model = genai.GenerativeModel(
+            model = LLMFactory.create(
+                "gemini",
                 self.model_name,
+                api_key=api_key,
                 system_instruction=prompt,
                 safety_settings=self.safety_settings,
             )
-            chat = model.start_chat(history=[])
+
+            chat = model.start_chat()
 
             if self.monitor:
                 self.monitor.track_generation(
@@ -173,10 +183,10 @@ class ConversationGenerator(BaseGenerator):
                         "error_type": e.__class__.__name__,
                     },
                 )
-            self.key_pool.report_error(api_key)
+            model.key_pool.report_error(api_key)
             raise
 
-    def ask(self, correspondent, answer) -> str:
+    def ask(self, correspondent: ChatSession, answer: str | ConversationEntry) -> str:
         """Generates a question from the correspondent based on the given answer."""
         start_time = time.time()
         try:
@@ -207,7 +217,7 @@ class ConversationGenerator(BaseGenerator):
                 )
             raise
 
-    def answer(self, respondent, question) -> str:
+    def answer(self, respondent: ChatSession, question: str | ConversationEntry) -> str:
         """Generates an answer from the respondent based on the given question."""
         start_time = time.time()
         try:
