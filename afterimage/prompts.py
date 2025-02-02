@@ -46,7 +46,7 @@ Now, write the corresponding user system prompt for the following assistant syst
 
 default_instruction_generation_prompt = """You are a globally renowned expert in crafting insightful and engaging questions for diverse topics and contexts.
 You will be asked to roleplay to ask questions in a specific domain based on the context provided.
-Your task is to generate a set of 10 questions or instructions based on that context in the same language as the context.
+Your task is to generate a set of 5 questions or instructions based on that context in the same language as the context.
 These questions should be relevant to the topic discussed in the context and phrased in a conversational tone, as if a curious individual is seeking clarification, guidance, or further insights from an expert in that field.
 Be creative and thoughtful to ensure the questions align with the nuances and details of the context, making them meaningful and easy to understand for anyone exploring the topic.
 Under no circumstances should you refer to or mention about the context provided directly.
@@ -76,29 +76,31 @@ generic_prefix = "You are an expert assistant with a deep understanding of vario
 default_evaluator_prompt = """You are an expert evaluator for synthetically generated datasets. Below is an instruction, context, and a response. The instruction is expected to be related to the context, and the response is expected to be a comprehensive answer to the instruction based on the context. Your task is to assess the quality of the instructions and response using a hybrid scoring method.
 
 ## Scoring System
-- Start with a base score of 50/100.
-- Add points for strengths (up to +50).
-- Subtract points for flaws (up to -50).
+- Start with a base score of 0.5/1.0.
+- Add points for strengths (up to +0.5).
+- Subtract points for flaws (up to -0.5).
 - Finally, Provide a overall grade based on the scores for all the criteria.
 
 ## Evaluation Criteria
-For each criterion, you need a write a very short comment that explains your reasoning and give a score based on that reasoning.
+For each criterion, you need a write a very short feedback that explains your reasoning and give a score based on that reasoning.
 
-1. **Relevance** (+/- 0–10): Does the instruction align with the context? 
+1. **Relevance** (+/- 0–0.5): Does the instruction align with the context? 
    - Add points for precise alignment.
    - Subtract points for irrelevant or off-topic content.
-   2. **Grounding** (+/- 0–15): Is the response grounded on the content of the provided context?
+   2. **Grounding** (+/- 0–0.5): Is the response grounded on the content of the provided context?
    - Add points if the response is grounded on the context
    - Subtract points if the information in the response is synthesized based on the model's internal knowledge instead of the context provided.
-3. **Factuality** (+/- 0–10): Is the response factually accurate?
+3. **Factuality** (+/- 0–0.5): Is the response factually accurate?
    - Add points for correct information.
    - Subtract points for inaccuracies or unsupported claims.
-4. **Coherence** (+/- 0–5): Can the instruction and the response form a coherent conversation?
+4. **Coherence** (+/- 0–0.5): Can the instruction and the response form a coherent conversation?
    - Add points for a natural and easy-to-follow flow.
    - Subtract points for a broken flow or an irrelevant instruction-response pair.
-5. **Helpfulness** (+/- 0–10): Does the response really provide useful insight?
+5. **Helpfulness** (+/- 0–0.5): Does the response really provide useful insight?
    - Add points if the content provides useful information.
-   - Subtract points if the content lacks useful information or rejects to fulfill the instruction, referring to human experts for example."""
+   - Subtract points if the content lacks useful information or rejects to fulfill the instruction, referring to human experts for example.
+   
+For each criterion, give a score between -0.5 and 0.5. Negative scors will be subtracted from the base score of 0.5, and positive scores will be added to 0.5. Remember that the score value out of 0.5 indicates the strength of your opinion whether negative or positive."""
 
 default_rag_respondent_prompt_with_context = """
 {prompt}

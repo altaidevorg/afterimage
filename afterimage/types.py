@@ -13,7 +13,7 @@ class GradeSchema(str, Enum):
 
 class EvaluationEntrySchema(TypedDict):
     feedback: str
-    score: int
+    score: float
 
 
 class EvaluationSchema(TypedDict):
@@ -46,10 +46,3 @@ class ConversationWithContext(Conversation):
 class EvaluatedConversationWithContext(ConversationWithContext):
     evaluation: Optional[EvaluationSchema]
     final_score: Optional[float] = 0.0
-
-
-if __name__ == "__main__":
-    c = ConversationWithContext(
-        context="abc", conversations=[ConversationEntry(role="user", content="def")]
-    )
-    print(c)

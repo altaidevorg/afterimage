@@ -1,9 +1,12 @@
 from sentence_transformers import SentenceTransformer
 import json
-from typing import List, TypedDict
+from typing import List, TypedDict, Optional
 from .base import BaseEvaluator, EvaluationMetric, EvaluationResult
-from ..types import ConversationWithContext, Role
+from ..monitoring import GenerationMonitor
 from ..providers import LLMProvider
+from ..types import ConversationWithContext, Role
+import time
+import numpy as np
 
 
 class EvaluationTypeHint(TypedDict):
@@ -15,45 +18,86 @@ class EvaluationTypeHint(TypedDict):
 class CoherenceEvaluator(BaseEvaluator):
     """Evaluates question-answer coherence."""
 
-    def __init__(self, embedding_model: str = "altaidevorg/bge-m3-distill-8l"):
+    def __init__(
+        self,
+        embedding_model: str = "altaidevorg/bge-m3-distill-8l",
+        monitor: Optional[GenerationMonitor] = None,
+    ):
         self.model = SentenceTransformer(embedding_model)
+        self.monitor = monitor
 
     def evaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
-        # Extract question-answer pairs
-        pairs = []
-        for i in range(0, len(conversation.conversations), 2):
-            if i + 1 < len(conversation.conversations):
-                pairs.append(
-                    (
-                        conversation.conversations[i].content,
-                        conversation.conversations[i + 1].content,
+        start_time = time.time()
+        try:
+            # Extract question-answer pairs
+            pairs = []
+            for i in range(0, len(conversation.conversations), 2):
+                if i + 1 < len(conversation.conversations):
+                    pairs.append(
+                        (
+                            conversation.conversations[i].content,
+                            conversation.conversations[i + 1].content,
+                        )
                     )
+
+            if not pairs:
+                result = self._create_result(
+                    0.0, "No question-answer pairs found", needs_regeneration=True
                 )
 
-        if not pairs:
-            return self._create_result(
-                0.0, "No question-answer pairs found", needs_regeneration=True
+                if self.monitor:
+                    self.monitor.track_evaluation(
+                        duration=time.time() - start_time,
+                        success=True,
+                        evaluator_type=self.__class__.__name__,
+                        scores=result.scores,
+                    )
+
+                return result
+
+            # Calculate coherence scores
+            coherence_scores = []
+            for question, answer in pairs:
+                embeddings = self.model.encode([question, answer])
+                score = float(
+                    self.model.similarity(embeddings[0], embeddings[1]).squeeze()
+                )
+                coherence_scores.append(score)
+
+            avg_coherence = sum(coherence_scores) / len(coherence_scores)
+            needs_regen = avg_coherence < 0.7
+
+            feedback = (
+                "Good question-answer coherence"
+                if avg_coherence >= 0.7
+                else "Low coherence between questions and answers"
             )
 
-        # Calculate coherence between questions and answers
-        coherence_scores = []
-        for question, answer in pairs:
-            embeddings = self.model.encode([question, answer])
-            score = float(self.model.similarity(embeddings[0], embeddings[1]).squeeze())
-            coherence_scores.append(score)
+            result = self._create_result(
+                avg_coherence, feedback, needs_regeneration=needs_regen
+            )
 
-        avg_coherence = sum(coherence_scores) / len(coherence_scores)
-        needs_regen = avg_coherence < 0.7
+            if self.monitor:
+                self.monitor.track_evaluation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    evaluator_type=self.__class__.__name__,
+                    scores=result.scores,
+                )
 
-        feedback = (
-            "Good question-answer coherence"
-            if avg_coherence >= 0.7
-            else "Low coherence between questions and answers"
-        )
+            return result
 
-        return self._create_result(
-            avg_coherence, feedback, needs_regeneration=needs_regen
-        )
+        except Exception as e:
+            if self.monitor:
+                self.monitor.track_evaluation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    evaluator_type=self.__class__.__name__,
+                    scores={},
+                    error=str(e),
+                    error_type=e.__class__.__name__,
+                )
+            raise
 
     def _create_result(
         self, score: float, feedback: str, needs_regeneration: bool
@@ -69,47 +113,95 @@ class CoherenceEvaluator(BaseEvaluator):
 class GroundingEvaluator(BaseEvaluator):
     """Evaluates if answers are grounded in the provided context."""
 
-    def __init__(self, embedding_model: str = "altaidevorg/bge-m3-distill-8l"):
+    def __init__(
+        self,
+        embedding_model: str = "altaidevorg/bge-m3-distill-8l",
+        monitor: Optional[GenerationMonitor] = None,
+    ):
         self.model = SentenceTransformer(embedding_model)
+        self.monitor = monitor
 
     def evaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
-        if not conversation.context:
-            return self._create_result(
-                1.0, "No context provided", needs_regeneration=False
+        start_time = time.time()
+        try:
+            if not conversation.context:
+                result = self._create_result(
+                    1.0, "No context provided", needs_regeneration=False
+                )
+
+                if self.monitor:
+                    self.monitor.track_evaluation(
+                        duration=time.time() - start_time,
+                        success=True,
+                        evaluator_type=self.__class__.__name__,
+                        scores=result.scores,
+                    )
+                return result
+
+            # Get context embedding
+            context_embedding = self.model.encode(conversation.context)
+
+            # Only evaluate assistant responses
+            answers = [
+                turn.content
+                for turn in conversation.conversations
+                if turn.role == Role.ASSISTANT
+            ]
+
+            if not answers:
+                result = self._create_result(
+                    0.0, "No answers found", needs_regeneration=True
+                )
+
+                if self.monitor:
+                    self.monitor.track_evaluation(
+                        duration=time.time() - start_time,
+                        success=True,
+                        evaluator_type=self.__class__.__name__,
+                        scores=result.scores,
+                    )
+                return result
+
+            # Calculate grounding scores
+            answer_embeddings = self.model.encode(answers)
+            grounding_scores = [
+                float(np.dot(context_embedding, ans_emb))
+                for ans_emb in answer_embeddings
+            ]
+
+            avg_grounding = sum(grounding_scores) / len(grounding_scores)
+            needs_regen = avg_grounding < 0.6
+
+            feedback = (
+                "Answers are well-grounded in context"
+                if avg_grounding >= 0.6
+                else "Answers show weak grounding in context"
             )
 
-        # Get context embedding
-        context_embedding = self.model.encode(conversation.context)
+            result = self._create_result(
+                avg_grounding, feedback, needs_regeneration=needs_regen
+            )
 
-        # Only evaluate assistant responses
-        answers = [
-            turn.content
-            for turn in conversation.conversations
-            if turn.role == Role.ASSISTANT
-        ]
+            if self.monitor:
+                self.monitor.track_evaluation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    evaluator_type=self.__class__.__name__,
+                    scores=result.scores,
+                )
+            return result
 
-        if not answers:
-            return self._create_result(0.0, "No answers found", needs_regeneration=True)
-
-        # Calculate grounding scores
-        answer_embeddings = self.model.encode(answers)
-        grounding_scores = [
-            float(self.model.similarity(context_embedding, ans_emb).squeeze())
-            for ans_emb in answer_embeddings
-        ]
-
-        avg_grounding = sum(grounding_scores) / len(grounding_scores)
-        needs_regen = avg_grounding < 0.6
-
-        feedback = (
-            "Answers are well-grounded in context"
-            if avg_grounding >= 0.6
-            else "Answers show weak grounding in context"
-        )
-
-        return self._create_result(
-            avg_grounding, feedback, needs_regeneration=needs_regen
-        )
+        except Exception as e:
+            if self.monitor:
+                self.monitor.track_evaluation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    evaluator_type=self.__class__.__name__,
+                    scores={},
+                    error=str(e),
+                    error_type=e.__class__.__name__,
+                )
+            raise
 
     def _create_result(
         self, score: float, feedback: str, needs_regeneration: bool
@@ -123,49 +215,96 @@ class GroundingEvaluator(BaseEvaluator):
 
 
 class RelevanceEvaluator(BaseEvaluator):
-    """Evaluates if questions are relevant to the context."""
+    """Evaluates if questions are relevant to the provided context."""
 
-    def __init__(self, embedding_model: str = "altaidevorg/bge-m3-distill-8l"):
+    def __init__(
+        self,
+        embedding_model: str = "altaidevorg/bge-m3-distill-8l",
+        monitor: Optional[GenerationMonitor] = None,
+    ):
         self.model = SentenceTransformer(embedding_model)
+        self.monitor = monitor
 
     def evaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
-        if not conversation.context:
-            return self._create_result(
-                1.0, "No context provided", needs_regeneration=False
+        start_time = time.time()
+        try:
+            if not conversation.context:
+                result = self._create_result(
+                    1.0, "No context provided", needs_regeneration=False
+                )
+
+                if self.monitor:
+                    self.monitor.track_evaluation(
+                        duration=time.time() - start_time,
+                        success=True,
+                        evaluator_type=self.__class__.__name__,
+                        scores=result.scores,
+                    )
+                return result
+
+            # Get context embedding
+            context_embedding = self.model.encode(conversation.context)
+
+            # Only evaluate user questions
+            questions = [
+                turn.content
+                for turn in conversation.conversations
+                if turn.role == Role.USER
+            ]
+
+            if not questions:
+                result = self._create_result(
+                    0.0, "No questions found", needs_regeneration=True
+                )
+
+                if self.monitor:
+                    self.monitor.track_evaluation(
+                        duration=time.time() - start_time,
+                        success=True,
+                        evaluator_type=self.__class__.__name__,
+                        scores=result.scores,
+                    )
+                return result
+
+            # Calculate relevance scores
+            question_embeddings = self.model.encode(questions)
+            relevance_scores = [
+                float(np.dot(context_embedding, q_emb)) for q_emb in question_embeddings
+            ]
+
+            avg_relevance = sum(relevance_scores) / len(relevance_scores)
+            needs_regen = avg_relevance < 0.6
+
+            feedback = (
+                "Questions are relevant to context"
+                if avg_relevance >= 0.6
+                else "Questions show weak relevance to context"
             )
 
-        context_embedding = self.model.encode(conversation.context)
-
-        # Only evaluate user questions
-        questions = [
-            turn.content
-            for turn in conversation.conversations
-            if turn.role == Role.USER
-        ]
-
-        if not questions:
-            return self._create_result(
-                0.0, "No questions found", needs_regeneration=True
+            result = self._create_result(
+                avg_relevance, feedback, needs_regeneration=needs_regen
             )
 
-        question_embeddings = self.model.encode(questions)
-        relevance_scores = [
-            float(self.model.similarity(context_embedding, q_emb).squeeze())
-            for q_emb in question_embeddings
-        ]
+            if self.monitor:
+                self.monitor.track_evaluation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    evaluator_type=self.__class__.__name__,
+                    scores=result.scores,
+                )
+            return result
 
-        avg_relevance = sum(relevance_scores) / len(relevance_scores)
-        needs_regen = avg_relevance < 0.6
-
-        feedback = (
-            "Questions are relevant to context"
-            if avg_relevance >= 0.6
-            else "Questions show low relevance to context"
-        )
-
-        return self._create_result(
-            avg_relevance, feedback, needs_regeneration=needs_regen
-        )
+        except Exception as e:
+            if self.monitor:
+                self.monitor.track_evaluation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    evaluator_type=self.__class__.__name__,
+                    scores={},
+                    error=str(e),
+                    error_type=e.__class__.__name__,
+                )
+            raise
 
     def _create_result(
         self, score: float, feedback: str, needs_regeneration: bool
@@ -181,9 +320,15 @@ class RelevanceEvaluator(BaseEvaluator):
 class LLMBaseEvaluator(BaseEvaluator):
     """Base class for LLM-based evaluators."""
 
-    def __init__(self, llm: LLMProvider, max_retries: int = 3):
+    def __init__(
+        self,
+        llm: LLMProvider,
+        max_retries: int = 3,
+        monitor: Optional[GenerationMonitor] = None,
+    ):
         self.llm = llm
         self.max_retries = max_retries
+        self.monitor = monitor
 
     def _get_valid_json_response(self, prompt: str) -> dict:
         """Get valid JSON response with retry mechanism."""
@@ -222,6 +367,33 @@ class LLMBaseEvaluator(BaseEvaluator):
         raise ValueError(
             f"Failed to get valid JSON response after {self.max_retries} attempts. Last error: {last_error}"
         )
+
+    def evaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
+        start_time = time.time()
+        try:
+            result = self._evaluate_impl(conversation)
+
+            if self.monitor:
+                self.monitor.track_evaluation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    evaluator_type=self.__class__.__name__,
+                    scores=result.scores,
+                )
+
+            return result
+
+        except Exception as e:
+            if self.monitor:
+                self.monitor.track_evaluation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    evaluator_type=self.__class__.__name__,
+                    scores={},
+                    error=str(e),
+                    error_type=e.__class__.__name__,
+                )
+            raise
 
 
 class FactualityEvaluator(LLMBaseEvaluator):

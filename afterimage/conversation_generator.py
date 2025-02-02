@@ -1,6 +1,10 @@
 import random
 import warnings
-from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    CancelledError,
+    ThreadPoolExecutor,
+    as_completed,
+)
 from typing import Dict, List, Literal, Optional
 import time
 
@@ -97,12 +101,15 @@ class ConversationGenerator(BaseGenerator):
                     api_key=self.key_pool,
                     model_name=evaluator_model_name,
                     safety_settings=self.safety_settings,
+                    monitor=self.monitor,
                 )
             elif evaluator_method == "hybrid":
                 evaluator_llm = LLMFactory.create(
                     "gemini", "gemini-1.5-flash-latest", self.key_pool
                 )
-                self.evaluator = HybridSyntheticDatasetEvaluator(evaluator_llm)
+                self5.evaluator = HybridSyntheticDatasetEvaluator(
+                    llm=evaluator_llm, monitor=self.monitor
+                )
 
         self.initiators = []
         self.storage = storage or JSONLStorage()
@@ -145,7 +152,7 @@ class ConversationGenerator(BaseGenerator):
                         "error": str(e),
                     },
                 )
-            model.key_pool.report_error(api_key)
+            self.key_pool.report_error(api_key)
             raise
 
     def create_model(self, prompt: str) -> ChatSession:
@@ -164,26 +171,26 @@ class ConversationGenerator(BaseGenerator):
             chat = model.start_chat()
 
             if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=True,
-                    metadata={"operation": "model_creation"},
+                self.monitor.record_metric(
+                    "model_creation_time",
+                    time.time() - start_time,
+                    metadata={"success": True},
                 )
 
             return chat
 
         except Exception as e:
             if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=False,
-                    error=str(e),
+                self.monitor.record_metric(
+                    "model_creation_time",
+                    time.time() - start_time,
                     metadata={
-                        "operation": "model_creation",
+                        "success": False,
+                        "error": str(e),
                         "error_type": e.__class__.__name__,
                     },
                 )
-            model.key_pool.report_error(api_key)
+            self.key_pool.report_error(api_key)
             raise
 
     def ask(self, correspondent: ChatSession, answer: str | ConversationEntry) -> str:
@@ -259,6 +266,8 @@ class ConversationGenerator(BaseGenerator):
         """Simulates a multi-turn conversation between the correspondent and respondent."""
         start_time = time.time()
         total_tokens = 0
+        conversation = []
+
         try:
             if correspondent_prompt is None:
                 correspondent_prompt = self.correspondent_prompt
@@ -268,7 +277,6 @@ class ConversationGenerator(BaseGenerator):
 
             correspondent = self.create_model(correspondent_prompt)
             respondent = self.create_model(respondent_prompt)
-            conversation = []
 
             # Track token usage if available
             if hasattr(correspondent, "token_count"):

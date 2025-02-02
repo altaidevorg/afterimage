@@ -17,6 +17,89 @@
 
 **Note**: This is the initial version, but I will add more generators and evaluators soon.
 
+### Evaluation
+
+Afterimage provides two evaluation approaches:
+
+1. **Simple LLM-based Evaluation** (SimpleSyntheticDatasetEvaluator)
+   - Uses LLM as a judge to evaluate conversations
+   - Single-model evaluation approach
+   - Suitable for basic quality checks
+   - Legacy support for older code
+
+2. **Hybrid Evaluation System** (HybridSyntheticDatasetEvaluator)
+   - Combines embedding models and LLMs for comprehensive evaluation
+   - Multiple evaluation metrics:
+     - Coherence: Measures question-answer semantic alignment
+     - Grounding: Ensures responses are based on provided context
+     - Relevance: Checks if questions are based on the provided context
+     - Factuality: Verifies factual accuracy using LLM
+     - Helpfulness: Assesses response usefulness using LLM
+   - Extensible architecture for custom evaluators
+   - Weighted combination of metrics
+   - More robust and detailed evaluation
+
+### Monitoring
+
+Afterimage includes a comprehensive monitoring system for tracking generation metrics:
+
+1. **Metrics Tracking**
+   - Generation time
+   - Success/error rates
+   - Token usage
+   - Conversation length
+   - Custom metrics support
+
+2. **Visualization**
+   - Real-time metric plots
+   - Success/error rate trends
+   - Generation time distribution
+   - Token usage patterns
+
+3. **Handlers**
+   - File-based metric logging
+   - Custom metric handlers
+   - Alert system for anomalies
+   - Extensible handler architecture
+
+4. **Export Options**
+   - JSON/JSONL format
+   - CSV/Excel export
+   - Parquet support
+   - Visualization export
+
+Example usage with monitoring:
+
+```python
+from afterimage import ConversationGenerator, GenerationMonitor
+
+# Initialize monitor
+monitor = GenerationMonitor(log_dir="monitoring_logs")
+
+# Create generator with monitoring
+generator = ConversationGenerator(
+    respondent_prompt="Your prompt here",
+    api_key="your-api-key",
+    monitor=monitor
+)
+
+# Generate conversations
+generator.generate_dataset(num_dialogs=3)
+
+# Get metrics
+success_rate = monitor.get_metrics("success_rate")
+print(f"Success rate: {success_rate['mean']:.2%}")
+
+# Visualize metrics
+figures = monitor.visualize_metrics(save_dir="plots")
+
+# Export metrics
+monitor.export_metrics("metrics.json", format="json")
+
+# Graceful shutdown
+monitor.shutdown()
+```
+
 ---
 
 ## Installation

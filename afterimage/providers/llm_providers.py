@@ -48,8 +48,11 @@ class GeminiChatSession(ChatSession):
             content, generation_config={"temperature": temperature, **kwargs}
         )
 
-        tokens_used = response.candidates[0].token_count
-        self.token_count += tokens_used
+        tokens_used = (
+            response.candidates[0].token_count
+            or response.usage_metadata.total_token_count
+        )
+        self.token_count = tokens_used
         return LLMResponse(
             text=response.text,
             finish_reason=response.candidates[0].finish_reason,

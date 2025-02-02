@@ -2,7 +2,7 @@ import json
 import warnings
 from collections import Counter
 from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed
-from typing import List
+from typing import List, Optional
 from .types import (
     ConversationWithContext,
     EvaluatedConversationWithContext,
@@ -11,6 +11,7 @@ from .types import (
 import google.generativeai as genai
 from tqdm import tqdm
 from threading import Lock
+import time
 
 from .providers import LLMProvider
 from .prompts import default_evaluator_prompt
@@ -27,6 +28,7 @@ from .evaluation import (
     EvaluationMetric,
     EvaluationResult,
 )
+from .monitoring import GenerationMonitor
 
 
 class SimpleSyntheticDatasetEvaluator:
@@ -37,7 +39,12 @@ class SimpleSyntheticDatasetEvaluator:
     """
 
     def __init__(
-        self, api_key: str | SmartKeyPool, model_name=None, safety_settings=None
+        self,
+        api_key: str | SmartKeyPool,
+        model_name=None,
+        safety_settings=None,
+        max_retries: int = 3,
+        monitor: Optional[GenerationMonitor] = None,
     ):
         self.key_pool = (
             SmartKeyPool.from_single_key(api_key)
@@ -46,11 +53,14 @@ class SimpleSyntheticDatasetEvaluator:
         )
         self.model_name = model_name
         self.safety_settings = safety_settings
+        self.max_retries = max_retries
+        self.monitor = monitor
 
     def evaluate_row(
         self, row: ConversationWithContext
     ) -> EvaluatedConversationWithContext:
         """Evaluate a single row using the LLM."""
+        start_time = time.time()
         try:
             api_key = self.key_pool.get_next_key()
             genai.configure(api_key=api_key)
@@ -106,9 +116,14 @@ class SimpleSyntheticDatasetEvaluator:
                     print(e)
                     return self.evaluate_row(row)
                 else:
-                    final_score = 50 + sum(
-                        [v["score"] for v in evaluation.values() if isinstance(v, dict)]
-                    )
+                    final_score = 0.0
+                    for v in evaluation.values():
+                        if isinstance(v, dict):
+                            v["score"] += 0.5
+                            final_score += v["score"]
+
+                    final_score = final_score / 5
+
                     evaluations.append(evaluation)
                     final_scores.append(final_score)
 
@@ -132,12 +147,36 @@ class SimpleSyntheticDatasetEvaluator:
             else:
                 overall_evaluation["overall_grade"] = GradeSchema.PERFECT
 
+            if self.monitor:
+                self.monitor.track_evaluation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    evaluator_type=self.__class__.__name__,
+                    scores={
+                        "overall": avg_final_score,
+                        **{
+                            k: v
+                            for k, v in overall_evaluation.items()
+                            if k != "overall_grade"
+                        },
+                    },
+                )
+
             return EvaluatedConversationWithContext(
                 evaluation=overall_evaluation, final_score=avg_final_score, **row.dict()
             )
         except Exception as e:
             self.key_pool.report_error(api_key)
-            raise e
+            if self.monitor:
+                self.monitor.track_evaluation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    evaluator_type=self.__class__.__name__,
+                    scores={},
+                    error=str(e),
+                    error_type=e.__class__.__name__,
+                )
+            raise
 
     def evaluate_dataset(
         self,
@@ -208,20 +247,23 @@ class HybridSyntheticDatasetEvaluator:
         self,
         llm: LLMProvider,
         embedding_model: str = "altaidevorg/bge-m3-distill-8l",
+        monitor: Optional[GenerationMonitor] = None,
     ):
         """Initialize evaluator with composite evaluation system.
 
         Args:
             llm: LLM provider for factuality and helpfulness checks
             embedding_model: Model name for embedding-based evaluations
+            monitor: Monitoring instance
         """
+        self.monitor = monitor
         self.evaluator = CompositeEvaluator(
             [
-                (CoherenceEvaluator(embedding_model), 1.0),
-                (FactualityEvaluator(llm), 1.0),
-                (GroundingEvaluator(embedding_model), 1.0),
-                (HelpfulnessEvaluator(llm), 1.0),
-                (RelevanceEvaluator(embedding_model), 1.0),
+                (CoherenceEvaluator(embedding_model, monitor=monitor), 1.0),
+                (FactualityEvaluator(llm, monitor=monitor), 1.0),
+                (GroundingEvaluator(embedding_model, monitor=monitor), 1.0),
+                (HelpfulnessEvaluator(llm, monitor=monitor), 1.0),
+                (RelevanceEvaluator(embedding_model, monitor=monitor), 1.0),
             ]
         )
 
@@ -236,44 +278,67 @@ class HybridSyntheticDatasetEvaluator:
         Returns:
             Evaluated conversation with detailed metrics
         """
-        result = self.evaluator.evaluate(conversation)
+        start_time = time.time()
+        try:
+            result = self.evaluator.evaluate(conversation)
+            # Convert evaluation results to EvaluationSchema format
+            evaluation = {
+                "coherence": {
+                    "score": result.scores.get(EvaluationMetric.COHERENCE, 0),
+                    "feedback": result.feedback.get(EvaluationMetric.COHERENCE, ""),
+                },
+                "grounding": {
+                    "score": result.scores.get(EvaluationMetric.GROUNDING, 0),
+                    "feedback": result.feedback.get(EvaluationMetric.GROUNDING, ""),
+                },
+                "relevance": {
+                    "score": result.scores.get(EvaluationMetric.RELEVANCE, 0),
+                    "feedback": result.feedback.get(EvaluationMetric.RELEVANCE, ""),
+                },
+                "factuality": {
+                    "score": result.scores.get(EvaluationMetric.FACTUALITY, 0),
+                    "feedback": result.feedback.get(EvaluationMetric.FACTUALITY, ""),
+                },
+                "helpfulness": {
+                    "score": result.scores.get(EvaluationMetric.HELPFULNESS, 0),
+                    "feedback": result.feedback.get(EvaluationMetric.HELPFULNESS, ""),
+                },
+                "overall_grade": (
+                    GradeSchema.PERFECT
+                    if result.overall_score >= 0.8
+                    else GradeSchema.GOOD
+                    if result.overall_score >= 0.05
+                    else GradeSchema.NEEDS_IMPROVEMENT
+                ),
+            }
 
-        # Convert evaluation results to EvaluationSchema format
-        evaluation = {
-            "coherence": {
-                "score": int(result.scores.get(EvaluationMetric.COHERENCE, 0) * 100),
-                "feedback": result.feedback.get(EvaluationMetric.COHERENCE, ""),
-            },
-            "grounding": {
-                "score": int(result.scores.get(EvaluationMetric.GROUNDING, 0) * 100),
-                "feedback": result.feedback.get(EvaluationMetric.GROUNDING, ""),
-            },
-            "relevance": {
-                "score": int(result.scores.get(EvaluationMetric.RELEVANCE, 0) * 100),
-                "feedback": result.feedback.get(EvaluationMetric.RELEVANCE, ""),
-            },
-            "factuality": {
-                "score": int(result.scores.get(EvaluationMetric.FACTUALITY, 0) * 100),
-                "feedback": result.feedback.get(EvaluationMetric.FACTUALITY, ""),
-            },
-            "helpfulness": {
-                "score": int(result.scores.get(EvaluationMetric.HELPFULNESS, 0) * 100),
-                "feedback": result.feedback.get(EvaluationMetric.HELPFULNESS, ""),
-            },
-            "overall_grade": (
-                GradeSchema.PERFECT
-                if result.overall_score >= 0.8
-                else GradeSchema.GOOD
-                if result.overall_score >= 0.05
-                else GradeSchema.NEEDS_IMPROVEMENT
-            ),
-        }
+            if self.monitor:
+                self.monitor.track_evaluation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    evaluator_type=self.__class__.__name__,
+                    scores={
+                        "overall": result.final_score,
+                    },
+                )
 
-        return EvaluatedConversationWithContext(
-            evaluation=evaluation,
-            final_score=result.overall_score,
-            **conversation.dict(),
-        )
+            return EvaluatedConversationWithContext(
+                evaluation=evaluation,
+                final_score=result.overall_score,
+                **conversation.dict(),
+            )
+
+        except Exception as e:
+            if self.monitor:
+                self.monitor.track_evaluation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    evaluator_type=self.__class__.__name__,
+                    scores={},
+                    error=str(e),
+                    error_type=e.__class__.__name__,
+                )
+            raise
 
     def evaluate_dataset(
         self, conversations: List[ConversationWithContext]
