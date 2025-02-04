@@ -124,7 +124,7 @@ class GroundingEvaluator(BaseEvaluator):
     def evaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
         start_time = time.time()
         try:
-            if not conversation.context:
+            if not conversation.response_context:
                 result = self._create_result(
                     1.0, "No context provided", needs_regeneration=False
                 )
@@ -139,7 +139,7 @@ class GroundingEvaluator(BaseEvaluator):
                 return result
 
             # Get context embedding
-            context_embedding = self.model.encode(conversation.context)
+            context_embedding = self.model.encode(conversation.response_context)
 
             # Only evaluate assistant responses
             answers = [
@@ -228,7 +228,7 @@ class RelevanceEvaluator(BaseEvaluator):
     def evaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
         start_time = time.time()
         try:
-            if not conversation.context:
+            if not conversation.instruction_context:
                 result = self._create_result(
                     1.0, "No context provided", needs_regeneration=False
                 )
@@ -243,7 +243,7 @@ class RelevanceEvaluator(BaseEvaluator):
                 return result
 
             # Get context embedding
-            context_embedding = self.model.encode(conversation.context)
+            context_embedding = self.model.encode(conversation.instruction_context)
 
             # Only evaluate user questions
             questions = [
@@ -415,7 +415,7 @@ class FactualityEvaluator(LLMBaseEvaluator):
 Rate each statement's factual accuracy and provide specific feedback.
 
 Context:
-{conversation.context}
+{conversation.response_context or conversation.instruction_context}
 
 Responses to evaluate:
 {"\n---------\n\n".join(f"[{i + 1}] {resp}" for i, resp in enumerate(responses))}
@@ -480,7 +480,7 @@ class HelpfulnessEvaluator(LLMBaseEvaluator):
 Rate each answer's helpfulness and provide specific feedback.
 
 Context (for reference):
-{conversation.context}
+{conversation.response_context or conversation.instruction_context}
 
 Question-Answer pairs to evaluate:
 {"\n---------\n\n".join(f"[{i + 1}] Q: {q}\nA: {a}" for i, (q, a) in enumerate(pairs))}

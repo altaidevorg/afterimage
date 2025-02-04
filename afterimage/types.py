@@ -1,6 +1,6 @@
 from enum import Enum
-from typing import List, TypedDict, Optional
-from pydantic import BaseModel
+from typing import Any, List, TypedDict, Optional
+from pydantic import BaseModel, Field
 
 
 class GradeSchema(str, Enum):
@@ -37,12 +37,26 @@ class ConversationEntry(BaseModel):
 
 class Conversation(BaseModel):
     conversations: List[ConversationEntry]
+    metadata: Optional[dict[str, Any]] = None
 
 
 class ConversationWithContext(Conversation):
-    context: Optional[str]
+    instruction_context: Optional[str] = None
+    response_context: Optional[str] = None
 
 
 class EvaluatedConversationWithContext(ConversationWithContext):
-    evaluation: Optional[EvaluationSchema]
+    evaluation: EvaluationSchema
     final_score: Optional[float] = 0.0
+
+
+class GeneratedResponsePrompt(BaseModel):
+    """Output of RespondentPromptModifier."""
+
+    prompt: str = Field(..., description="Modified respondent prompt")
+    context: Optional[str] = Field(
+        None, description="Context used in respondent prompt"
+    )
+    metadata: Optional[dict[str, Any]] = Field(
+        None, description="Additional metadata about respondent promp generation"
+    )

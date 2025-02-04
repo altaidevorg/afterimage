@@ -10,6 +10,7 @@ from .prompts import (
 )
 from .retrievers import ContextRetriever  # Update import
 from .providers import DocumentProvider, InMemoryDocumentProvider  # Update imports
+from .types import GeneratedResponsePrompt
 
 
 class InstructionsSchema(TypedDict):
@@ -112,15 +113,14 @@ ask the questions in the same language as this context.
 
 
 class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
-    """Modifies a respondent prompt by merging it with additional context."""
+    """Modifies respondent prompt by adding context."""
 
-    def __init__(self, prompt_template: str | None = None):
-        """Initializes the modifier with a template.
+    def __init__(self, prompt_template: Optional[str] = None):
+        """Initialize the context-aware prompt modifier.
 
         Args:
-            prompt_template (str, optional): Template for formatting the respondent prompt.
-                Defaults to `default_respondent_prompt_with_context`.
-                If the template contains `{prompt}` and/or `{context}`, they will be replaced by the original respondent prompt and the additional context, respectively.
+            prompt_template: Custom prompt template. If None, uses `default_respondent_prompt_with_context`.
+                If t contains {prompt} and/or {context}, they will be replced by the respondent prompt and the context, respectively.
         """
         self.prompt_template = (
             prompt_template
@@ -130,29 +130,37 @@ class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
         self.should_inject_prompt = "{prompt}" in self.prompt_template
         self.should_inject_context = "{context}" in self.prompt_template
 
-    def generate(self, respondent_prompt: str, context: str, instruction: str) -> str:
+    def generate(
+        self, respondent_prompt: str, context: str, instruction: str
+    ) -> GeneratedResponsePrompt:
         """Generates a modified respondent prompt by injecting context and instructions.
 
         Args:
-            respondent_prompt (str): The original prompt for the respondent.
-            context (str): Additional context to be included.
-            instruction (str): The instruction associated with the prompt.
+            respondent_prompt: The original prompt for the respondent
+            context: Additional context to be included
+            instruction: The instruction associated with the prompt
 
         Returns:
-            str: The modified respondent prompt.
+            GeneratedResponsePrompt containing the modified prompt and context
         """
         additional_context = self._maybe_augment_context(instruction, context)
 
         if self.should_inject_prompt and self.should_inject_context:
-            return self.prompt_template.format(
+            modified_prompt = self.prompt_template.format(
                 prompt=respondent_prompt, context=additional_context
             )
         elif self.should_inject_prompt:
-            return self.prompt_template.format(prompt=respondent_prompt)
+            modified_prompt = self.prompt_template.format(prompt=respondent_prompt)
         elif self.should_inject_context:
-            return self.prompt_template.format(context=additional_context)
+            modified_prompt = self.prompt_template.format(context=additional_context)
         else:
-            return respondent_prompt
+            modified_prompt = respondent_prompt
+
+        return GeneratedResponsePrompt(
+            prompt=modified_prompt,
+            context=additional_context,
+            metadata=None,
+        )
 
 
 class WithRAGRespondentPromptModifier(WithContextRespondentPromptModifier):

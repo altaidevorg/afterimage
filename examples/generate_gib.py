@@ -1,10 +1,10 @@
-import json
 import os
 from afterimage import (
     ConversationGenerator,
     ContextualInstructionGeneratorCallback,
     WithContextRespondentPromptModifier,
 )
+from afterimage.providers import JSONLDocumentProvider
 
 # Get API key
 api_key = os.getenv("GEMINI_API_KEY")
@@ -31,13 +31,14 @@ print("Generated Correspondent Prompt:")
 print(conv_gen.correspondent_prompt)
 
 # Prepare contextual documents
-with open("../scraping/data/gib/gib-ozelge.jsonl", encoding="utf8") as f:
-    docs = [json.loads(line)["markdown"] for line in f]
+documents = JSONLDocumentProvider(
+    "../scraping/data/gib/gib-ozelge.jsonl", content_key="mardown"
+)
 
 # Set up the instruction generator callback
 instruction_generator_callback = ContextualInstructionGeneratorCallback(
     api_key=api_key,
-    documents=docs,
+    documents=documents,
     num_random_contexts=1,  # Experiment with different values
 )
 

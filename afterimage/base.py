@@ -1,4 +1,5 @@
 from .common import GeneratedInstructions
+from .types import GeneratedResponsePrompt
 
 
 class BaseGenerator:
@@ -12,9 +13,9 @@ class BaseInstructionGeneratorCallback:
 
     def __call__(self, original_prompt: str) -> GeneratedInstructions:
         instructions = self.generate(original_prompt)
-        assert isinstance(
-            instructions, GeneratedInstructions
-        ), f".generate() method should return an instance of GeneratedInstructions, but found {type(instructions)}"
+        assert isinstance(instructions, GeneratedInstructions), (
+            f".generate() method should return an instance of GeneratedInstructions, but found {type(instructions)}"
+        )
 
         return instructions
 
@@ -25,15 +26,19 @@ class BaseInstructionGeneratorCallback:
 class BaseRespondentPromptModifierCallback:
     """Intended to serve as the base class for all custom respondent prompt modifier callbacks"""
 
-    def __call__(self, respondent_prompt: str, context: str, instruction: str) -> str:
+    def __call__(
+        self, respondent_prompt: str, context: str, instruction: str
+    ) -> GeneratedResponsePrompt:
         modified_prompt = self.generate(respondent_prompt, context, instruction)
-        assert isinstance(
-            modified_prompt, str
-        ), f".generate() method is expected to return an str, but found {type(modified_prompt)}"
+        assert isinstance(modified_prompt, GeneratedResponsePrompt), (
+            f".generate() method is expected to return an instance of `GeneratedRespondentPrompt`, but found {type(modified_prompt)}"
+        )
 
         return modified_prompt
 
-    def generate(self, respondent_prompt, context, instruction) -> str:
+    def generate(
+        self, respondent_prompt, context, instruction
+    ) -> GeneratedResponsePrompt:
         raise NotImplementedError
 
     def _maybe_augment_context(self, instruction: str, current_context: str) -> str:

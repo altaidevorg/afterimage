@@ -107,7 +107,7 @@ class ConversationGenerator(BaseGenerator):
                 evaluator_llm = LLMFactory.create(
                     "gemini", "gemini-1.5-flash-latest", self.key_pool
                 )
-                self5.evaluator = HybridSyntheticDatasetEvaluator(
+                self.evaluator = HybridSyntheticDatasetEvaluator(
                     llm=evaluator_llm, monitor=self.monitor
                 )
 
@@ -380,12 +380,16 @@ class ConversationGenerator(BaseGenerator):
             gen_instructions = instruction_generator_callback(correspondent_prompt)
 
             for instruction in gen_instructions.instructions:
+                instruction_context = gen_instructions.context
+                response_context = None
                 if respondent_prompt_modifier:
-                    respondent_prompt = respondent_prompt_modifier(
+                    modified_respondent_prompt = respondent_prompt_modifier(
                         self.respondent_prompt,
-                        context=gen_instructions.context,
+                        context=instruction_context,
                         instruction=instruction,
                     )
+                    respondent_prompt = modified_respondent_prompt.prompt
+                    response_context = modified_respondent_prompt.context
 
                 conversation = self.go(
                     turns=turns,
@@ -403,7 +407,8 @@ class ConversationGenerator(BaseGenerator):
                 ]:
                     conversation_row = ConversationWithContext(
                         conversations=conversation,
-                        context=gen_instructions.context,
+                        instruction_context=instruction_context,
+                        response_context=response_context,
                     )
                     evaluated_conversation = self.evaluator.evaluate_row(
                         conversation_row

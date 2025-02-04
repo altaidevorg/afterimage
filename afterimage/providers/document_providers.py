@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Optional, Protocol, runtime_checkable
 import random
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import ScrollRequest, ScoredPoint
+from qdrant_client.http.models import Filter, ScoredPoint
 
 
 @runtime_checkable
@@ -218,7 +218,7 @@ class QdrantDocumentProvider(DocumentProvider):
         collection_name: str,
         content_key: str = "text",
         batch_size: int = 100,
-        filter: Optional[dict] = None,
+        filter: Optional[Filter] = None,
         with_payload_key: Optional[List[str]] = None,
         cache_size: Optional[int] = None,
     ):
@@ -255,12 +255,11 @@ class QdrantDocumentProvider(DocumentProvider):
             # Scroll request with optional filter and payload selection
             scroll_response = self.client.scroll(
                 collection_name=self.collection_name,
-                scroll_request=ScrollRequest(
-                    offset=offset,
-                    limit=self.batch_size,
-                    filter=self.filter,
-                    with_payload=self.with_payload_key,
-                ),
+                offset=offset,
+                limit=self.batch_size,
+                scroll_filter=self.filter,
+                with_payload=True,
+                with_vectors=False,
             )
 
             # Extract documents from response

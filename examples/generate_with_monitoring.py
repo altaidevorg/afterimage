@@ -1,13 +1,13 @@
-import json
 import os
 from datetime import timedelta
 
 from afterimage import (
     ConversationGenerator,
     ContextualInstructionGeneratorCallback,
+    GenerationMonitor,
     WithContextRespondentPromptModifier,
 )
-from afterimage.monitoring import GenerationMonitor
+from afterimage.providers import JSONLDocumentProvider
 
 # Get API key
 api_key = os.getenv("GEMINI_API_KEY")
@@ -49,13 +49,14 @@ print("Generated Correspondent Prompt:")
 print(conv_gen.correspondent_prompt)
 
 # Prepare contextual documents
-with open("../scraping/data/gib/gib-ozelge.jsonl", encoding="utf8") as f:
-    docs = [json.loads(line)["markdown"] for line in f]
+documents = JSONLDocumentProvider(
+    "../scraping/data/gib/gib-ozelge.jsonl", content_key="markdown"
+)
 
 # Set up the instruction generator callback
 instruction_generator_callback = ContextualInstructionGeneratorCallback(
     api_key=api_key,
-    documents=docs,
+    documents=documents,
     num_random_contexts=1,  # Experiment with different values
 )
 
@@ -65,16 +66,14 @@ respondent_prompt_modifier = WithContextRespondentPromptModifier()
 # Generate conversations
 if __name__ == "__main__":
     conv_gen.generate(
-        num_dialogs=60,  # Total dialogs to generate
+        num_dialogs=100,  # Total dialogs to generate
         max_turns=1,  # Max turns per conversation
         instruction_generator_callback=instruction_generator_callback,
         respondent_prompt_modifier=respondent_prompt_modifier,
     )
 
     # Get metrics for the last one hour
-    success_rate = monitor.get_metrics("success_rate", window=timedelta(hours=1))
     generation_time = monitor.get_metrics("generation_time", window=timedelta(hours=1))
-    print(f"Success rate: {success_rate['mean']:.1%}")
     print(f"Avg. generation time: {generation_time['mean']:.2f} secs")
 
     # Generate visualizations

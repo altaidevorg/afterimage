@@ -97,7 +97,8 @@ class SimpleSyntheticDatasetEvaluator:
 {response}"""
                 compiled_prompt = prompt.format(
                     instruction=row_dict["conversations"][i]["content"],
-                    context=row_dict["context"],
+                    context=row_dict.get("response_context", None)
+                    or row_dict.get("instruction_context"),
                     response=row_dict["conversations"][i + 1]["content"],
                 )
 

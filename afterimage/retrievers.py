@@ -193,7 +193,7 @@ class QdrantRetriever(ContextRetriever):
         payload_key: str = "text",
         limit: int = 3,
         score_threshold: float = 0.5,
-        separator: str = "\n\n",
+        separator: str = "\n" + "-" * 80 + "\n\n",
     ):
         """Initialize the Qdrant retriever.
 
