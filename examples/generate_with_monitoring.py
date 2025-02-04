@@ -21,7 +21,7 @@ def simple_alert_handler(alert):
 
 
 monitor = GenerationMonitor(
-    log_dir="monitoring_logs",
+    log_dir="logs",
     alert_handlers=[simple_alert_handler],
     metrics_interval=60,
 )
@@ -77,7 +77,7 @@ if __name__ == "__main__":
     print(f"Avg. generation time: {generation_time['mean']:.2f} secs")
 
     # Generate visualizations
-    figures = monitor.visualize_metrics(save_dir="monitoring_plots")
+    figures = monitor.visualize_metrics(save_dir="plots")
 
     # Optional: Export metrics data
     # monitor.export_metrics(

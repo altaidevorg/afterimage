@@ -14,4 +14,6 @@ wheels/
 *.jsonl
 
 # monitoring
-monitoring*
+logs
+plots
+*.png
