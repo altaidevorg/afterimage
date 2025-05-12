@@ -39,8 +39,7 @@ Onlara asla 'gerçek bir mali müşavire danışmalarını' ya da 'hukuki yardı
 conv_gen = ConversationGenerator(
     respondent_prompt=respondent_prompt,
     api_key=api_key,
-    model_name="gemini-1.5-pro-latest",
-    evaluator_model_name="gemini-1.5-flash-latest",
+    model_name="gemini-2.0-flash",
     monitor=monitor,
 )
 

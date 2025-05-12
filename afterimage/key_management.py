@@ -30,7 +30,7 @@ class SmartKeyPool:
         api_keys: List[str],
         hourly_limit: Optional[int] = None,
         daily_limit: Optional[int] = None,
-        error_threshold: int = 10,
+        error_threshold: int = 1000000,
         cooldown_period: int = 600,
     ):
         """Initialize the key pool with configuration.

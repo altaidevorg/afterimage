@@ -62,7 +62,7 @@ class FileLogHandler(LogHandler):
         self.logger.addHandler(handler)
 
     def handle_log(self, message: Dict[str, Any]) -> None:
-        self.logger.info(json.dumps(message))
+        self.logger.error(json.dumps(message))
 
 
 @dataclass
@@ -137,14 +137,15 @@ class GenerationMonitor:
                     self._store_metric(**metric)
 
                 # Convert datetime to ISO format for handlers
+                timestamp = metric["metadata"].pop("timestamp")
                 handler_metric = {
                     "metric_name": metric["metric_name"],
                     "value": metric["value"],
                     "metadata": {
                         **metric["metadata"],
-                        "timestamp": metric["metadata"]["timestamp"].isoformat()
-                        if isinstance(metric["metadata"]["timestamp"], datetime)
-                        else metric["metadata"]["timestamp"],
+                        "timestamp": timestamp.isoformat()
+                        if isinstance(timestamp, datetime)
+                        else timestamp,
                     },
                 }
 
@@ -200,7 +201,9 @@ class GenerationMonitor:
         self, metric_name: str, value: float, metadata: Optional[Dict] = None
     ):
         """Record metric using queue."""
-        timestamp = datetime.now()  # Create timestamp once
+        timestamp = (
+            metadata.pop("timestamp", None) or datetime.now()
+        )  # Create timestamp once
 
         # Store internally with datetime object
         self.metric_queue.put(

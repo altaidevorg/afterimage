@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, List, TypedDict, Optional
+from typing import Any, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -11,12 +11,12 @@ class GradeSchema(str, Enum):
     NOT_ACCEPTABLE = "not_acceptable"
 
 
-class EvaluationEntrySchema(TypedDict):
+class EvaluationEntrySchema(BaseModel):
     feedback: str
     score: float
 
 
-class EvaluationSchema(TypedDict):
+class EvaluationSchema(BaseModel):
     coherence: EvaluationEntrySchema
     factuality: EvaluationEntrySchema
     grounding: EvaluationEntrySchema

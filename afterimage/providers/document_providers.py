@@ -294,6 +294,7 @@ class QdrantDocumentProvider(DocumentProvider):
         if self._document_cache is not None:
             return self._document_cache
 
+        print("Filling document cash from Qdrant...")
         documents = self._scroll_documents()
         assert len(documents) > 0, (
             f"No documents found in collection {self.collection_name} "

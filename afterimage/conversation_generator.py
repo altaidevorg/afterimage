@@ -125,7 +125,9 @@ class ConversationGenerator(BaseGenerator):
             )
             api_key = self.key_pool.get_next_key()
             model = LLMFactory.create(
-                "gemini", "gemini-1.5-pro-latest", safety_settings=self.safety_settings
+                "gemini",
+                "gemini-2.5-pro-preview-03-25",
+                safety_settings=self.safety_settings,
             )
 
             response = model.generate_content(prompt=prompt, temperature=0.7)
@@ -414,7 +416,7 @@ class ConversationGenerator(BaseGenerator):
                         conversation_row
                     )
 
-                    if evaluated_conversation.evaluation["overall_grade"] in [
+                    if evaluated_conversation.evaluation.overall_grade in [
                         GradeSchema.NOT_ACCEPTABLE,
                         GradeSchema.BAD,
                         GradeSchema.NEEDS_IMPROVEMENT,
@@ -427,9 +429,9 @@ class ConversationGenerator(BaseGenerator):
                             respondent_prompt=respondent_prompt,
                         )
                     else:
-                        evaluation_grade = evaluated_conversation.evaluation[
-                            "overall_grade"
-                        ]
+                        evaluation_grade = (
+                            evaluated_conversation.evaluation.overall_grade
+                        )
                         conversation_row = evaluated_conversation
 
                 conversations.append(conversation_row)

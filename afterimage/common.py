@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import List
 
-default_model_name = "gemini-1.5-flash-latest"
+default_model_name = "gemini-2.0-flash"
 
 default_safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},

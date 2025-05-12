@@ -1,6 +1,6 @@
 [project]
 name = "afterimage"
-version = "0.5.1"
+version = "0.6.0"
 keywords = ["afterimage", "synthetic", "dataset-generation", "synthetic-dataset"]
 authors = [
     { name = "Yusuf Sarıgöz", email = "yusufsarigoz@gmail.com"}
@@ -16,7 +16,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "google-generativeai>=0.8.3",
+    "google-generativeai>=0.8.5",
     "grpcio==1.67.1",
     "letsearch-client>=0.1.1",
     "pydantic>=2.10.4",
@@ -30,6 +30,7 @@ dependencies = [
     "pyarrow>=14.0.1",
     "seaborn>=0.12.0",
     "matplotlib>=3.7.0",
+    "google-genai>=1.14.0",
 ]
 
 [project.urls]

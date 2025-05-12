@@ -44,8 +44,7 @@ conv_gen = ConversationGenerator(
     respondent_prompt=respondent_prompt,
     correspondent_prompt=correspondent_prompt,
     api_key=api_key,
-    model_name="gemini-1.5-flash-latest",
-    evaluator_model_name="gemini-1.5-flash-latest",
+    model_name="gemini-2.0-flash",
     monitor=monitor,
 )
 
@@ -59,13 +58,14 @@ documents = QdrantDocumentProvider(
     client=qd_client,
     collection_name="yargitay",
     content_key="content",
-    cache_size=10000,
+    cache_size=50000,
 )
 
 # Set up the instruction generator callback
 instruction_generator_callback = ContextualInstructionGeneratorCallback(
     api_key=api_key,
     documents=documents,
+    model_name="gemini-2.0-flash",
     num_random_contexts=1,  # Experiment with different values
 )
 
@@ -82,7 +82,7 @@ respondent_prompt_modifier = WithRAGRespondentPromptModifier(retriever=retriever
 # Generate conversations
 if __name__ == "__main__":
     conv_gen.generate(
-        num_dialogs=100,  # Total dialogs to generate
+        num_dialogs=10000,  # Total dialogs to generate
         max_turns=1,  # Max turns per conversation
         instruction_generator_callback=instruction_generator_callback,
         respondent_prompt_modifier=respondent_prompt_modifier,

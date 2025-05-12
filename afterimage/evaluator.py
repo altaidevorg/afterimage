@@ -8,7 +8,8 @@ from .types import (
     EvaluatedConversationWithContext,
     GradeSchema,
 )
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from tqdm import tqdm
 from threading import Lock
 import time
@@ -63,13 +64,12 @@ class SimpleSyntheticDatasetEvaluator:
         start_time = time.time()
         try:
             api_key = self.key_pool.get_next_key()
-            genai.configure(api_key=api_key)
-
-            model = genai.GenerativeModel(
-                model_name=self.model_name,
-                system_instruction=default_evaluator_prompt,
-                safety_settings=self.safety_settings,
+            client = (
+                genai.Client(vertexai=False, api_key=api_key)
+                if api_key
+                else genai.Client()
             )
+
             row_dict = (
                 row.model_dump() if isinstance(row, ConversationWithContext) else row
             )
@@ -102,19 +102,30 @@ class SimpleSyntheticDatasetEvaluator:
                     response=row_dict["conversations"][i + 1]["content"],
                 )
 
-                evaluation_output = model.generate_content(
-                    compiled_prompt,
-                    generation_config=genai.GenerationConfig(
+                evaluation_output = client.models.generate_content(
+                    model=self.model_name,
+                    config=types.GenerateContentConfig(
+                        system_instruction=default_evaluator_prompt,
                         response_mime_type="application/json",
                         response_schema=EvaluationSchema,
                     ),
-                ).text
+                    contents=compiled_prompt,
+                )
 
                 try:
-                    evaluation = json.loads(evaluation_output)
+                    evaluation = evaluation_output.parsed.dict()
                     assert len(evaluation) == 6
                 except Exception as e:
-                    print(e)
+                    if self.monitor:
+                        self.monitor.track_evaluation(
+                            duration=time.time() - start_time,
+                            success=False,
+                            evaluator_type=self.__class__.__name__,
+                            scores={},
+                            error=str(e) + ": " + evaluation_output.text,
+                            error_type=e.__class__.__name__,
+                        )
+                        raise
                     return self.evaluate_row(row)
                 else:
                     final_score = 0.0
