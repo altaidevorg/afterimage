@@ -1,6 +1,6 @@
 from typing import Protocol, List, Optional, Any, Dict
 from dataclasses import dataclass
-import google.generativeai as genai
+from google import genai
 
 from ..types import ConversationEntry
 from ..key_management import SmartKeyPool
@@ -44,9 +44,7 @@ class GeminiChatSession(ChatSession):
     ) -> LLMResponse:
         content = message if isinstance(message, str) else message.content
 
-        response = self.chat.send_message(
-            content, generation_config={"temperature": temperature, **kwargs}
-        )
+        response = self.chat.send_message(content)
 
         tokens_used = (
             response.candidates[0].token_count
@@ -76,7 +74,7 @@ class LLMProvider(Protocol):
         """Generate completion from prompt."""
         ...
 
-    def start_chat() -> ChatSession:
+    def start_chat(self) -> ChatSession:
         """Start a new chat session."""
         ...
 
@@ -87,7 +85,7 @@ class GeminiProvider(LLMProvider):
     def __init__(
         self,
         api_key: str | SmartKeyPool,
-        model_name: str = "gemini-1.5-pro",
+        model_name: str = "gemini-2.0-flash",
         system_instruction: str | None = None,
         safety_settings: Optional[List[Dict[str, str]]] = None,
         **kwargs,
@@ -111,24 +109,21 @@ class GeminiProvider(LLMProvider):
         **kwargs,
     ) -> LLMResponse:
         api_key = self.key_pool.get_next_key()
-        genai.configure(api_key=api_key)
+        client = genai.Client(api_key=api_key, vertexai=False)
 
         try:
-            model = genai.GenerativeModel(
-                self.model_name,
-                system_instruction=self.system_instruction,
-                safety_settings=self.safety_settings,
-                **self.kwargs,
-            )
-
-            generation_config = {"temperature": temperature, **kwargs}
+            generation_config = {"temperature": temperature, "system_instruction": system_instruction, "safety_settings": self.safety_settings, **self.kwargs}
+            if kwargs:
+                generation_config.update(**kwargs)
             if max_tokens:
                 generation_config["max_output_tokens"] = max_tokens
             if stop_sequences:
                 generation_config["stop_sequences"] = stop_sequences
 
-            response = model.generate_content(
-                prompt, generation_config=generation_config
+            response = client.models.generate_content(
+                self.model_name,
+                contents=prompt,
+                config=generation_config
             )
 
             return LLMResponse(
@@ -143,19 +138,27 @@ class GeminiProvider(LLMProvider):
             self.key_pool.report_error(api_key)
             raise
 
-    def start_chat(self) -> ChatSession:
+    def start_chat(
+        self,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        stop_sequences: Optional[List[str]] = None,
+        **kwargs,
+        ) -> ChatSession:
         api_key = self.key_pool.get_next_key()
-        genai.configure(api_key=api_key)
-
+        
         try:
-            model = genai.GenerativeModel(
-                self.model_name,
-                system_instruction=self.system_instruction,
-                safety_settings=self.safety_settings,
-                **self.kwargs,
-            )
+            client = genai.Client(api_key=api_key)
+            generation_config = {"temperature": temperature, "system_instruction": self.system_instruction, "safety_settings": self.safety_settings, **self.kwargs}
+            if kwargs:
+                generation_config.update(**kwargs)
+            if max_tokens:
+                generation_config["max_output_tokens"] = max_tokens
+            if stop_sequences:
+                generation_config["stop_sequences"] = stop_sequences
 
-            chat = model.start_chat(history=[])
+                
+            chat = client.chats.create(model=self.model_name, config=generation_config)
 
             return GeminiChatSession(chat, self.model_name)
 
@@ -190,3 +193,4 @@ class LLMFactory:
             system_instruction=system_instruction,
             **kwargs,
         )
+

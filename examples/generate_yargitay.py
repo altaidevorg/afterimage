@@ -58,7 +58,7 @@ documents = QdrantDocumentProvider(
     client=qd_client,
     collection_name="yargitay",
     content_key="content",
-    cache_size=50000,
+    cache_size=50,
 )
 
 # Set up the instruction generator callback
@@ -82,7 +82,7 @@ respondent_prompt_modifier = WithRAGRespondentPromptModifier(retriever=retriever
 # Generate conversations
 if __name__ == "__main__":
     conv_gen.generate(
-        num_dialogs=10000,  # Total dialogs to generate
+        num_dialogs=100,  # Total dialogs to generate
         max_turns=1,  # Max turns per conversation
         instruction_generator_callback=instruction_generator_callback,
         respondent_prompt_modifier=respondent_prompt_modifier,

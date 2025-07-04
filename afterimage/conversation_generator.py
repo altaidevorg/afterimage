@@ -126,7 +126,7 @@ class ConversationGenerator(BaseGenerator):
             api_key = self.key_pool.get_next_key()
             model = LLMFactory.create(
                 "gemini",
-                "gemini-2.5-pro-preview-03-25",
+                "gemini-2.5-pro",
                 safety_settings=self.safety_settings,
             )
 
@@ -531,6 +531,7 @@ class ConversationGenerator(BaseGenerator):
                     except Exception as e:
                         if not isinstance(e, CancelledError):
                             warnings.warn(f"Exception in future: {e}")
+                            print(e)
                     else:
                         save_conversations(conversations)
                         num_generated += len(conversations)
