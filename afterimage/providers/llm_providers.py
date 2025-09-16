@@ -296,7 +296,7 @@ class GeminiProvider(LLMProvider):
                 generation_config["stop_sequences"] = stop_sequences
 
             response = client.models.generate_content(
-                self.model_name, contents=prompt, config=generation_config
+                model=self.model_name, contents=prompt, config=generation_config
             )
 
             return LLMResponse(
@@ -337,7 +337,7 @@ class GeminiProvider(LLMProvider):
                 generation_config["stop_sequences"] = stop_sequences
 
             response = await client.aio.models.generate_content(
-                self.model_name, contents=prompt, config=generation_config
+                model=self.model_name, contents=prompt, config=generation_config
             )
 
             return LLMResponse(

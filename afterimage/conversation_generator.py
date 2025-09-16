@@ -1,3 +1,4 @@
+import traceback
 import random
 import warnings
 from concurrent.futures import (
@@ -17,11 +18,7 @@ from .base import (
 )
 from .common import default_model_name, default_safety_settings
 from .evaluator import SimpleSyntheticDatasetEvaluator, HybridSyntheticDatasetEvaluator
-from .prompts import (
-    correspondent_instruction_creation_prompt,
-    example_correspondent_prompt,
-    example_respondent_prompt,
-)
+from .prompts import get_correspondent_instruction_generation_prompt
 from .types import (
     ConversationEntry,
     Conversation,
@@ -51,6 +48,7 @@ class ConversationGenerator(BaseGenerator):
         safety_settings: List[Dict[str, str]] | None = None,
         auto_improve: bool = True,
         evaluator_model_name: str | None = None,
+        model_provider_name: Literal["gemini", "openai"] = "gemini",
         evaluator_method: Literal["simple", "hybrid"] = "simple",
         storage: Optional[DatasetStorage] = None,
         monitor: Optional[GenerationMonitor] = None,
@@ -66,6 +64,7 @@ class ConversationGenerator(BaseGenerator):
             auto_improve: Whether to try to improve low-quality generations
             evaluator_model_name: Model name for the evaluator when auto_improve is True
             evaluator_method: method to be used for evaluation.
+            model_provider_name: Provider used for accessing LLMs. `"gemini"` or `"openai"` for Openai-compatible APIs.
             storage: Storage implementation for saving conversations
                     If None, creates JSONLStorage with datetime-based filename
             monitor: GenerationMonitor instance for tracking generation metrics
@@ -77,6 +76,7 @@ class ConversationGenerator(BaseGenerator):
             else SmartKeyPool.from_single_key(api_key)
         )
 
+        self.model_provider_name = model_provider_name
         self.model_name = model_name if model_name is not None else default_model_name
         self.safety_settings = (
             safety_settings if safety_settings is not None else default_safety_settings
@@ -105,7 +105,7 @@ class ConversationGenerator(BaseGenerator):
                 )
             elif evaluator_method == "hybrid":
                 evaluator_llm = LLMFactory.create(
-                    "gemini", "gemini-1.5-flash-latest", self.key_pool
+                    self.model_provider_name, self.evaluator_model_name, self.key_pool
                 )
                 self.evaluator = HybridSyntheticDatasetEvaluator(
                     llm=evaluator_llm, monitor=self.monitor
@@ -118,11 +118,7 @@ class ConversationGenerator(BaseGenerator):
         """Create a correspondent prompt based on the assistant prompt."""
         start_time = time.time()
         try:
-            prompt = correspondent_instruction_creation_prompt.format(
-                example_correspondent_prompt=example_correspondent_prompt,
-                example_respondent_prompt=example_respondent_prompt,
-                new_assistant_prompt=assistant_prompt,
-            )
+            prompt = get_correspondent_instruction_generation_prompt(assistant_prompt=assistant_prompt)
             api_key = self.key_pool.get_next_key()
             model = LLMFactory.create(
                 "gemini",
@@ -531,7 +527,7 @@ class ConversationGenerator(BaseGenerator):
                     except Exception as e:
                         if not isinstance(e, CancelledError):
                             warnings.warn(f"Exception in future: {e}")
-                            print(e)
+                            traceback.print_exc()
                     else:
                         save_conversations(conversations)
                         num_generated += len(conversations)

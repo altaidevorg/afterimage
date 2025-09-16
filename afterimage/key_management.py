@@ -4,7 +4,6 @@ from threading import Lock
 from typing import Dict, List, Optional
 import warnings
 from contextlib import contextmanager
-import google.generativeai as genai
 
 
 @dataclass
@@ -149,12 +148,3 @@ class SmartKeyPool:
                 }
                 for key, stats in self._keys.items()
             }
-
-    @contextmanager
-    def configure_api(self, key: str):
-        """Thread-safe context manager for API configuration."""
-        try:
-            genai.configure(api_key=key)
-            yield
-        finally:
-            pass  # Reset if needed

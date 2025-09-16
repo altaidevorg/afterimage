@@ -1,19 +1,22 @@
 import json
-import google.generativeai as genai
-from typing import List, TypedDict, Optional, Union
+from typing import List, Literal, TypedDict, Optional, Union
 from .base import BaseInstructionGeneratorCallback, BaseRespondentPromptModifierCallback
 from .common import default_model_name, default_safety_settings, GeneratedInstructions
+from .key_management import SmartKeyPool
 from .prompts import (
     default_instruction_generation_prompt,
     default_respondent_prompt_with_context,
     default_rag_respondent_prompt_with_context,
 )
+from .providers import DocumentProvider, InMemoryDocumentProvider 
+from .providers.llm_providers import LLMFactory
 from .retrievers import ContextRetriever  # Update import
-from .providers import DocumentProvider, InMemoryDocumentProvider  # Update imports
 from .types import GeneratedResponsePrompt
 
+from pydantic import BaseModel
 
-class InstructionsSchema(TypedDict):
+
+class InstructionsSchema(BaseModel):
     instructions: List[str]
 
 
@@ -22,11 +25,13 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
 
     def __init__(
         self,
-        api_key: str,
+        api_key: str|SmartKeyPool,
         documents: Union[List[str], DocumentProvider],
-        prompt: Optional[str] = None,
-        model_name: Optional[str] = None,
+        prompt: str|None = None,
+        model_name: str|None = None,
+        model_provider_name: Literal["gemini", "openai"] = "gemini",
         num_random_contexts: int = 1,
+        n_instructions: int = 3,
         separator_text: str = "\n" + "-" * 80 + "\n\n",
         safety_settings: Optional[dict] = None,
     ):
@@ -37,11 +42,18 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
             documents: Either a list of documents or a DocumentProvider instance
             prompt: Custom instruction generation prompt
             model_name: Model name to use
+            model_provider_name: Model provider name to use
             num_random_contexts: Number of contexts to sample
             separator_text: Separator text for merging contexts
             safety_settings: Safety settings for the model
         """
         assert api_key is not None, "You need to provide an API key"
+
+        self.key_pool = (
+            api_key
+            if isinstance(api_key, SmartKeyPool)
+            else SmartKeyPool.from_single_key(api_key)
+        )
 
         # Convert list to provider if needed
         self.provider = (
@@ -50,24 +62,32 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
             else InMemoryDocumentProvider(documents)
         )
 
+        self.n_instructions = max(n_instructions, 1)
         self.prompt = (
             prompt if prompt is not None else default_instruction_generation_prompt
         )
+        if "{n_instructions}" in self.prompt:
+            self.prompt = self.prompt.format(n_instructions=self.n_instructions)
+
         self.model_name = model_name if model_name is not None else default_model_name
+        self.model_provider_name = model_provider_name
         self.num_random_contexts = max(num_random_contexts, 1)
         self.separator_text = separator_text
         self.safety_settings = (
             safety_settings if safety_settings is not None else default_safety_settings
         )
 
-        genai.configure(api_key=api_key)
-
+        
     def _create_model(self):
         """Creates and configures the LLM model."""
-        return genai.GenerativeModel(
+        return LLMFactory.create(
+            provider=self.model_provider_name,
             model_name=self.model_name,
+            api_key=self.key_pool,
             system_instruction=self.prompt,
             safety_settings=self.safety_settings,
+            response_mime_type="application/json",
+            response_schema=InstructionsSchema,
         )
 
     def _sample(self) -> List[str]:
@@ -90,25 +110,21 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
         model = self._create_model()
         random_contexts = self._sample()
         full_context = self._merge_contexts(random_contexts)
+        original_prompt = original_prompt.format(n_instructions=self.n_instructions) if "{n_instructions}" in original_prompt else original_prompt
         prompt = f"""{original_prompt}
 ----------------------------
 
-ask the questions in the same language as this context.
-
 ## Context
-
+Ask the questions in the same language as this context.
+<context>
 {full_context}
+</context>
         """
 
-        instructions_str = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                response_schema=InstructionsSchema,
-            ),
-        ).text
-        instructions = json.loads(instructions_str)["instructions"]
-
+        instructions = model.generate_content(
+            prompt=prompt,
+        ).raw_response.parsed.instructions
+        
         return GeneratedInstructions(instructions=instructions, context=full_context)
 
 
