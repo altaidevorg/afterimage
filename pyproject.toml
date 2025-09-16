@@ -30,6 +30,7 @@ dependencies = [
     "seaborn>=0.12.0",
     "matplotlib>=3.7.0",
     "google-genai>=1.14.0",
+    "openai>=1.107.3",
 ]
 
 [project.urls]
@@ -37,3 +38,5 @@ homepage = "https://github.com/monatis/afterimage"
 project = "https://github.com/monatis/afterimage"
 repository = "https://github.com/monatis/afterimage"
 
+[tool.setuptools]
+packages = ["afterimage"]

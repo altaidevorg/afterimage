@@ -476,3 +476,6 @@ monitor.export_metrics(
 - CSV: Separate files for each metric
 - Excel: Multiple metrics as sheets
 - Parquet: Efficient columnar storage
+
+## Important note
+Whenever you need to write code that interacts with Gemini API, refer to https://googleapis.github.io/python-genai/ for the full API docs.
