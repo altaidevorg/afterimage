@@ -4,6 +4,7 @@ from typing import List, Optional, Protocol, Dict, Any
 import json
 from filelock import FileLock
 from datetime import datetime
+import asyncio
 
 from .types import ConversationWithContext, EvaluatedConversationWithContext
 
@@ -17,6 +18,18 @@ class DatasetStorage(Protocol):
         conversations: List[ConversationWithContext | EvaluatedConversationWithContext],
     ) -> None:
         """Save conversations to storage.
+
+        Args:
+            conversations: List of conversations to save
+        """
+        pass
+
+    @abstractmethod
+    async def asave_conversations(
+        self,
+        conversations: List[ConversationWithContext | EvaluatedConversationWithContext],
+    ) -> None:
+        """Save conversations to storage asynchronously.
 
         Args:
             conversations: List of conversations to save
@@ -71,6 +84,7 @@ class JSONLStorage(DatasetStorage):
         self.encoding = encoding
         self.lock_path = self.path.with_suffix(self.path.suffix + ".lock")
         self.lock_timeout = lock_timeout
+        self._async_lock = asyncio.Lock()
 
     def save_conversations(
         self,
@@ -86,6 +100,21 @@ class JSONLStorage(DatasetStorage):
             with open(self.path, mode, encoding=self.encoding) as f:
                 for conv in conversations:
                     f.write(json.dumps(conv.model_dump(), ensure_ascii=False) + "\n")
+
+    async def asave_conversations(
+        self,
+        conversations: List[ConversationWithContext | EvaluatedConversationWithContext],
+    ) -> None:
+        """Save conversations to JSONL file asynchronously."""
+        def _save():
+            with FileLock(self.lock_path, timeout=self.lock_timeout):
+                mode = "a" if self.path.exists() else "w"
+                with open(self.path, mode, encoding=self.encoding) as f:
+                    for conv in conversations:
+                        f.write(json.dumps(conv.model_dump(), ensure_ascii=False) + "\n")
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _save)
 
     def load_conversations(
         self,
@@ -156,6 +185,7 @@ class SQLStorage(DatasetStorage):
                 JSON,
                 DateTime,
             )
+            from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
         except ImportError:
             raise ImportError(
                 "SQL storage requires 'sqlalchemy' package. "
@@ -163,8 +193,10 @@ class SQLStorage(DatasetStorage):
             )
 
         self.engine = create_engine(url)
+        self.async_engine = create_async_engine(url)
         self.metadata = MetaData()
         self.batch_size = batch_size
+        self.async_session_maker = async_sessionmaker(self.async_engine)
 
         # Define table
         self.table = Table(
@@ -216,6 +248,29 @@ class SQLStorage(DatasetStorage):
             for i in range(0, len(records), self.batch_size):
                 batch = records[i : i + self.batch_size]
                 conn.execute(self.table.insert(), batch)
+
+    async def asave_conversations(
+        self,
+        conversations: List[ConversationWithContext | EvaluatedConversationWithContext],
+    ) -> None:
+        """Save conversations to database asynchronously."""
+        records = []
+        for conv in conversations:
+            data = conv.model_dump()
+            record = {
+                "conversations": data["conversations"],
+                "context": data.get("context"),
+                "metadata": data.get("metadata", {}),
+                "evaluation": data.get("evaluation"),
+                "timestamp": datetime.now(),
+            }
+            records.append(record)
+
+        async with self.async_session_maker() as session:
+            async with session.begin():
+                for i in range(0, len(records), self.batch_size):
+                    batch = records[i : i + self.batch_size]
+                    await session.execute(self.table.insert(), batch)
 
     def load_conversations(
         self,

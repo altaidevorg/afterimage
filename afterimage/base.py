@@ -22,6 +22,17 @@ class BaseInstructionGeneratorCallback:
     def generate(self, original_prompt) -> GeneratedInstructions:
         raise NotImplementedError
 
+    async def acall(self, original_prompt: str) -> GeneratedInstructions:
+        instructions = await self.agenerate(original_prompt)
+        assert isinstance(instructions, GeneratedInstructions), (
+            f".agenerate() method should return an instance of GeneratedInstructions, but found {type(instructions)}"
+        )
+
+        return instructions
+
+    async def agenerate(self, original_prompt) -> GeneratedInstructions:
+        raise NotImplementedError
+
 
 class BaseRespondentPromptModifierCallback:
     """Intended to serve as the base class for all custom respondent prompt modifier callbacks"""
@@ -37,6 +48,21 @@ class BaseRespondentPromptModifierCallback:
         return modified_prompt
 
     def generate(
+        self, respondent_prompt, context, instruction
+    ) -> GeneratedResponsePrompt:
+        raise NotImplementedError
+
+    async def acall(
+        self, respondent_prompt: str, context: str, instruction: str
+    ) -> GeneratedResponsePrompt:
+        modified_prompt = await self.agenerate(respondent_prompt, context, instruction)
+        assert isinstance(modified_prompt, GeneratedResponsePrompt), (
+            f".agenerate() method is expected to return an instance of `GeneratedRespondentPrompt`, but found {type(modified_prompt)}"
+        )
+
+        return modified_prompt
+
+    async def agenerate(
         self, respondent_prompt, context, instruction
     ) -> GeneratedResponsePrompt:
         raise NotImplementedError

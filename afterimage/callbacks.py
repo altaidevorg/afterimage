@@ -127,6 +127,29 @@ Ask the questions in the same language as this context.
         
         return GeneratedInstructions(instructions=instructions, context=full_context)
 
+    async def agenerate(self, original_prompt):
+        """Generates instructions based on the provided prompt and sampled context asynchronously."""
+        model = self._create_model()
+        random_contexts = self._sample()
+        full_context = self._merge_contexts(random_contexts)
+        original_prompt = original_prompt.format(n_instructions=self.n_instructions) if "{n_instructions}" in original_prompt else original_prompt
+        prompt = f"""{original_prompt}
+----------------------------
+
+## Context
+Ask the questions in the same language as this context.
+<context>
+{full_context}
+</context>
+        """
+
+        response = await model.agenerate_content(
+            prompt=prompt,
+        )
+        instructions = response.raw_response.parsed.instructions
+        
+        return GeneratedInstructions(instructions=instructions, context=full_context)
+
 
 class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
     """Modifies respondent prompt by adding context."""
@@ -159,6 +182,29 @@ class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
         Returns:
             GeneratedResponsePrompt containing the modified prompt and context
         """
+        additional_context = self._maybe_augment_context(instruction, context)
+
+        if self.should_inject_prompt and self.should_inject_context:
+            modified_prompt = self.prompt_template.format(
+                prompt=respondent_prompt, context=additional_context
+            )
+        elif self.should_inject_prompt:
+            modified_prompt = self.prompt_template.format(prompt=respondent_prompt)
+        elif self.should_inject_context:
+            modified_prompt = self.prompt_template.format(context=additional_context)
+        else:
+            modified_prompt = respondent_prompt
+
+        return GeneratedResponsePrompt(
+            prompt=modified_prompt,
+            context=additional_context,
+            metadata=None,
+        )
+
+    async def agenerate(
+        self, respondent_prompt: str, context: str, instruction: str
+    ) -> GeneratedResponsePrompt:
+        """Generates a modified respondent prompt by injecting context and instructions asynchronously."""
         additional_context = self._maybe_augment_context(instruction, context)
 
         if self.should_inject_prompt and self.should_inject_context:

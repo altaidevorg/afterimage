@@ -477,5 +477,6 @@ monitor.export_metrics(
 - Excel: Multiple metrics as sheets
 - Parquet: Efficient columnar storage
 
-## Important note
-Whenever you need to write code that interacts with Gemini API, refer to https://googleapis.github.io/python-genai/ for the full API docs.
+## Rules
+- Whenever you need to write code that interacts with Gemini API, refer to https://googleapis.github.io/python-genai/ for the full API docs.
+- Read before changing: Whenever you intend to modify a file, read it first to refresh the cash. The user may have changed it since you last read it.

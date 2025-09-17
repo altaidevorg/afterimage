@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from threading import Lock
+import asyncio
 from typing import Dict, List, Optional
 import warnings
 from contextlib import contextmanager
+
 
 
 @dataclass
@@ -43,6 +45,7 @@ class SmartKeyPool:
         """
         self._keys: Dict[str, KeyStats] = {key: KeyStats(key=key) for key in api_keys}
         self._lock = Lock()
+        self._async_lock = asyncio.Lock()
         self.hourly_limit = hourly_limit
         self.daily_limit = daily_limit
         self.error_threshold = error_threshold
@@ -118,9 +121,62 @@ class SmartKeyPool:
 
             return selected.key
 
+    async def aget_next_key(self) -> str:
+        """Get the next available API key using a smart selection strategy asynchronously.
+
+        Returns:
+            str: The selected API key
+
+        Raises:
+            RuntimeError: If no keys are available
+        """
+        async with self._async_lock:
+            # First try to find a key that hasn't been used recently
+            now = datetime.now()
+            available_keys = [
+                stats for stats in self._keys.values() if self._is_key_available(stats)
+            ]
+
+            if not available_keys:
+                raise RuntimeError(
+                    "No API keys available. All keys are at limit or cooling down."
+                )
+
+            # Sort by last used time and usage counts to distribute load
+            selected = min(
+                available_keys,
+                key=lambda x: (
+                    x.last_used or datetime.min,
+                    x.hourly_calls,
+                    x.daily_calls,
+                ),
+            )
+
+            selected.hourly_calls += 1
+            selected.daily_calls += 1
+            selected.last_used = now
+
+            return selected.key
+
     def report_error(self, key: str) -> None:
         """Report an error for a key, potentially triggering cooldown."""
         with self._lock:
+            if key not in self._keys:
+                return
+
+            stats = self._keys[key]
+            stats.error_count += 1
+            stats.last_error = datetime.now()
+
+            if stats.error_count >= self.error_threshold:
+                stats.is_active = False
+                warnings.warn(
+                    f"API key {key[:8]}... has been temporarily disabled due to errors"
+                )
+
+    async def areport_error(self, key: str) -> None:
+        """Report an error for a key, potentially triggering cooldown asynchronously."""
+        async with self._async_lock:
             if key not in self._keys:
                 return
 

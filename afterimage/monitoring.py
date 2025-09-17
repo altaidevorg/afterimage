@@ -7,6 +7,7 @@ from pathlib import Path
 import warnings
 from threading import Lock, Event, Thread
 import queue
+import asyncio
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
@@ -112,6 +113,7 @@ class GenerationMonitor:
         # Initialize metrics storage
         self._metrics = defaultdict(list)
         self._lock = Lock()
+        self._async_lock = asyncio.Lock()
 
         # Initialize queues
         self.metric_queue = queue.Queue()
@@ -202,42 +204,19 @@ class GenerationMonitor:
     ):
         """Record metric using queue."""
         timestamp = (
-            metadata.pop("timestamp", None) or datetime.now()
-        )  # Create timestamp once
+            metadata.pop("timestamp", None) if metadata else None
+        ) or datetime.now()
 
-        # Store internally with datetime object
         self.metric_queue.put(
             {
                 "metric_name": metric_name,
                 "value": value,
                 "metadata": {
-                    "timestamp": timestamp,  # Keep as datetime
+                    "timestamp": timestamp,
                     **(metadata or {}),
                 },
             }
         )
-
-        # Convert to ISO format only when sending to handlers
-        handler_metric = {
-            "metric_name": metric_name,
-            "value": value,
-            "metadata": {
-                "timestamp": timestamp.isoformat(),
-                **(metadata or {}),
-            },
-        }
-
-        for handler in self.metric_handlers:
-            try:
-                handler.handle_metric(**handler_metric)
-            except Exception as e:
-                self._enqueue_log(
-                    {
-                        "level": "ERROR",
-                        "message": f"Metric handler failed: {str(e)}",
-                        "error": str(e),
-                    }
-                )
 
     def track_generation(self, duration: float, success: bool, **kwargs):
         """Track generation metrics using queue."""
