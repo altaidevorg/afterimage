@@ -5,23 +5,23 @@ import json
 from filelock import FileLock
 from datetime import datetime
 import asyncio
+import dataclasses
 
-from .types import ConversationWithContext, EvaluatedConversationWithContext
+from .types import (
+    ConversationWithContext,
+    EvaluatedConversationWithContext,
+    PersonaEntry,
+)
 
 
-class DatasetStorage(Protocol):
-    """Protocol defining the interface for dataset storage implementations."""
+class BaseStorage(Protocol):
+    """Protocol defining the interface for storage implementations."""
 
     @abstractmethod
     def save_conversations(
         self,
-        conversations: List[ConversationWithContext | EvaluatedConversationWithContext],
+        conversations: List[EvaluatedConversationWithContext | EvaluatedConversationWithContext],
     ) -> None:
-        """Save conversations to storage.
-
-        Args:
-            conversations: List of conversations to save
-        """
         pass
 
     @abstractmethod
@@ -29,11 +29,6 @@ class DatasetStorage(Protocol):
         self,
         conversations: List[ConversationWithContext | EvaluatedConversationWithContext],
     ) -> None:
-        """Save conversations to storage asynchronously.
-
-        Args:
-            conversations: List of conversations to save
-        """
         pass
 
     @abstractmethod
@@ -42,62 +37,58 @@ class DatasetStorage(Protocol):
         limit: Optional[int] = None,
         offset: Optional[int] = None,
     ) -> List[ConversationWithContext]:
-        """Load conversations from storage.
+        pass
 
-        Args:
-            limit: Maximum number of conversations to load
-            offset: Number of conversations to skip
+    @abstractmethod
+    def save_personas(self, personas: List[PersonaEntry]) -> None:
+        pass
 
-        Returns:
-            List of conversations
-        """
+    @abstractmethod
+    async def asave_personas(self, personas: List[PersonaEntry]) -> None:
         pass
 
 
-class JSONLStorage(DatasetStorage):
-    """Stores conversations in JSONL format with thread-safe file access."""
-
-    @staticmethod
-    def _get_default_path() -> Path:
-        """Generate default path using current datetime.
-
-        Returns:
-            Path: Default path like 'conversations_YYYYMMDD_HHMMSS.jsonl'
-        """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return Path(f"conversations_{timestamp}.jsonl")
+class JSONLStorage(BaseStorage):
+    """Stores conversations and personas in JSONL format."""
 
     def __init__(
         self,
-        path: Optional[str | Path] = None,
+        conversations_path: Optional[str | Path] = None,
+        personas_path: Optional[str | Path] = None,
         encoding: str = "utf-8",
         lock_timeout: int = 30,
     ):
-        """Initialize JSONL storage.
-
-        Args:
-            path: Path to JSONL file. If None, uses datetime-based filename
-            encoding: File encoding to use
-            lock_timeout: Maximum seconds to wait for file lock
-        """
-        self.path = Path(path) if path is not None else self._get_default_path()
         self.encoding = encoding
-        self.lock_path = self.path.with_suffix(self.path.suffix + ".lock")
         self.lock_timeout = lock_timeout
-        self._async_lock = asyncio.Lock()
+
+        self.conversations_path = (
+            Path(conversations_path)
+            if conversations_path
+            else self._get_default_path("conversations")
+        )
+        self.conversations_lock_path = self.conversations_path.with_suffix(
+            self.conversations_path.suffix + ".lock"
+        )
+
+        self.personas_path = (
+            Path(personas_path) if personas_path else self._get_default_path("personas")
+        )
+        self.personas_lock_path = self.personas_path.with_suffix(
+            self.personas_path.suffix + ".lock"
+        )
+
+    @staticmethod
+    def _get_default_path(prefix: str) -> Path:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return Path(f"{prefix}_{timestamp}.jsonl")
 
     def save_conversations(
         self,
         conversations: List[ConversationWithContext | EvaluatedConversationWithContext],
     ) -> None:
-        """Save conversations to JSONL file with thread-safe access.
-
-        Args:
-            conversations: List of conversations to save
-        """
-        with FileLock(self.lock_path, timeout=self.lock_timeout):
-            mode = "a" if self.path.exists() else "w"
-            with open(self.path, mode, encoding=self.encoding) as f:
+        with FileLock(self.conversations_lock_path, timeout=self.lock_timeout):
+            mode = "a" if self.conversations_path.exists() else "w"
+            with open(self.conversations_path, mode, encoding=self.encoding) as f:
                 for conv in conversations:
                     f.write(json.dumps(conv.model_dump(), ensure_ascii=False) + "\n")
 
@@ -105,13 +96,8 @@ class JSONLStorage(DatasetStorage):
         self,
         conversations: List[ConversationWithContext | EvaluatedConversationWithContext],
     ) -> None:
-        """Save conversations to JSONL file asynchronously."""
         def _save():
-            with FileLock(self.lock_path, timeout=self.lock_timeout):
-                mode = "a" if self.path.exists() else "w"
-                with open(self.path, mode, encoding=self.encoding) as f:
-                    for conv in conversations:
-                        f.write(json.dumps(conv.model_dump(), ensure_ascii=False) + "\n")
+            self.save_conversations(conversations)
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, _save)
@@ -120,7 +106,7 @@ class JSONLStorage(DatasetStorage):
         self,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
-    ) -> List[ConversationWithContext]:
+    ) -> List[EvaluatedConversationWithContext]:
         """Load conversations from JSONL file.
 
         Args:
@@ -130,21 +116,21 @@ class JSONLStorage(DatasetStorage):
         Returns:
             List of conversations
         """
-        if not self.path.exists():
+        if not self.conversations_path.exists():
             return []
 
-        with FileLock(self.lock_path, timeout=self.lock_timeout):
+        with FileLock(self.conversations_lock_path, timeout=self.lock_timeout):
             conversations = []
             current_idx = 0
 
-            with open(self.path, "r", encoding=self.encoding) as f:
+            with open(self.conversations_path, "r", encoding=self.encoding) as f:
                 for line in f:
                     if offset and current_idx < offset:
                         current_idx += 1
                         continue
 
                     conv_data = json.loads(line.strip())
-                    conversations.append(ConversationWithContext(**conv_data))
+                    conversations.append(EvaluatedConversationWithContext(**conv_data))
 
                     current_idx += 1
                     if limit and len(conversations) >= limit:
@@ -152,30 +138,34 @@ class JSONLStorage(DatasetStorage):
 
             return conversations
 
+    def save_personas(self, personas: List[PersonaEntry]) -> None:
+        with FileLock(self.personas_lock_path, timeout=self.lock_timeout):
+            mode = "a" if self.personas_path.exists() else "w"
+            with open(self.personas_path, mode, encoding=self.encoding) as f:
+                for entry in personas:
+                    f.write(json.dumps(dataclasses.asdict(entry), default=str) + "\n")
 
-class SQLStorage(DatasetStorage):
-    """Stores conversations using SQLAlchemy with support for multiple backends."""
+    async def asave_personas(self, personas: List[PersonaEntry]) -> None:
+        def _save():
+            self.save_personas(personas)
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _save)
+
+
+class SQLStorage(BaseStorage):
+    """Stores conversations and personas using SQLAlchemy."""
 
     def __init__(
         self,
-        url: str,  # e.g., "sqlite:///data.db", "postgresql://user:pass@localhost/db"
-        table_name: str = "conversations",
+        url: str,
+        conversations_table_name: str = "conversations",
+        personas_table_name: str = "personas",
         metadata_fields: Optional[List[str]] = None,
         batch_size: int = 100,
     ):
-        """Initialize SQL storage.
-
-        Args:
-            url: Database URL (supports SQLite, PostgreSQL, MySQL, etc.)
-            table_name: Name of the table to store conversations
-            metadata_fields: List of metadata fields to index
-            batch_size: Number of records to insert in one batch
-
-        Raises:
-            ImportError: If sqlalchemy is not installed
-        """
         try:
-            from sqlalchemy import (  # type: ignore
+            from sqlalchemy import (
                 create_engine,
                 MetaData,
                 Table,
@@ -187,10 +177,7 @@ class SQLStorage(DatasetStorage):
             )
             from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
         except ImportError:
-            raise ImportError(
-                "SQL storage requires 'sqlalchemy' package. "
-                "Install it with: pip install 'sqlalchemy>=2.0'"
-            )
+            raise ImportError("SQL storage requires 'sqlalchemy'.")
 
         self.engine = create_engine(url)
         self.async_engine = create_async_engine(url)
@@ -198,16 +185,26 @@ class SQLStorage(DatasetStorage):
         self.batch_size = batch_size
         self.async_session_maker = async_sessionmaker(self.async_engine)
 
-        # Define table
-        self.table = Table(
-            table_name,
+        self.conversations_table = Table(
+            conversations_table_name,
             self.metadata,
             Column("id", Integer, primary_key=True),
             Column("conversations", JSON),
-            Column("context", String),
-            Column("metadata", JSON),
+            Column("instruction_context", String, nullable=True),
+            Column("response_context", String, nullable=True),
+            Column("metadata", JSON, nullable=True),
             Column("timestamp", DateTime),
             Column("evaluation", JSON, nullable=True),
+        )
+
+        self.personas_table = Table(
+            personas_table_name,
+            self.metadata,
+            Column("id", Integer, primary_key=True),
+            Column("source_document", String),
+            Column("personas", JSON),
+            Column("timestamp", DateTime),
+            Column("metadata", JSON, nullable=True),
         )
 
         # Create table if it doesn't exist
@@ -216,10 +213,10 @@ class SQLStorage(DatasetStorage):
         # Create indexes for metadata fields
         if metadata_fields:
             for field in metadata_fields:
-                idx_name = f"idx_{table_name}_{field}"
+                idx_name = f"idx_{conversations_table_name}_{field}"
                 self.engine.execute(
                     f"CREATE INDEX IF NOT EXISTS {idx_name} "
-                    f"ON {table_name} ((metadata->'{field}'))"
+                    f"ON {conversations_table_name} ((metadata->'{field}'))"
                 )
 
     def save_conversations(
@@ -236,7 +233,8 @@ class SQLStorage(DatasetStorage):
             data = conv.model_dump()
             record = {
                 "conversations": data["conversations"],
-                "context": data["context"],
+                "instruction_context": data["instruction_context"],
+                "response_context": data["response_context"],
                 "metadata": data.get("metadata", {}),
                 "evaluation": data.get("evaluation"),
                 "timestamp": datetime.now(),
@@ -247,7 +245,7 @@ class SQLStorage(DatasetStorage):
         with self.engine.begin() as conn:
             for i in range(0, len(records), self.batch_size):
                 batch = records[i : i + self.batch_size]
-                conn.execute(self.table.insert(), batch)
+                conn.execute(self.conversations_table.insert(), batch)
 
     async def asave_conversations(
         self,
@@ -259,7 +257,8 @@ class SQLStorage(DatasetStorage):
             data = conv.model_dump()
             record = {
                 "conversations": data["conversations"],
-                "context": data.get("context"),
+                "instruction_context": data.get("instruction_context"),
+                "response_context": data.get("response_context"),
                 "metadata": data.get("metadata", {}),
                 "evaluation": data.get("evaluation"),
                 "timestamp": datetime.now(),
@@ -270,7 +269,7 @@ class SQLStorage(DatasetStorage):
             async with session.begin():
                 for i in range(0, len(records), self.batch_size):
                     batch = records[i : i + self.batch_size]
-                    await session.execute(self.table.insert(), batch)
+                    await session.execute(self.conversations_table.insert(), batch)
 
     def load_conversations(
         self,
@@ -278,7 +277,7 @@ class SQLStorage(DatasetStorage):
         offset: Optional[int] = None,
         filters: Optional[Dict[str, Any]] = None,
         order_by: Optional[List[tuple]] = None,
-    ) -> List[ConversationWithContext]:
+    ) -> List[EvaluatedConversationWithContext]:
         """Load conversations from database with filtering and sorting.
 
         Args:
@@ -290,25 +289,29 @@ class SQLStorage(DatasetStorage):
         Returns:
             List of conversations
         """
-        query = self.table.select()
+        query = self.conversations_table.select()
 
         if filters:
             for field, value in filters.items():
                 if field.startswith("metadata."):
                     # Handle metadata field filtering
                     _, key = field.split(".", 1)
-                    query = query.where(self.table.c.metadata[key] == value)
+                    query = query.where(
+                        self.conversations_table.c.metadata[key] == value
+                    )
                 else:
                     # Handle regular field filtering
-                    query = query.where(getattr(self.table.c, field) == value)
+                    query = query.where(
+                        getattr(self.conversations_table.c, field) == value
+                    )
 
         if order_by:
             for field, direction in order_by:
-                col = getattr(self.table.c, field)
+                col = getattr(self.conversations_table.c, field)
                 query = query.order_by(col.desc() if direction == -1 else col)
         else:
             # Default sort by timestamp descending
-            query = query.order_by(self.table.c.timestamp.desc())
+            query = query.order_by(self.conversations_table.c.timestamp.desc())
 
         if offset:
             query = query.offset(offset)
@@ -318,11 +321,27 @@ class SQLStorage(DatasetStorage):
         with self.engine.connect() as conn:
             result = conn.execute(query)
             return [
-                ConversationWithContext(
+                EvaluatedConversationWithContext(
                     conversations=row.conversations,
-                    context=row.context,
+                    instruction_context=row.instruction_context,
+                    response_context=row.response_context,
                     metadata=row.metadata,
                     evaluation=row.evaluation,
                 )
                 for row in result
             ]
+
+    def save_personas(self, personas: List[PersonaEntry]) -> None:
+        records = [dataclasses.asdict(p) for p in personas]
+        with self.engine.begin() as conn:
+            for i in range(0, len(records), self.batch_size):
+                batch = records[i : i + self.batch_size]
+                conn.execute(self.personas_table.insert(), batch)
+
+    async def asave_personas(self, personas: List[PersonaEntry]) -> None:
+        records = [dataclasses.asdict(p) for p in personas]
+        async with self.async_session_maker() as session:
+            async with session.begin():
+                for i in range(0, len(records), self.batch_size):
+                    batch = records[i : i + self.batch_size]
+                    await session.execute(self.personas_table.insert(), batch)

@@ -30,7 +30,7 @@ from .types import (
 from .key_management import SmartKeyPool
 from .providers import ChatSession, LLMFactory
 from .monitoring import GenerationMonitor
-from .storage import DatasetStorage, JSONLStorage
+from .storage import BaseStorage, JSONLStorage
 
 
 class ConversationGenerator(BaseGenerator):
@@ -50,7 +50,7 @@ class ConversationGenerator(BaseGenerator):
         evaluator_model_name: str | None = None,
         model_provider_name: Literal["gemini", "openai"] = "gemini",
         evaluator_method: Literal["simple", "hybrid"] = "simple",
-        storage: Optional[DatasetStorage] = None,
+        storage: Optional[BaseStorage] = None,
         monitor: Optional[GenerationMonitor] = None,
     ):
         """Initialize the generator with API key(s).
@@ -69,6 +69,7 @@ class ConversationGenerator(BaseGenerator):
                     If None, creates JSONLStorage with datetime-based filename
             monitor: GenerationMonitor instance for tracking generation metrics
         """
+        warnings.warn("This synchronous implementation is deprecated and may be removed in the future. Consider using AsyncConversationGenerator class instead.")
         self.monitor = monitor
         self.key_pool = (
             api_key

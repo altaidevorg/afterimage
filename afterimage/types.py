@@ -50,6 +50,19 @@ class EvaluatedConversationWithContext(ConversationWithContext):
     final_score: Optional[float] = 0.0
 
 
+from datetime import datetime
+from dataclasses import dataclass, field
+
+
+@dataclass
+class PersonaEntry:
+    """Represents a set of generated personas for a source document."""
+    source_document: str
+    personas: list[str]
+    timestamp: datetime
+    metadata: dict = field(default_factory=dict)
+
+
 class GeneratedResponsePrompt(BaseModel):
     """Output of RespondentPromptModifier."""
 

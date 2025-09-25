@@ -1,328 +1,384 @@
+# document_providers.py
+from __future__ import annotations
+
 import glob
 import json
+import math
+import random
+import logging
 from abc import abstractmethod
 from pathlib import Path
-from typing import List, Optional, Protocol, runtime_checkable
-import random
-from qdrant_client import QdrantClient
-from qdrant_client.http.models import Filter, ScoredPoint
+from typing import Any, Iterable, List, Optional, Protocol, runtime_checkable
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
 class DocumentProvider(Protocol):
-    """Protocol defining the interface for document providers."""
+    """
+    Unified DocumentProvider protocol.
+
+    Minimal required method for implementations:
+        - _load_documents() -> List[str]
+
+    Public helpers (provided by protocol defaults below):
+        - get_documents(n: int) -> List[str]
+        - get_all() -> List[str]
+        - sample(n: int) -> List[str]
+        - clear_cache()
+        - __len__(), __iter__(), __getitem__(i)
+    """
 
     @abstractmethod
-    def get_documents(self, n_samples: int) -> List[str]:
-        """Get n random documents for context.
+    def _load_documents(self) -> List[str]:
+        """Load (and return) all documents. Implementations may cache internally."""
+        ...
 
-        Args:
-            n_samples: Number of documents to retrieve
+    # --- default helpers (implementations can override) ---
+    def get_all(self) -> List[str]:
+        """Return all documents (loads once if implementation caches)."""
+        docs = self._load_documents()
+        return docs
 
-        Returns:
-            List[str]: List of document contents
-        """
-        pass
+    def get_documents(self, n: int) -> List[str]:
+        """Return up to n random documents. If n is math.inf, return all documents."""
+        if n is None:
+            n = math.inf
+        if n == math.inf:
+            return self.get_all()
+        docs = self.get_all()
+        k = min(int(n), len(docs))
+        if k == 0:
+            return []
+        if k == len(docs):
+            return list(docs)
+        # sample without replacement
+        return random.sample(docs, k)
+
+    def sample(self, n: int) -> List[str]:
+        """Alias for get_documents."""
+        return self.get_documents(n)
+
+    def clear_cache(self) -> None:
+        """Optional: implementations can override to clear internal caches."""
+        # protocol default: no-op
+        return None
+
+    def __len__(self) -> int:
+        """Length if supported (may force load)."""
+        return len(self.get_all())
+
+    def __iter__(self) -> Iterable[str]:
+        return iter(self.get_all())
+
+    def __getitem__(self, index: int) -> str:
+        """Index access (forces load)."""
+        return self.get_all()[index]
+
+
+# ---------- Concrete implementations ----------
 
 
 class InMemoryDocumentProvider(DocumentProvider):
-    """Simple in-memory document provider using a list of documents."""
+    """Simple provider backed by a list of strings."""
 
     def __init__(self, documents: List[str]):
-        """Initialize with a list of documents.
+        if not isinstance(documents, list) or not all(
+            isinstance(d, str) for d in documents
+        ):
+            raise TypeError("documents must be a List[str]")
+        self._documents = documents
 
-        Args:
-            documents: List of document contents
-        """
-        assert (
-            isinstance(documents, List)
-            and len(documents) >= 1
-            and isinstance(documents[0], str)
-        ), "`documents` must be a list of strings"
-        self.documents = documents
+    def _load_documents(self) -> List[str]:
+        return self._documents
 
-    def get_documents(self, n_samples: int) -> List[str]:
-        """Get random documents from the in-memory list."""
-        return random.sample(self.documents, min(n_samples, len(self.documents)))
+    def clear_cache(self) -> None:
+        # nothing to clear for in-memory
+        return None
 
 
 class FileSystemDocumentProvider(DocumentProvider):
-    """Provides documents from the filesystem using glob patterns."""
+    """Load text files matched by a glob pattern."""
 
     def __init__(
         self,
         path_pattern: str,
         encoding: str = "utf-8",
         recursive: bool = False,
+        min_length: int = 1,
+        cache: bool = True,
     ):
-        """Initialize the filesystem document provider.
-
-        Args:
-            path_pattern: Glob pattern for finding files (e.g., "data/*.txt")
-            encoding: File encoding to use
-            recursive: Whether to search directories recursively
-        """
         self.pattern = path_pattern
         self.encoding = encoding
         self.recursive = recursive
-        self._cached_files = None
+        self.min_length = min_length
+        self._cache_enabled = bool(cache)
+        self._cache: Optional[List[str]] = None
 
-    def _get_file_paths(self) -> List[str]:
-        """Get list of matching file paths."""
-        if self._cached_files is None:
-            self._cached_files = glob.glob(self.pattern, recursive=self.recursive)
-        return self._cached_files
-
-    def get_documents(self, n_samples: int) -> List[str]:
-        """Get random documents from matching files."""
-        files = self._get_file_paths()
-        assert len(files) > 0, f"No files found matching pattern: {self.pattern}"
-
-        selected_files = random.sample(files, min(n_samples, len(files)))
-        documents = []
-
-        for file_path in selected_files:
-            with open(file_path, "r", encoding=self.encoding) as f:
-                documents.append(f.read().strip())
-
-        return documents
-
-
-class JSONLDocumentProvider(DocumentProvider):
-    """Provides documents from JSONL files with configurable key extraction."""
-
-    def __init__(
-        self,
-        path_pattern: str,
-        content_key: str = "text",
-        encoding: str = "utf-8",
-        recursive: bool = False,
-        cache_size: Optional[int] = None,
-    ):
-        """Initialize the JSONL document provider.
-
-        Args:
-            path_pattern: Glob pattern for finding JSONL files
-            content_key: Key to extract text content from each JSON object
-            encoding: File encoding to use
-            recursive: Whether to search directories recursively
-            cache_size: Maximum number of documents to cache in memory (None for all)
-        """
-        self.pattern = path_pattern
-        self.content_key = content_key
-        self.encoding = encoding
-        self.recursive = recursive
-        self.cache_size = cache_size
-        self._document_cache = None
+    def _find_files(self) -> List[str]:
+        return glob.glob(self.pattern, recursive=self.recursive)
 
     def _load_documents(self) -> List[str]:
-        """Load and cache documents from JSONL files."""
-        if self._document_cache is not None:
-            return self._document_cache
+        if self._cache_enabled and self._cache is not None:
+            return self._cache
 
-        documents = []
-        files = glob.glob(self.pattern, recursive=self.recursive)
-        assert len(files) > 0, f"No JSONL files found matching pattern: {self.pattern}"
+        files = self._find_files()
+        if not files:
+            raise FileNotFoundError(f"No files matching pattern: {self.pattern}")
 
-        for file_path in files:
-            with open(file_path, "r", encoding=self.encoding) as f:
-                for line in f:
-                    try:
-                        data = json.loads(line.strip())
-                        if isinstance(data, dict) and self.content_key in data:
-                            documents.append(data[self.content_key])
-                    except json.JSONDecodeError:
-                        continue  # Skip invalid JSON lines
+        docs: List[str] = []
+        for path in files:
+            try:
+                with open(path, "r", encoding=self.encoding) as f:
+                    text = f.read().strip()
+                    if len(text) >= self.min_length:
+                        docs.append(text)
+            except Exception as exc:
+                logger.warning("Failed to read %s: %s", path, exc)
+                continue
 
-                    # Check cache limit
-                    if self.cache_size and len(documents) >= self.cache_size:
-                        break
+        if not docs:
+            raise ValueError(
+                f"No documents found after filtering for pattern: {self.pattern}"
+            )
 
-        self._document_cache = documents
-        return documents
+        if self._cache_enabled:
+            self._cache = docs
+        return docs
 
-    def get_documents(self, n_samples: int) -> List[str]:
-        """Get random documents from JSONL files."""
-        documents = self._load_documents()
-        return random.sample(documents, min(n_samples, len(documents)))
+    def clear_cache(self) -> None:
+        self._cache = None
 
 
 class DirectoryDocumentProvider(DocumentProvider):
-    """Provides documents from a directory with support for multiple file types."""
+    """Search a directory for several filename patterns (txt/md/jsonl etc)."""
 
     def __init__(
         self,
         directory: str | Path,
-        file_patterns: List[str] = ["*.txt", "*.md"],
+        file_patterns: Optional[List[str]] = None,
         encoding: str = "utf-8",
         recursive: bool = True,
-        min_length: int = 10,
+        min_length: int = 1,
+        cache: bool = True,
     ):
-        """Initialize the directory document provider.
-
-        Args:
-            directory: Base directory to search
-            file_patterns: List of glob patterns for file types
-            encoding: File encoding to use
-            recursive: Whether to search directories recursively
-            min_length: Minimum document length to include
-        """
         self.directory = Path(directory)
-        self.patterns = file_patterns
+        self.patterns = file_patterns or ["*.txt", "*.md"]
         self.encoding = encoding
         self.recursive = recursive
         self.min_length = min_length
-        self._cached_files = None
+        self._cache_enabled = bool(cache)
+        self._cache: Optional[List[str]] = None
 
-    def _get_matching_files(self) -> List[Path]:
-        """Get list of all matching files in directory."""
-        if self._cached_files is not None:
-            return self._cached_files
-
-        files = []
-        for pattern in self.patterns:
-            glob_pattern = "**/" + pattern if self.recursive else pattern
-            files.extend(self.directory.glob(glob_pattern))
-
-        self._cached_files = files
+    def _find_files(self) -> List[Path]:
+        patterns = self.patterns
+        files: List[Path] = []
+        for p in patterns:
+            glob_pat = f"**/{p}" if self.recursive else p
+            files.extend(self.directory.glob(glob_pat))
         return files
 
-    def get_documents(self, n_samples: int) -> List[str]:
-        """Get random documents from matching files."""
-        files = self._get_matching_files()
-        assert len(files) > 0, f"No matching files found in: {self.directory}"
+    def _load_documents(self) -> List[str]:
+        if self._cache_enabled and self._cache is not None:
+            return self._cache
 
-        documents = []
-        shuffled_files = random.sample(files, len(files))
+        files = self._find_files()
+        if not files:
+            raise FileNotFoundError(
+                f"No files found in {self.directory} for {self.patterns}"
+            )
 
-        for file_path in shuffled_files:
+        docs: List[str] = []
+        for path in files:
+            if not path.is_file():
+                continue
             try:
-                with open(file_path, "r", encoding=self.encoding) as f:
-                    content = f.read().strip()
-                    if len(content) >= self.min_length:
-                        documents.append(content)
-                        if len(documents) >= n_samples:
-                            break
-            except Exception:
-                continue  # Skip problematic files
+                with path.open("r", encoding=self.encoding) as f:
+                    text = f.read().strip()
+                    if len(text) >= self.min_length:
+                        docs.append(text)
+            except Exception as exc:
+                logger.debug("skip %s: %s", path, exc)
+                continue
 
-        return documents
+        if not docs:
+            raise ValueError("No valid documents found in directory after filtering")
+
+        if self._cache_enabled:
+            self._cache = docs
+        return docs
+
+    def clear_cache(self) -> None:
+        self._cache = None
 
 
-class QdrantDocumentProvider(DocumentProvider):
-    """Provides documents from Qdrant collection using scroll API."""
+class JSONLDocumentProvider(DocumentProvider):
+    """Load text fields from one or more JSONL files.
+
+    content_key selects which key from each JSON object to use.
+    """
 
     def __init__(
         self,
-        client: QdrantClient,
-        collection_name: str,
+        path_pattern: str,
         content_key: str = "text",
-        batch_size: int = 100,
-        filter: Optional[Filter] = None,
-        with_payload_key: Optional[List[str]] = None,
-        cache_size: Optional[int] = None,
+        encoding: str = "utf-8",
+        recursive: bool = False,
+        cache: bool = True,
+        max_docs: Optional[int] = None,
     ):
-        """Initialize the Qdrant document provider.
-
-        Args:
-            client: Initialized QdrantClient
-            collection_name: Name of the collection to scroll
-            content_key: Key in the payload containing the text content
-            batch_size: Number of documents to fetch per scroll request
-            filter: Optional filter conditions for document selection
-            with_payload_key: Optional list of specific payload keys to retrieve
-                            (optimization for large payloads)
-            cache_size: Maximum number of documents to cache (None for all)
-        """
-        self.client = client
-        self.collection_name = collection_name
+        self.pattern = path_pattern
         self.content_key = content_key
-        self.batch_size = batch_size
-        self.filter = filter
-        self.with_payload_key = (
-            [content_key] if with_payload_key is None else with_payload_key
-        )
-        self.cache_size = cache_size
-        self._document_cache = None
-        self._total_docs = None
+        self.encoding = encoding
+        self.recursive = recursive
+        self._cache_enabled = bool(cache)
+        self._cache: Optional[List[str]] = None
+        self._max_docs = max_docs
 
-    def _scroll_documents(self) -> List[str]:
-        """Scroll through documents in the collection."""
-        documents = []
-        offset = None
+    def _find_files(self) -> List[str]:
+        return glob.glob(self.pattern, recursive=self.recursive)
 
-        while True:
-            # Scroll request with optional filter and payload selection
-            scroll_response = self.client.scroll(
+    def _load_documents(self) -> List[str]:
+        if self._cache_enabled and self._cache is not None:
+            return self._cache
+
+        files = self._find_files()
+        if not files:
+            raise FileNotFoundError(f"No JSONL files matching: {self.pattern}")
+
+        docs: List[str] = []
+        for fp in files:
+            try:
+                with open(fp, "r", encoding=self.encoding) as f:
+                    for line in f:
+                        if not line.strip():
+                            continue
+                        try:
+                            obj = json.loads(line)
+                        except json.JSONDecodeError:
+                            logger.debug("invalid json line in %s - skipping", fp)
+                            continue
+                        if isinstance(obj, dict) and self.content_key in obj:
+                            val = obj[self.content_key]
+                            if isinstance(val, str) and val.strip():
+                                docs.append(val.strip())
+                                if self._max_docs and len(docs) >= self._max_docs:
+                                    break
+            except Exception as exc:
+                logger.warning("Failed to read %s: %s", fp, exc)
+                continue
+            if self._max_docs and len(docs) >= self._max_docs:
+                break
+
+        if not docs:
+            raise ValueError("No documents extracted from JSONL files")
+
+        if self._cache_enabled:
+            self._cache = docs
+        return docs
+
+    def clear_cache(self) -> None:
+        self._cache = None
+
+
+# Qdrant optional provider
+try:
+    from qdrant_client import QdrantClient  # type: ignore
+    from qdrant_client.http.models import Filter, ScoredPoint  # type: ignore
+
+    class QdrantDocumentProvider(DocumentProvider):
+        """Load text payloads from a Qdrant collection via scroll.
+
+        Note: requires qdrant-client package.
+        """
+
+        def __init__(
+            self,
+            client: QdrantClient,
+            collection_name: str,
+            content_key: str = "text",
+            batch_size: int = 500,
+            scroll_filter: Optional[Filter] = None,
+            with_payload_keys: Optional[List[str]] = None,
+            cache: bool = True,
+            max_docs: Optional[int] = None,
+        ):
+            self.client = client
+            self.collection_name = collection_name
+            self.content_key = content_key
+            self.batch_size = batch_size
+            self.scroll_filter = scroll_filter
+            self.with_payload_keys = (
+                [content_key] if with_payload_keys is None else with_payload_keys
+            )
+            self._cache_enabled = bool(cache)
+            self._cache: Optional[List[str]] = None
+            self._max_docs = max_docs
+
+        def _scroll_once(self, offset: Optional[int] = None) -> List[ScoredPoint]:
+            # using client.scroll - returns (points, next_page) depending on client version
+            resp = self.client.scroll(
                 collection_name=self.collection_name,
                 offset=offset,
                 limit=self.batch_size,
-                scroll_filter=self.filter,
+                scroll_filter=self.scroll_filter,
                 with_payload=True,
                 with_vectors=False,
             )
+            # qdrant client may return a tuple; safe-guard:
+            if isinstance(resp, tuple) or isinstance(resp, list):
+                points = resp[0]
+            else:
+                points = resp
+            return points
 
-            # Extract documents from response
-            points: List[ScoredPoint] = scroll_response[0]
-            if not points:
-                break
+        def _load_documents(self) -> List[str]:
+            if self._cache_enabled and self._cache is not None:
+                return self._cache
 
-            # Process each point
-            for point in points:
-                if (
-                    point.payload
-                    and self.content_key in point.payload
-                    and isinstance(point.payload[self.content_key], str)
-                ):
-                    documents.append(point.payload[self.content_key])
+            docs: List[str] = []
+            offset = None
+            while True:
+                points = self._scroll_once(offset)
+                if not points:
+                    break
+                for p in points:
+                    if getattr(p, "payload", None) and self.content_key in p.payload:
+                        val = p.payload[self.content_key]
+                        if isinstance(val, str) and val.strip():
+                            docs.append(val.strip())
+                            if self._max_docs and len(docs) >= self._max_docs:
+                                break
+                if self._max_docs and len(docs) >= self._max_docs:
+                    break
+                offset = points[-1].id if points else None
+                if len(points) < self.batch_size:
+                    break
 
-                    # Check cache limit
-                    if self.cache_size and len(documents) >= self.cache_size:
-                        return documents
+            if not docs:
+                raise ValueError(
+                    f"No documents found in Qdrant collection {self.collection_name}"
+                )
 
-            # Update offset for next batch
-            offset = points[-1].id
+            if self._cache_enabled:
+                self._cache = docs
+            return docs
 
-            # If we got fewer points than batch_size, we're done
-            if len(points) < self.batch_size:
-                break
+        def clear_cache(self) -> None:
+            self._cache = None
 
-        return documents
+except Exception:
+    # Qdrant not installed - define a lightweight placeholder for type-checkers/usage errors.
+    QdrantDocumentProvider = None  # type: ignore
 
-    def _load_documents(self) -> List[str]:
-        """Load and cache documents from Qdrant."""
-        if self._document_cache is not None:
-            return self._document_cache
 
-        print("Filling document cash from Qdrant...")
-        documents = self._scroll_documents()
-        assert len(documents) > 0, (
-            f"No documents found in collection {self.collection_name} "
-            f"with content key: {self.content_key}"
-        )
+# ---------- small usage / test snippet ----------
+if __name__ == "__main__":
+    # quick smoke test
+    mem = InMemoryDocumentProvider(["a", "b", "c", "d"])
+    assert len(mem) == 4
+    assert len(mem.get_documents(2)) == 2
+    assert len(mem.get_documents(math.inf)) == 4
 
-        self._document_cache = documents
-        self._total_docs = len(documents)
-        return documents
-
-    def get_documents(self, n_samples: int) -> List[str]:
-        """Get random documents from Qdrant collection.
-
-        Args:
-            n_samples: Number of documents to retrieve
-
-        Returns:
-            List[str]: List of randomly sampled documents
-        """
-        documents = self._load_documents()
-        return random.sample(documents, min(n_samples, len(documents)))
-
-    def clear_cache(self):
-        """Clear the document cache to force reloading."""
-        self._document_cache = None
-        self._total_docs = None
-
-    @property
-    def total_documents(self) -> Optional[int]:
-        """Get the total number of cached documents."""
-        return self._total_docs
+    # JSONL/FileSystem/Directory providers: create small files and test manually as needed.
+    print("document_providers module loaded - smoke tests passed.")

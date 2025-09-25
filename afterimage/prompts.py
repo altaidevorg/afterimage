@@ -1,3 +1,5 @@
+import re
+
 example_respondent_prompt_1 = """You are a world-class expert gynecologist.
 Your task is to answer women's questions about their period (menstrual cycle) and related health concerns.
 Never tell them to consult another gynecologist because you are a renowned expert that every woman feels lucky to talk to.
@@ -147,6 +149,16 @@ Below is relevant information retrieved from our knowledge base that may help an
 
 Remember to provide accurate, contextually relevant answers while maintaining your expert persona."""
 
+persona_generation_prompt_tmpl = """Generate three to five persona descriptions that are likely to engage with the following text in some way (e.g., read, write, like, dislike etc.). Each persona description should be **no longer than 40 words**, describing the individual’s background, interests, expertise level, experiences, goals, and/or desires. Personas should be **descriptive** and as **specific** as possible. They must never **explicitly** refer to provided text but be highly relevant to their contents.
+
+Each persona should be written on a separate line, and each line must begin with "Persona N:", where N is the enumeration starting at 1.  Your output must not include any preamble, explanations, or commentary --output only the persona descriptions.
+
+<text>
+{text}
+</text>
+"""
+
+
 def get_correspondent_instruction_generation_prompt(assistant_prompt: str) -> str:
     """given the respondent prompt, generate a prompt for correspondent prompt generation"""
    
@@ -159,3 +171,18 @@ def get_correspondent_instruction_generation_prompt(assistant_prompt: str) -> st
             )
 
     return prompt
+
+def parse_personas(text: str) -> list[str]:
+    """parse the personas from the text using regex"""
+    return re.findall(r"Persona \d+:\s*(.+)", text)
+
+
+if __name__ == "__main__":
+   # test parse_personas function
+   text = """Persona 1: A young woman in her twenties, interested in fashion and technology.
+Persona 2: A man in his thirties, interested in sports and politics.
+Persona 3: A woman in her forties, interested in reading and cooking.
+Persona 4: A man in his fifties, interested in history and science.
+Persona 5: A woman in her sixties, interested in art and music.
+"""
+   print(parse_personas(text))

@@ -26,7 +26,7 @@ from .types import (
 from .key_management import SmartKeyPool
 from .providers import ChatSession, LLMFactory
 from .monitoring import GenerationMonitor
-from .storage import DatasetStorage, JSONLStorage
+from .storage import BaseStorage, JSONLStorage
 
 
 class AsyncConversationGenerator(BaseGenerator):
@@ -43,7 +43,7 @@ class AsyncConversationGenerator(BaseGenerator):
         evaluator_model_name: str | None = None,
         model_provider_name: Literal["gemini", "openai"] = "gemini",
         evaluator_method: Literal["simple", "hybrid"] = "simple",
-        storage: Optional[DatasetStorage] = None,
+        storage: Optional[BaseStorage] = None,
         monitor: Optional[GenerationMonitor] = None,
     ):
         """Initialize the generator with API key(s).

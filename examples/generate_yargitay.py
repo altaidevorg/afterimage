@@ -58,7 +58,7 @@ documents = QdrantDocumentProvider(
     client=qd_client,
     collection_name="yargitay",
     content_key="content",
-    cache_size=50,
+    max_docs=50,
 )
 
 # Set up the instruction generator callback

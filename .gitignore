@@ -17,3 +17,4 @@ wheels/
 logs
 plots
 *.png
+*_logs/
