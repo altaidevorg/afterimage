@@ -46,7 +46,7 @@ instruction_generator_callback = ContextualInstructionGeneratorCallback(
     api_key=api_key,
     documents=documents,
     num_random_contexts=1,  # Experiment with different values
-    n_instructions=4,
+    n_instructions=3,
 )
 
 # Set up the respondent prompt modifier

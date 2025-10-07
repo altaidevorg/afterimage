@@ -8,7 +8,9 @@ import random
 import logging
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Iterable, List, Optional, Protocol, runtime_checkable
+from typing import Iterable, List, Optional, Protocol, runtime_checkable
+
+from ..types import Document
 
 logger = logging.getLogger(__name__)
 
@@ -19,28 +21,28 @@ class DocumentProvider(Protocol):
     Unified DocumentProvider protocol.
 
     Minimal required method for implementations:
-        - _load_documents() -> List[str]
+        - _load_documents() -> list[Document]
 
     Public helpers (provided by protocol defaults below):
-        - get_documents(n: int) -> List[str]
-        - get_all() -> List[str]
-        - sample(n: int) -> List[str]
+        - get_documents(n: int) -> list[Document]
+        - get_all() -> list[Document]
+        - sample(n: int) -> list[Document]
         - clear_cache()
         - __len__(), __iter__(), __getitem__(i)
     """
 
     @abstractmethod
-    def _load_documents(self) -> List[str]:
+    def _load_documents(self) -> list[Document]:
         """Load (and return) all documents. Implementations may cache internally."""
         ...
 
     # --- default helpers (implementations can override) ---
-    def get_all(self) -> List[str]:
+    def get_all(self) -> list[Document]:
         """Return all documents (loads once if implementation caches)."""
         docs = self._load_documents()
         return docs
 
-    def get_documents(self, n: int) -> List[str]:
+    def get_documents(self, n: int) -> list[Document]:
         """Return up to n random documents. If n is math.inf, return all documents."""
         if n is None:
             n = math.inf
@@ -55,7 +57,7 @@ class DocumentProvider(Protocol):
         # sample without replacement
         return random.sample(docs, k)
 
-    def sample(self, n: int) -> List[str]:
+    def sample(self, n: int) -> list[Document]:
         """Alias for get_documents."""
         return self.get_documents(n)
 
@@ -82,14 +84,14 @@ class DocumentProvider(Protocol):
 class InMemoryDocumentProvider(DocumentProvider):
     """Simple provider backed by a list of strings."""
 
-    def __init__(self, documents: List[str]):
-        if not isinstance(documents, list) or not all(
-            isinstance(d, str) for d in documents
+    def __init__(self, texts: list[str]):
+        if not isinstance(texts, list) or not all(
+            isinstance(d, str) for d in texts
         ):
-            raise TypeError("documents must be a List[str]")
-        self._documents = documents
+            raise TypeError("texts must be a List[str]")
+        self._documents = [Document(text=text) for text in texts]
 
-    def _load_documents(self) -> List[str]:
+    def _load_documents(self) -> list[Document]:
         return self._documents
 
     def clear_cache(self) -> None:
@@ -113,12 +115,12 @@ class FileSystemDocumentProvider(DocumentProvider):
         self.recursive = recursive
         self.min_length = min_length
         self._cache_enabled = bool(cache)
-        self._cache: Optional[List[str]] = None
+        self._cache: Optional[list[Document]] = None
 
     def _find_files(self) -> List[str]:
         return glob.glob(self.pattern, recursive=self.recursive)
 
-    def _load_documents(self) -> List[str]:
+    def _load_documents(self) -> list[Document]:
         if self._cache_enabled and self._cache is not None:
             return self._cache
 
@@ -126,13 +128,13 @@ class FileSystemDocumentProvider(DocumentProvider):
         if not files:
             raise FileNotFoundError(f"No files matching pattern: {self.pattern}")
 
-        docs: List[str] = []
+        docs: list[Document] = []
         for path in files:
             try:
                 with open(path, "r", encoding=self.encoding) as f:
                     text = f.read().strip()
                     if len(text) >= self.min_length:
-                        docs.append(text)
+                        docs.append(Document(text=text))
             except Exception as exc:
                 logger.warning("Failed to read %s: %s", path, exc)
                 continue
@@ -168,7 +170,7 @@ class DirectoryDocumentProvider(DocumentProvider):
         self.recursive = recursive
         self.min_length = min_length
         self._cache_enabled = bool(cache)
-        self._cache: Optional[List[str]] = None
+        self._cache: Optional[list[str]] = None
 
     def _find_files(self) -> List[Path]:
         patterns = self.patterns
@@ -178,7 +180,7 @@ class DirectoryDocumentProvider(DocumentProvider):
             files.extend(self.directory.glob(glob_pat))
         return files
 
-    def _load_documents(self) -> List[str]:
+    def _load_documents(self) -> list[Document]:
         if self._cache_enabled and self._cache is not None:
             return self._cache
 
@@ -188,7 +190,7 @@ class DirectoryDocumentProvider(DocumentProvider):
                 f"No files found in {self.directory} for {self.patterns}"
             )
 
-        docs: List[str] = []
+        docs: list[Document] = []
         for path in files:
             if not path.is_file():
                 continue
@@ -196,7 +198,7 @@ class DirectoryDocumentProvider(DocumentProvider):
                 with path.open("r", encoding=self.encoding) as f:
                     text = f.read().strip()
                     if len(text) >= self.min_length:
-                        docs.append(text)
+                        docs.append(Document(text=text))
             except Exception as exc:
                 logger.debug("skip %s: %s", path, exc)
                 continue
@@ -232,7 +234,7 @@ class JSONLDocumentProvider(DocumentProvider):
         self.encoding = encoding
         self.recursive = recursive
         self._cache_enabled = bool(cache)
-        self._cache: Optional[List[str]] = None
+        self._cache: Optional[list[Document]] = None
         self._max_docs = max_docs
 
     def _find_files(self) -> List[str]:
@@ -246,7 +248,7 @@ class JSONLDocumentProvider(DocumentProvider):
         if not files:
             raise FileNotFoundError(f"No JSONL files matching: {self.pattern}")
 
-        docs: List[str] = []
+        docs: list[Document] = []
         for fp in files:
             try:
                 with open(fp, "r", encoding=self.encoding) as f:
@@ -261,7 +263,7 @@ class JSONLDocumentProvider(DocumentProvider):
                         if isinstance(obj, dict) and self.content_key in obj:
                             val = obj[self.content_key]
                             if isinstance(val, str) and val.strip():
-                                docs.append(val.strip())
+                                docs.append(Document(text=val.strip()))
                                 if self._max_docs and len(docs) >= self._max_docs:
                                     break
             except Exception as exc:
@@ -332,11 +334,11 @@ try:
                 points = resp
             return points
 
-        def _load_documents(self) -> List[str]:
+        def _load_documents(self) -> list[Document]:
             if self._cache_enabled and self._cache is not None:
                 return self._cache
 
-            docs: List[str] = []
+            docs: list[Document] = []
             offset = None
             while True:
                 points = self._scroll_once(offset)
@@ -346,7 +348,7 @@ try:
                     if getattr(p, "payload", None) and self.content_key in p.payload:
                         val = p.payload[self.content_key]
                         if isinstance(val, str) and val.strip():
-                            docs.append(val.strip())
+                            docs.append(Document(text=val.strip()))
                             if self._max_docs and len(docs) >= self._max_docs:
                                 break
                 if self._max_docs and len(docs) >= self._max_docs:

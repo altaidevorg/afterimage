@@ -1,5 +1,4 @@
-import json
-from typing import List, Literal, TypedDict, Optional, Union
+from typing import List, Literal, Optional, Union
 from .base import BaseInstructionGeneratorCallback, BaseRespondentPromptModifierCallback
 from .common import default_model_name, default_safety_settings, GeneratedInstructions
 from .key_management import SmartKeyPool
@@ -11,7 +10,7 @@ from .prompts import (
 from .providers import DocumentProvider, InMemoryDocumentProvider 
 from .providers.llm_providers import LLMFactory
 from .retrievers import ContextRetriever  # Update import
-from .types import GeneratedResponsePrompt
+from .types import GeneratedResponsePrompt, Document
 
 from pydantic import BaseModel
 
@@ -26,7 +25,7 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
     def __init__(
         self,
         api_key: str|SmartKeyPool,
-        documents: Union[List[str], DocumentProvider],
+        documents: Union[list[str], DocumentProvider],
         prompt: str|None = None,
         model_name: str|None = None,
         model_provider_name: Literal["gemini", "openai"] = "gemini",
@@ -90,11 +89,11 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
             response_schema=InstructionsSchema,
         )
 
-    def _sample(self) -> List[str]:
+    def _sample(self) -> list[Document]:
         """Sample random contexts using the document provider."""
         return self.provider.get_documents(self.num_random_contexts)
 
-    def _merge_contexts(self, contexts: List[str]) -> str:
+    def _merge_contexts(self, contexts: list[str]) -> str:
         """Merge multiple contexts into a single string."""
         return self.separator_text.join(contexts)
 
@@ -109,7 +108,7 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
         """
         model = self._create_model()
         random_contexts = self._sample()
-        full_context = self._merge_contexts(random_contexts)
+        full_context = self._merge_contexts([c.text for c in random_contexts])
         original_prompt = original_prompt.format(n_instructions=self.n_instructions) if "{n_instructions}" in original_prompt else original_prompt
         prompt = f"""{original_prompt}
 ----------------------------
@@ -131,7 +130,7 @@ Ask the questions in the same language as this context.
         """Generates instructions based on the provided prompt and sampled context asynchronously."""
         model = self._create_model()
         random_contexts = self._sample()
-        full_context = self._merge_contexts(random_contexts)
+        full_context = self._merge_contexts([c.text for c in random_contexts])
         original_prompt = original_prompt.format(n_instructions=self.n_instructions) if "{n_instructions}" in original_prompt else original_prompt
         prompt = f"""{original_prompt}
 ----------------------------
@@ -198,7 +197,6 @@ class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
         return GeneratedResponsePrompt(
             prompt=modified_prompt,
             context=additional_context,
-            metadata=None,
         )
 
     async def agenerate(

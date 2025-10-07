@@ -10,7 +10,7 @@ import dataclasses
 from .types import (
     ConversationWithContext,
     EvaluatedConversationWithContext,
-    PersonaEntry,
+    Document,
 )
 
 
@@ -40,21 +40,21 @@ class BaseStorage(Protocol):
         pass
 
     @abstractmethod
-    def save_personas(self, personas: List[PersonaEntry]) -> None:
+    def save_documents(self, documents: List[Document]) -> None:
         pass
 
     @abstractmethod
-    async def asave_personas(self, personas: List[PersonaEntry]) -> None:
+    async def asave_documents(self, documents: List[Document]) -> None:
         pass
 
 
 class JSONLStorage(BaseStorage):
-    """Stores conversations and personas in JSONL format."""
+    """Stores conversations and documents in JSONL format."""
 
     def __init__(
         self,
         conversations_path: Optional[str | Path] = None,
-        personas_path: Optional[str | Path] = None,
+        documents_path: Optional[str | Path] = None,
         encoding: str = "utf-8",
         lock_timeout: int = 30,
     ):
@@ -70,11 +70,11 @@ class JSONLStorage(BaseStorage):
             self.conversations_path.suffix + ".lock"
         )
 
-        self.personas_path = (
-            Path(personas_path) if personas_path else self._get_default_path("personas")
+        self.documents_path = (
+            Path(documents_path) if documents_path else self._get_default_path("documents")
         )
-        self.personas_lock_path = self.personas_path.with_suffix(
-            self.personas_path.suffix + ".lock"
+        self.documents_lock_path = self.documents_path.with_suffix(
+            self.documents_path.suffix + ".lock"
         )
 
     @staticmethod
@@ -138,29 +138,29 @@ class JSONLStorage(BaseStorage):
 
             return conversations
 
-    def save_personas(self, personas: List[PersonaEntry]) -> None:
-        with FileLock(self.personas_lock_path, timeout=self.lock_timeout):
-            mode = "a" if self.personas_path.exists() else "w"
-            with open(self.personas_path, mode, encoding=self.encoding) as f:
-                for entry in personas:
-                    f.write(json.dumps(dataclasses.asdict(entry), default=str) + "\n")
+    def save_documents(self, documents: List[Document]) -> None:
+        with FileLock(self.documents_lock_path, timeout=self.lock_timeout):
+            mode = "a" if self.documents_path.exists() else "w"
+            with open(self.documents_path, mode, encoding=self.encoding) as f:
+                for entry in documents:
+                    f.write(entry.model_dump_json() + "\n")
 
-    async def asave_personas(self, personas: List[PersonaEntry]) -> None:
+    async def asave_documents(self, documents: List[Document]) -> None:
         def _save():
-            self.save_personas(personas)
+            self.save_documents(documents)
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, _save)
 
 
 class SQLStorage(BaseStorage):
-    """Stores conversations and personas using SQLAlchemy."""
+    """Stores conversations and documents using SQLAlchemy."""
 
     def __init__(
         self,
         url: str,
         conversations_table_name: str = "conversations",
-        personas_table_name: str = "personas",
+        documents_table_name: str = "documents",
         metadata_fields: Optional[List[str]] = None,
         batch_size: int = 100,
     ):
@@ -197,13 +197,13 @@ class SQLStorage(BaseStorage):
             Column("evaluation", JSON, nullable=True),
         )
 
-        self.personas_table = Table(
-            personas_table_name,
+        self.documents_table = Table(
+            documents_table_name,
             self.metadata,
-            Column("id", Integer, primary_key=True),
-            Column("source_document", String),
-            Column("personas", JSON),
-            Column("timestamp", DateTime),
+            Column("_id", Integer, primary_key=True),
+            Column("id", String),
+            Column("text", String),
+            Column("personas", JSON, nullable=True),
             Column("metadata", JSON, nullable=True),
         )
 
@@ -331,17 +331,17 @@ class SQLStorage(BaseStorage):
                 for row in result
             ]
 
-    def save_personas(self, personas: List[PersonaEntry]) -> None:
-        records = [dataclasses.asdict(p) for p in personas]
+    def save_documents(self, documents: List[Document]) -> None:
+        records = [document.model_dump(mode="json") for document in documents]
         with self.engine.begin() as conn:
             for i in range(0, len(records), self.batch_size):
                 batch = records[i : i + self.batch_size]
-                conn.execute(self.personas_table.insert(), batch)
+                conn.execute(self.documents_table.insert(), batch)
 
-    async def asave_personas(self, personas: List[PersonaEntry]) -> None:
-        records = [dataclasses.asdict(p) for p in personas]
+    async def asave_documents(self, documents: List[Document]) -> None:
+        records = [document.model_dump(mode="json") for document in documents]
         async with self.async_session_maker() as session:
             async with session.begin():
                 for i in range(0, len(records), self.batch_size):
                     batch = records[i : i + self.batch_size]
-                    await session.execute(self.personas_table.insert(), batch)
+                    await session.execute(self.documents_table.insert(), batch)

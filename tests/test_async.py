@@ -1,6 +1,6 @@
 import asyncio
 import unittest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
 
 from afterimage.async_conversation_generator import AsyncConversationGenerator
 from afterimage.providers.llm_providers import LLMResponse, ChatSession
