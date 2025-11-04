@@ -1,6 +1,6 @@
 [project]
 name = "afterimage"
-version = "0.7.1"
+version = "0.7.2"
 keywords = ["afterimage", "synthetic", "dataset-generation", "synthetic-dataset"]
 authors = [
     { name = "Yusuf Sarıgöz", email = "yusuf@altai.dev"}
@@ -38,5 +38,6 @@ homepage = "https://github.com/altaidevorg/afterimage"
 project = "https://github.com/altaidevorg/afterimage"
 repository = "https://github.com/altaidevorg/afterimage"
 
-[tool.setuptools]
-packages = ["afterimage"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["afterimage", "afterimage.*"]
