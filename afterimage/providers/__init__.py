@@ -1,12 +1,15 @@
 from .document_providers import (
-    ChatSession, # noqa
     DirectoryDocumentProvider,  # noqa
     DocumentProvider,  # noqa
     FileSystemDocumentProvider,  # noqa
-    GeminiChatSession, # noqa
     InMemoryDocumentProvider,  # noqa
     JSONLDocumentProvider,  # noqa
+    QdrantDocumentProvider,  # noqa
+)
+from .llm_providers import (
+    AsyncGeminiChatSession, # noqa
+    ChatSession, # noqa
+    GeminiChatSession, # noqa
     LLMFactory, # noqa
     LLMProvider,  # noqa
-    QdrantDocumentProvider,  # noqa
 )
