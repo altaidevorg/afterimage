@@ -1,6 +1,6 @@
 [project]
 name = "afterimage"
-version = "0.7.0"
+version = "0.7.1"
 keywords = ["afterimage", "synthetic", "dataset-generation", "synthetic-dataset"]
 authors = [
     { name = "Yusuf Sarıgöz", email = "yusuf@altai.dev"}
@@ -34,9 +34,9 @@ dependencies = [
 ]
 
 [project.urls]
-homepage = "https://github.com/monatis/afterimage"
-project = "https://github.com/monatis/afterimage"
-repository = "https://github.com/monatis/afterimage"
+homepage = "https://github.com/altaidevorg/afterimage"
+project = "https://github.com/altaidevorg/afterimage"
+repository = "https://github.com/altaidevorg/afterimage"
 
 [tool.setuptools]
 packages = ["afterimage"]

@@ -2,9 +2,9 @@ import os
 from afterimage import (
     ConversationGenerator,
     ContextualInstructionGeneratorCallback,
+    JSONLDocumentProvider,
     WithContextRespondentPromptModifier,
 )
-from afterimage.providers import JSONLDocumentProvider
 
 # Get API key
 api_key = os.getenv("GEMINI_API_KEY")

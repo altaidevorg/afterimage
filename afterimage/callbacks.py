@@ -7,9 +7,9 @@ from .prompts import (
     default_respondent_prompt_with_context,
     default_rag_respondent_prompt_with_context,
 )
-from .providers import DocumentProvider, InMemoryDocumentProvider 
+from .providers import DocumentProvider, InMemoryDocumentProvider
 from .providers.llm_providers import LLMFactory
-from .retrievers import ContextRetriever  # Update import
+from .retrievers import ContextRetriever
 from .types import GeneratedResponsePrompt, Document
 
 from pydantic import BaseModel
@@ -24,10 +24,10 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
 
     def __init__(
         self,
-        api_key: str|SmartKeyPool,
+        api_key: str | SmartKeyPool,
         documents: Union[list[str], DocumentProvider],
-        prompt: str|None = None,
-        model_name: str|None = None,
+        prompt: str | None = None,
+        model_name: str | None = None,
         model_provider_name: Literal["gemini", "openai"] = "gemini",
         num_random_contexts: int = 1,
         n_instructions: int = 3,
@@ -76,7 +76,6 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
             safety_settings if safety_settings is not None else default_safety_settings
         )
 
-        
     def _create_model(self):
         """Creates and configures the LLM model."""
         return LLMFactory.create(
@@ -109,7 +108,11 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
         model = self._create_model()
         random_contexts = self._sample()
         full_context = self._merge_contexts([c.text for c in random_contexts])
-        original_prompt = original_prompt.format(n_instructions=self.n_instructions) if "{n_instructions}" in original_prompt else original_prompt
+        original_prompt = (
+            original_prompt.format(n_instructions=self.n_instructions)
+            if "{n_instructions}" in original_prompt
+            else original_prompt
+        )
         prompt = f"""{original_prompt}
 ----------------------------
 
@@ -123,7 +126,7 @@ Ask the questions in the same language as this context.
         instructions = model.generate_content(
             prompt=prompt,
         ).raw_response.parsed.instructions
-        
+
         return GeneratedInstructions(instructions=instructions, context=full_context)
 
     async def agenerate(self, original_prompt):
@@ -131,7 +134,11 @@ Ask the questions in the same language as this context.
         model = self._create_model()
         random_contexts = self._sample()
         full_context = self._merge_contexts([c.text for c in random_contexts])
-        original_prompt = original_prompt.format(n_instructions=self.n_instructions) if "{n_instructions}" in original_prompt else original_prompt
+        original_prompt = (
+            original_prompt.format(n_instructions=self.n_instructions)
+            if "{n_instructions}" in original_prompt
+            else original_prompt
+        )
         prompt = f"""{original_prompt}
 ----------------------------
 
@@ -146,7 +153,7 @@ Ask the questions in the same language as this context.
             prompt=prompt,
         )
         instructions = response.raw_response.parsed.instructions
-        
+
         return GeneratedInstructions(instructions=instructions, context=full_context)
 
 

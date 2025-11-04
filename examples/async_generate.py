@@ -2,13 +2,15 @@ import os
 import asyncio
 from datetime import timedelta
 
-from afterimage.async_conversation_generator import AsyncConversationGenerator
+
 from afterimage import (
+    AsyncConversationGenerator,
     ContextualInstructionGeneratorCallback,
     GenerationMonitor,
+    JSONLDocumentProvider,
     WithContextRespondentPromptModifier,
 )
-from afterimage.providers import JSONLDocumentProvider
+
 
 # Get API key
 api_key = os.getenv("GEMINI_API_KEY")
@@ -84,6 +86,8 @@ async def main():
 
     # Generate visualizations
     figures = monitor.visualize_metrics(save_dir="plots")
+    print("You have these figures visualized for you", figures.keys())
+    print("You can show them with figures[key].show() or save them to a file.")
 
     # Optional: Export metrics data
     # monitor.export_metrics(

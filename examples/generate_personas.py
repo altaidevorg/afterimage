@@ -1,8 +1,6 @@
 import asyncio
 import os
-from afterimage import PersonaGenerator, GenerationMonitor
-from afterimage.storage import JSONLStorage
-from afterimage.providers import InMemoryDocumentProvider
+from afterimage import GenerationMonitor, JSONLStorage, InMemoryDocumentProvider, PersonaGenerator
 
 async def main():
     api_key = os.getenv("GEMINI_API_KEY")
