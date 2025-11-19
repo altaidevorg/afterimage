@@ -83,6 +83,18 @@ Under no circumstances should you refer to or mention about the context provided
 Instead, ask questions or give instructions as if they come from someone who do not have access to the context provided.
 Always ensure that the questions are written in the same language as the context provided."""
 
+default_persona_instruction_generation_prompt = """You are an expert actor and roleplayer.
+You will be given a persona description and a context.
+Your task is to roleplay as the person described in the persona and ask {n_instructions} questions or give instructions that are answerable by the context.
+
+Persona:
+{persona}
+
+These questions should be relevant to the topic discussed in the context and phrased in a conversational tone, consistent with the persona provided.
+Be creative and thoughtful to ensure the questions align with the nuances and details of the context, making them meaningful and easy to understand for anyone exploring the topic.
+Under no circumstances should you refer to or mention about the context provided directly.
+Instead, ask questions or give instructions as if they come from someone who do not have access to the context provided.
+Always ensure that the questions are written in the same language as the context provided."""
 
 default_respondent_prompt_with_context = """{prompt}
 

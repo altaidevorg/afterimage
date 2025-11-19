@@ -40,7 +40,7 @@ Onlara asla 'gerçek bir mali müşavire danışmalarını' ya da 'hukuki yardı
 
 # Prepare contextual documents
 documents = JSONLDocumentProvider(
-    "../scraping/data/gib/gib-ozelge.jsonl", content_key="markdown"
+    "../scraping/gib-ozelge.jsonl", content_key="markdown"
 )
 
 # Set up the instruction generator callback
@@ -61,21 +61,27 @@ async def main():
         api_key=api_key,
         model_name="gemini-2.0-flash",
         monitor=monitor,
+        instruction_generator_callback=instruction_generator_callback,
+        respondent_prompt_modifier=respondent_prompt_modifier,
     )
 
-    # Initialize the generator
-    await conv_gen.initialize()
+    # let the correspondent prompt be automatically generated
 
+    # Print the auto-generated correspondent prompt
+    # note: normally, you do not need to call `initialize()`` method here manually,,
+    # and it will be automatically called in the `generate()` method
+    # we call it here just to trigger the creation of correspondent prompt and print it
+    # before entering the generation loop.
+    await conv_gen.initialize(instruction_generator_callback)
+    
     # Print the auto-generated correspondent prompt
     print("Generated Correspondent Prompt:")
     print(conv_gen.correspondent_prompt)
 
     # Generate conversations
     await conv_gen.generate(
-        num_dialogs=30,  # Total dialogs to generate
+        num_dialogs=20,  # Total dialogs to generate
         max_turns=1,  # Max turns per conversation
-        instruction_generator_callback=instruction_generator_callback,
-        respondent_prompt_modifier=respondent_prompt_modifier,
         max_concurrency=4,
     )
 

@@ -20,19 +20,9 @@ Hukuki ve ticari kavramları doğru şekilde kullanmaya özen göster ama herkes
 Onlara asla 'gerçek bir mali müşavire danışmalarını' ya da 'hukuki yardıma başvurmalarını' tavsiye etme çünkü sen, tüm vatandaşların ve mali müşavirlerin güvendiği, saygıdeğer bir mali müşavirsin.
 """
 
-# Initialize the ConversationGenerator
-conv_gen = ConversationGenerator(
-    respondent_prompt=respondent_prompt,
-    api_key=api_key,
-)
-
-# Print the auto-generated correspondent prompt
-print("Generated Correspondent Prompt:")
-print(conv_gen.correspondent_prompt)
-
 # Prepare contextual documents
 documents = JSONLDocumentProvider(
-    "../scraping/data/gib/gib-ozelge.jsonl", content_key="mardown"
+    "../scraping/gib-ozelge.jsonl", content_key="markdown"
 )
 
 # Set up the instruction generator callback
@@ -45,13 +35,31 @@ instruction_generator_callback = ContextualInstructionGeneratorCallback(
 # Set up the respondent prompt modifier
 respondent_prompt_modifier = WithContextRespondentPromptModifier()
 
+# Initialize the ConversationGenerator
+conv_gen = ConversationGenerator(
+    respondent_prompt=respondent_prompt,
+    api_key=api_key,
+    instruction_generator_callback=instruction_generator_callback,
+    respondent_prompt_modifier=respondent_prompt_modifier,
+)
+
 # Generate conversations
 if __name__ == "__main__":
+    # let the correspondent prompt be automatically generated
+
+    # Print the auto-generated correspondent prompt
+    # note: normally, you do not need to call `initialize()`` method here manually,,
+    # and it will be automatically called in the `generate()` method
+    # we call it here just to trigger the creation of correspondent prompt and print it
+    # before entering the generation loop.
+    conv_gen.initialize(instruction_generator_callback)
+    print("Generated Correspondent Prompt:")
+    print(conv_gen.correspondent_prompt)
+
+    # start generating the dataset
     conv_gen.generate(
         num_dialogs=20,  # Total dialogs to generate
-        max_turns=3,  # Max turns per conversation
-        instruction_generator_callback=instruction_generator_callback,
-        respondent_prompt_modifier=respondent_prompt_modifier,
+        max_turns=1,  # Max turns per conversation
     )
 
     print("Conversation dataset generated successfully!")

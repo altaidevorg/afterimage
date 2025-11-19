@@ -44,6 +44,7 @@ class Conversation(BaseModel):
 class ConversationWithContext(Conversation):
     instruction_context: Optional[str] = None
     response_context: Optional[str] = None
+    persona: Optional[str] = None
 
 
 class EvaluatedConversationWithContext(ConversationWithContext):

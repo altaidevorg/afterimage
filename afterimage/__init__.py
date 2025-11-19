@@ -1,6 +1,7 @@
 from afterimage.async_conversation_generator import AsyncConversationGenerator # noqa
 from afterimage.callbacks import (
     ContextualInstructionGeneratorCallback,  # noqa
+    PersonaInstructionGeneratorCallback,  # noqa
     WithContextRespondentPromptModifier,  # noqa
     WithRAGRespondentPromptModifier,  # noqa
 )
@@ -25,5 +26,6 @@ LLMFactory, # noqa
 LLMProvider  # noqa
 )
 from afterimage.storage import BaseStorage # noqa
+from afterimage.types import PersonaEntry, Document # noqa
 
-__version__ = "0.7.3"
+__version__ = "0.8.0"

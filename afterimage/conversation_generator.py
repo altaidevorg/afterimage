@@ -52,13 +52,16 @@ class ConversationGenerator(BaseGenerator):
         evaluator_method: Literal["simple", "hybrid"] = "simple",
         storage: Optional[BaseStorage] = None,
         monitor: Optional[GenerationMonitor] = None,
+        instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
+        respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
     ):
         """Initialize the generator with API key(s).
 
         Args:
-            respondent_prompt: Template for generating respondent answers
+            respondent_prompt: System prompt to the respondent, e.g., assistant that you want you fine-tune on this dataset
             api_key: Either a single API key string or a SmartKeyPool instance
-            correspondent_prompt: Template for generating correspondent questions
+            correspondent_prompt: System prompt to the correspondent, e.g., model that roleplays a user of the assistant
+                that you want to fine-tune on this dataset.
             model_name: Model name to use
             safety_settings: Safety settings for the model
             auto_improve: Whether to try to improve low-quality generations
@@ -68,8 +71,12 @@ class ConversationGenerator(BaseGenerator):
             storage: Storage implementation for saving conversations
                     If None, creates JSONLStorage with datetime-based filename
             monitor: GenerationMonitor instance for tracking generation metrics
+            instruction_generator_callback: Callback for instruction generation. Can also be passed to generate() method (deprecated).
+            respondent_prompt_modifier: Callback to modify respondent prompts. Can also be passed to generate() method (deprecated).
         """
-        warnings.warn("This synchronous implementation is deprecated and may be removed in the future. Consider using AsyncConversationGenerator class instead.")
+        warnings.warn(
+            "This synchronous implementation is deprecated and may be removed in the future. Consider using AsyncConversationGenerator class instead."
+        )
         self.monitor = monitor
         self.key_pool = (
             api_key
@@ -83,12 +90,23 @@ class ConversationGenerator(BaseGenerator):
             safety_settings if safety_settings is not None else default_safety_settings
         )
 
+        # users should pass at least one of correspondent prompt and instruction generator callback.
+        # if both are passed, the correspondent prompt will be used as is passed.
+        # if neither are passed, raise an error.
+        if correspondent_prompt is None and instruction_generator_callback is None:
+            raise ValueError(
+                "At least one of `correspondent_prompt` or `instruction_generator_callback` should be passed."
+            )
+        if correspondent_prompt is None:
+            warnings.warn(
+                "A correspondent prompt will be automatically created because you did not pass one."
+            )
+
         self.respondent_prompt = respondent_prompt
-        self.correspondent_prompt = (
-            correspondent_prompt
-            if correspondent_prompt is not None
-            else self.create_correspondent_prompt(self.respondent_prompt)
-        )
+        self.correspondent_prompt = correspondent_prompt
+
+        self.instruction_generator_callback = instruction_generator_callback
+        self.respondent_prompt_modifier = respondent_prompt_modifier
 
         self.evaluator = None
         if auto_improve:
@@ -115,11 +133,35 @@ class ConversationGenerator(BaseGenerator):
         self.initiators = []
         self.storage = storage or JSONLStorage()
 
+    def initialize(self, instruction_generator_callback=None):
+        """Initializes the generator by creating the correspondent prompt if it doesn't exist."""
+        if self.correspondent_prompt is None:
+            # Use provided callback if given, otherwise use instance attribute
+            callback = (
+                instruction_generator_callback or self.instruction_generator_callback
+            )
+            # Try to use callback first if available
+            if callback is not None:
+                created_prompt = callback.create_correspondent_prompt(
+                    self.respondent_prompt
+                )
+                if created_prompt is not None:
+                    self.correspondent_prompt = created_prompt
+                    self.log_correspondent_prompt(self.correspondent_prompt)
+                    return
+            # Fallback to generator's method
+            self.correspondent_prompt = self.create_correspondent_prompt(
+                self.respondent_prompt
+            )
+        self.log_correspondent_prompt(self.correspondent_prompt)
+
     def create_correspondent_prompt(self, assistant_prompt: str) -> str:
         """Create a correspondent prompt based on the assistant prompt."""
         start_time = time.time()
         try:
-            prompt = get_correspondent_instruction_generation_prompt(assistant_prompt=assistant_prompt)
+            prompt = get_correspondent_instruction_generation_prompt(
+                assistant_prompt=assistant_prompt
+            )
             api_key = self.key_pool.get_next_key()
             model = LLMFactory.create(
                 "gemini",
@@ -270,6 +312,11 @@ class ConversationGenerator(BaseGenerator):
         try:
             if correspondent_prompt is None:
                 correspondent_prompt = self.correspondent_prompt
+                # If still None, create it using generator's method
+                if correspondent_prompt is None:
+                    correspondent_prompt = self.create_correspondent_prompt(
+                        self.respondent_prompt
+                    )
 
             if respondent_prompt is None:
                 respondent_prompt = self.respondent_prompt
@@ -376,10 +423,26 @@ class ConversationGenerator(BaseGenerator):
         conversations = []
 
         if instruction_generator_callback:
+            # If correspondent_prompt is None, try to create it using the callback
+            if correspondent_prompt is None:
+                created_prompt = (
+                    instruction_generator_callback.create_correspondent_prompt(
+                        respondent_prompt
+                    )
+                )
+                if created_prompt is not None:
+                    correspondent_prompt = created_prompt
+                else:
+                    # Fallback to generator's method if callback doesn't implement it
+                    correspondent_prompt = self.create_correspondent_prompt(
+                        respondent_prompt
+                    )
+
             gen_instructions = instruction_generator_callback(correspondent_prompt)
 
             for instruction in gen_instructions.instructions:
                 instruction_context = gen_instructions.context
+                persona = gen_instructions.persona
                 response_context = None
                 if respondent_prompt_modifier:
                     modified_respondent_prompt = respondent_prompt_modifier(
@@ -408,6 +471,7 @@ class ConversationGenerator(BaseGenerator):
                         conversations=conversation,
                         instruction_context=instruction_context,
                         response_context=response_context,
+                        persona=persona,
                     )
                     evaluated_conversation = self.evaluator.evaluate_row(
                         conversation_row
@@ -437,6 +501,11 @@ class ConversationGenerator(BaseGenerator):
 
         else:
             first_question = seed_questions[i] if seed_questions else None
+            # If correspondent_prompt is None and no callback, create it using generator's method
+            if correspondent_prompt is None:
+                correspondent_prompt = self.create_correspondent_prompt(
+                    respondent_prompt
+                )
 
         conversation = self.go(
             turns=turns,
@@ -473,10 +542,34 @@ class ConversationGenerator(BaseGenerator):
             num_random_examples (int, optional): Number of random examples to use. Defaults to 3.
             generation_examples_delay (int, optional): Delay before using generated examples. Defaults to 100.
             check_for_near_duplicates (bool, optional): Avoid generating duplicate questions. Defaults to False.
-            instruction_generator_callback (callable, optional): Callback for instruction generation. Defaults to None.
-            respondent_prompt_modifier (callable, optional): Callback to modify respondent prompts. Defaults to None.
+            instruction_generator_callback (callable, optional): Callback for instruction generation.
+                Deprecated: Pass this to the constructor instead. Defaults to None.
+            respondent_prompt_modifier (callable, optional): Callback to modify respondent prompts.
+                Deprecated: Pass this to the constructor instead. Defaults to None.
             max_workers (int, optional): Number of threads for parallel execution. Defaults to 4.
         """
+        # Use provided callbacks if given, otherwise use instance attributes
+        # Show deprecation warnings if callbacks are provided as arguments
+        if instruction_generator_callback is not None:
+            warnings.warn(
+                "Passing `instruction_generator_callback` to `generate()` is deprecated and may be removed in a future version. "
+                "Please pass it to the constructor instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        else:
+            instruction_generator_callback = self.instruction_generator_callback
+
+        if respondent_prompt_modifier is not None:
+            warnings.warn(
+                "Passing `respondent_prompt_modifier` to `generate()` is deprecated and may be removed in a future version. "
+                "Please pass it to the constructor instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        else:
+            respondent_prompt_modifier = self.respondent_prompt_modifier
+
         n_conversations = num_dialogs
 
         if instruction_generator_callback is not None:
@@ -495,6 +588,8 @@ class ConversationGenerator(BaseGenerator):
                 warnings.warn(
                     f"`num_dialogs` is set to {n_conversations} because you set {n_conversations} seed instructions"
                 )
+
+        self.initialize(instruction_generator_callback)
 
         num_generated = 0
         pbar = tqdm(total=n_conversations, desc="Generating...", unit="conversation")

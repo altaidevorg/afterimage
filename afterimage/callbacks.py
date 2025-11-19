@@ -1,3 +1,4 @@
+import traceback
 from typing import List, Literal, Optional, Union
 from .base import BaseInstructionGeneratorCallback, BaseRespondentPromptModifierCallback
 from .common import default_model_name, default_safety_settings, GeneratedInstructions
@@ -6,11 +7,14 @@ from .prompts import (
     default_instruction_generation_prompt,
     default_respondent_prompt_with_context,
     default_rag_respondent_prompt_with_context,
+    default_persona_instruction_generation_prompt,
+    get_correspondent_instruction_generation_prompt,
 )
 from .providers import DocumentProvider, InMemoryDocumentProvider
 from .providers.llm_providers import LLMFactory
 from .retrievers import ContextRetriever
 from .types import GeneratedResponsePrompt, Document
+import random
 
 from pydantic import BaseModel
 
@@ -66,7 +70,10 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
             prompt if prompt is not None else default_instruction_generation_prompt
         )
         if "{n_instructions}" in self.prompt:
-            self.prompt = self.prompt.format(n_instructions=self.n_instructions)
+            try:
+                self.prompt = self.prompt.format(n_instructions=self.n_instructions)
+            except KeyError:
+                pass
 
         self.model_name = model_name if model_name is not None else default_model_name
         self.model_provider_name = model_provider_name
@@ -76,13 +83,13 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
             safety_settings if safety_settings is not None else default_safety_settings
         )
 
-    def _create_model(self):
+    def _create_model(self, system_instruction=None):
         """Creates and configures the LLM model."""
         return LLMFactory.create(
             provider=self.model_provider_name,
             model_name=self.model_name,
             api_key=self.key_pool,
-            system_instruction=self.prompt,
+            system_instruction=system_instruction or self.prompt,
             safety_settings=self.safety_settings,
             response_mime_type="application/json",
             response_schema=InstructionsSchema,
@@ -149,12 +156,191 @@ Ask the questions in the same language as this context.
 </context>
         """
 
-        response = await model.agenerate_content(
-            prompt=prompt,
-        )
+        try:
+            response = await model.agenerate_content(
+                prompt=prompt,
+            )
+        except Exception:
+            traceback.print_exc()
+            raise
         instructions = response.raw_response.parsed.instructions
-
+        
         return GeneratedInstructions(instructions=instructions, context=full_context)
+
+    def create_correspondent_prompt(self, respondent_prompt: str) -> str:
+        """Create a correspondent prompt based on the respondent prompt."""
+        api_key: str | None = None
+        try:
+            prompt = get_correspondent_instruction_generation_prompt(assistant_prompt=respondent_prompt)
+            api_key = self.key_pool.get_next_key()
+            model = LLMFactory.create(
+                "gemini",
+                "gemini-2.5-pro",
+                api_key=api_key,
+                safety_settings=self.safety_settings,
+            )
+
+            response = model.generate_content(prompt=prompt, temperature=0.7)
+            return response.text.strip().lstrip("<user_system_prompt>").rstrip("</user_system_prompt>").strip()
+
+        except Exception:
+            if api_key is not None:
+                self.key_pool.report_error(api_key)
+            raise
+
+    async def acreate_correspondent_prompt(self, respondent_prompt: str) -> str:
+        """Create a correspondent prompt based on the respondent prompt asynchronously."""
+        api_key: str | None = None
+        try:
+            prompt = get_correspondent_instruction_generation_prompt(assistant_prompt=respondent_prompt)
+            api_key = await self.key_pool.aget_next_key()
+            model = LLMFactory.create(
+                "gemini",
+                "gemini-2.5-pro",
+                api_key=api_key,
+                safety_settings=self.safety_settings,
+            )
+
+            response = await model.agenerate_content(prompt=prompt, temperature=0.7)
+            prompt_text = response.text.strip().lstrip("<user_system_prompt>").rstrip("</user_system_prompt>").strip()
+
+            return prompt_text
+        except Exception:
+            if api_key is not None:
+                await self.key_pool.areport_error(api_key)
+            raise
+
+
+class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback):
+    """Generates instructions based on randomly sampled contexts and personas."""
+
+    def __init__(
+        self,
+        api_key: str | SmartKeyPool,
+        documents: Union[list[str], DocumentProvider],
+        prompt: str | None = None,
+        model_name: str | None = None,
+        model_provider_name: Literal["gemini", "openai"] = "gemini",
+        num_random_contexts: int = 1,
+        n_instructions: int = 3,
+        separator_text: str = "\n" + "-" * 80 + "\n\n",
+        safety_settings: Optional[dict] = None,
+    ):
+        super().__init__(
+            api_key=api_key,
+            documents=documents,
+            prompt=prompt
+            if prompt is not None
+            else default_persona_instruction_generation_prompt,
+            model_name=model_name,
+            model_provider_name=model_provider_name,
+            num_random_contexts=num_random_contexts,
+            n_instructions=n_instructions,
+            separator_text=separator_text,
+            safety_settings=safety_settings,
+        )
+
+    def _sample(self) -> tuple[list[Document], str | None]:
+        """Sample random contexts and a persona using the document provider."""
+        docs = self.provider.get_documents(self.num_random_contexts)
+        
+        # Collect all personas from sampled documents
+        all_personas = []
+        for doc in docs:
+            for persona_entry in doc.personas:
+                all_personas.extend(persona_entry.descriptions)
+        
+        selected_persona = random.choice(all_personas) if all_personas else None
+        return docs, selected_persona
+
+    def generate(self, original_prompt):
+        """Generates instructions based on the provided prompt, sampled context and persona.
+
+        Args:
+            original_prompt (str): The prompt guiding instruction generation.
+
+        Returns:
+            GeneratedInstructions: The instructions generated along with the context and persona used.
+        """
+        random_contexts, persona = self._sample()
+        
+        # Format the system prompt with persona
+        # We use self.prompt which might still have placeholders if __init__ skipped formatting
+        system_prompt = self.prompt
+        if "{persona}" in system_prompt:
+             # We need to handle n_instructions too if it wasn't formatted in __init__
+             format_args = {"persona": persona or "A curious user"}
+             if "{n_instructions}" in system_prompt:
+                 format_args["n_instructions"] = self.n_instructions
+             system_prompt = system_prompt.format(**format_args)
+
+        model = self._create_model(system_instruction=system_prompt)
+        full_context = self._merge_contexts([c.text for c in random_contexts])
+        
+        original_prompt = (
+            original_prompt.format(n_instructions=self.n_instructions, persona=persona or "A curious user")
+            if "{n_instructions}" in original_prompt and "{persona}" in original_prompt
+            else original_prompt
+        )
+        
+        prompt = f"""{original_prompt}
+----------------------------
+
+## Context
+Ask the questions in the same language as this context.
+<context>
+{full_context}
+</context>
+        """
+
+        instructions = model.generate_content(
+            prompt=prompt,
+        ).raw_response.parsed.instructions
+
+        return GeneratedInstructions(instructions=instructions, context=full_context, persona=persona)
+
+    async def agenerate(self, original_prompt):
+        """Generates instructions based on the provided prompt, sampled context and persona asynchronously."""
+        random_contexts, persona = self._sample()
+        
+        # Format the system prompt with persona
+        system_prompt = self.prompt
+        if "{persona}" in system_prompt:
+             format_args = {"persona": persona or "A curious user"}
+             if "{n_instructions}" in system_prompt:
+                 format_args["n_instructions"] = self.n_instructions
+             system_prompt = system_prompt.format(**format_args)
+
+        model = self._create_model(system_instruction=system_prompt)
+        full_context = self._merge_contexts([c.text for c in random_contexts])
+        
+        original_prompt = (
+            original_prompt.format(n_instructions=self.n_instructions, persona=persona or "A curious user")
+            if "{n_instructions}" in original_prompt and "{persona}" in original_prompt
+            else original_prompt
+        )
+        
+        prompt = f"""{original_prompt}
+----------------------------
+
+## Context
+Ask the questions in the same language as this context.
+<context>
+{full_context}
+</context>
+        """
+
+        try:
+            response = await model.agenerate_content(
+                prompt=prompt,
+            )
+        except Exception:
+            traceback.print_exc()
+            raise
+        instructions = response.raw_response.parsed.instructions
+        
+        return GeneratedInstructions(instructions=instructions, context=full_context, persona=persona)
+
 
 
 class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
@@ -226,7 +412,6 @@ class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
         return GeneratedResponsePrompt(
             prompt=modified_prompt,
             context=additional_context,
-            metadata=None,
         )
 
 

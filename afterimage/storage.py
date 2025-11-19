@@ -34,8 +34,8 @@ class BaseStorage(Protocol):
     @abstractmethod
     def load_conversations(
         self,
-        limit: Optional[int] = None,
-        offset: Optional[int] = None,
+        limit: int|None = None,
+        offset: int|None = None,
     ) -> List[ConversationWithContext]:
         pass
 
@@ -104,8 +104,8 @@ class JSONLStorage(BaseStorage):
 
     def load_conversations(
         self,
-        limit: Optional[int] = None,
-        offset: Optional[int] = None,
+        limit: int|None = None,
+        offset: int|None = None,
     ) -> List[EvaluatedConversationWithContext]:
         """Load conversations from JSONL file.
 

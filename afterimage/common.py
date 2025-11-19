@@ -14,3 +14,4 @@ default_safety_settings = [
 class GeneratedInstructions(BaseModel):
     instructions: List[str]
     context: str
+    persona: str | None = None

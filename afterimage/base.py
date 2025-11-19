@@ -1,12 +1,40 @@
+import logging
+
 from .common import GeneratedInstructions
-from .types import GeneratedResponsePrompt
+from .types import GeneratedResponsePrompt, EvaluatedConversationWithContext
+
+logger = logging.getLogger(__name__)
 
 
 class BaseGenerator:
     """Intended to serve as the base class for all generator classes"""
 
-    pass
+    def log_correspondent_prompt(self, correspondent_prompt: str | None) -> None:
+        """Log the correspondent prompt in a standardized format.
+        
+        Args:
+            correspondent_prompt: The correspondent prompt to log, or None if not set.
+        """
+        if correspondent_prompt is None:
+            logger.info("Correspondent prompt: Not set (will be generated on demand)")
+        else:
+            # Log the prompt, truncating if too long for readability
+            prompt_preview = (
+                correspondent_prompt[:200] + "..."
+                if len(correspondent_prompt) > 200
+                else correspondent_prompt
+            )
+            logger.info(
+                f"Correspondent prompt initialized (length: {len(correspondent_prompt)}): {prompt_preview}"
+            )
 
+
+    def load_conversations(
+        self,
+        limit: int|None = None,
+        offset: int|None = None,
+    ) -> list[EvaluatedConversationWithContext]:
+        return self.storage.load_conversations(limit=limit, offset=offset)
 
 class BaseInstructionGeneratorCallback:
     """Intended to serve as the base class for all custom instruction generator callbacks"""
@@ -32,6 +60,34 @@ class BaseInstructionGeneratorCallback:
 
     async def agenerate(self, original_prompt) -> GeneratedInstructions:
         raise NotImplementedError
+
+    def create_correspondent_prompt(self, respondent_prompt: str) -> str|None:
+        """Create a correspondent prompt based on the respondent prompt.
+        
+        This method can be overridden by subclasses to customize correspondent prompt creation.
+        By default, returns None, which means the conversation generator should handle it.
+        
+        Args:
+            respondent_prompt: The prompt for the respondent (assistant)
+            
+        Returns:
+            str: The correspondent prompt, or None if the generator should handle it
+        """
+        return None
+
+    async def acreate_correspondent_prompt(self, respondent_prompt: str) -> str:
+        """Create a correspondent prompt based on the respondent prompt asynchronously.
+        
+        This method can be overridden by subclasses to customize correspondent prompt creation.
+        By default, returns None, which means the conversation generator should handle it.
+        
+        Args:
+            respondent_prompt: The prompt for the respondent (assistant)
+            
+        Returns:
+            str: The correspondent prompt, or None if the generator should handle it
+        """
+        return None
 
 
 class BaseRespondentPromptModifierCallback:
