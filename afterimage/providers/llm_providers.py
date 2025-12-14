@@ -1,8 +1,9 @@
-from typing import Protocol, List, Optional, Any, Dict
+from typing import Protocol, List, Optional, Any, Dict, Type, Union
 from dataclasses import dataclass
 import asyncio
 from google import genai
 from openai import OpenAI, AsyncOpenAI
+from pydantic import BaseModel
 
 from ..types import ConversationEntry
 from ..key_management import SmartKeyPool
@@ -240,6 +241,26 @@ class LLMProvider(Protocol):
         """Generate completion from prompt asynchronously."""
         ...
 
+    def generate_structured(
+        self,
+        prompt: str,
+        schema: Type[BaseModel],
+        temperature: float = 0.7,
+        **kwargs,
+    ) -> BaseModel:
+        """Generate structured output that matches the given schema."""
+        ...
+
+    async def agenerate_structured(
+        self,
+        prompt: str,
+        schema: Type[BaseModel],
+        temperature: float = 0.7,
+        **kwargs,
+    ) -> BaseModel:
+        """Generate structured output that matches the given schema asynchronously."""
+        ...
+
     def start_chat(self, **kwargs) -> ChatSession:
         """Start a new chat session."""
         ...
@@ -347,6 +368,81 @@ class GeminiProvider(LLMProvider):
                 model_name=self.model_name,
                 raw_response=response,
             )
+
+        except Exception as e:
+            self.key_pool.report_error(api_key)
+            raise
+
+    def generate_structured(
+        self,
+        prompt: str,
+        schema: Type[BaseModel],
+        temperature: float = 0.7,
+        **kwargs,
+    ) -> BaseModel:
+        api_key = self.key_pool.get_next_key()
+        client = genai.Client(api_key=api_key, vertexai=False)
+
+        try:
+            generation_config = {
+                "temperature": temperature,
+                "system_instruction": self.system_instruction,
+                "safety_settings": self.safety_settings,
+                "response_mime_type": "application/json",
+                "response_schema": schema,
+                **self.kwargs,
+            }
+            if kwargs:
+                generation_config.update(**kwargs)
+
+            response = client.models.generate_content(
+                model=self.model_name, contents=prompt, config=generation_config
+            )
+
+            # Gemini Python SDK with response_schema automatically returns parsed object if using parsed field,
+            # but usually it returns text.
+            # Using parsed=True in latest SDKs or manually parsing.
+            # Let's trust that client.models.generate_content returns a response with .parsed
+            # if we pass response_schema? Actually genai v1 usually returns text.
+            # But the newer google-genai package might return parsed.
+            # Let's inspect how the google.genai package works or assume we need to parse it.
+            # Actually, with the new `google-genai` package, we should just use it as doc says.
+            # If `response_schema` is passed, `response.parsed` might be available
+            # or we assume we get JSON text and parse it.
+
+            # Safest is to parse the text with the schema
+            return schema.model_validate_json(response.text)
+
+        except Exception as e:
+            self.key_pool.report_error(api_key)
+            raise
+
+    async def agenerate_structured(
+        self,
+        prompt: str,
+        schema: Type[BaseModel],
+        temperature: float = 0.7,
+        **kwargs,
+    ) -> BaseModel:
+        api_key = self.key_pool.get_next_key()
+        client = genai.Client(api_key=api_key, vertexai=False)
+
+        try:
+            generation_config = {
+                "temperature": temperature,
+                "system_instruction": self.system_instruction,
+                "safety_settings": self.safety_settings,
+                "response_mime_type": "application/json",
+                "response_schema": schema,
+                **self.kwargs,
+            }
+            if kwargs:
+                generation_config.update(**kwargs)
+
+            response = await client.aio.models.generate_content(
+                model=self.model_name, contents=prompt, config=generation_config
+            )
+            return schema.model_validate_json(response.text)
 
         except Exception as e:
             self.key_pool.report_error(api_key)
@@ -530,6 +626,72 @@ class OpenAIProvider(LLMProvider):
             self.key_pool.report_error(api_key)
             raise
 
+    def generate_structured(
+        self,
+        prompt: str,
+        schema: Type[BaseModel],
+        temperature: float = 0.7,
+        **kwargs,
+    ) -> BaseModel:
+        client = self._get_client()
+        api_key = client.api_key
+
+        try:
+            messages = []
+            if self.system_instruction:
+                messages.append({"role": "system", "content": self.system_instruction})
+            messages.append({"role": "user", "content": prompt})
+
+            current_kwargs = self.kwargs.copy()
+            current_kwargs.update(kwargs)
+
+            response = client.beta.chat.completions.parse(
+                model=self.model_name,
+                messages=messages,
+                response_format=schema,
+                temperature=temperature,
+                **current_kwargs,
+            )
+
+            return response.choices[0].message.parsed
+
+        except Exception as e:
+            self.key_pool.report_error(api_key)
+            raise
+
+    async def agenerate_structured(
+        self,
+        prompt: str,
+        schema: Type[BaseModel],
+        temperature: float = 0.7,
+        **kwargs,
+    ) -> BaseModel:
+        client = self._get_async_client()
+        api_key = client.api_key
+
+        try:
+            messages = []
+            if self.system_instruction:
+                messages.append({"role": "system", "content": self.system_instruction})
+            messages.append({"role": "user", "content": prompt})
+
+            current_kwargs = self.kwargs.copy()
+            current_kwargs.update(kwargs)
+
+            response = await client.beta.chat.completions.parse(
+                model=self.model_name,
+                messages=messages,
+                response_format=schema,
+                temperature=temperature,
+                **current_kwargs,
+            )
+
+            return response.choices[0].message.parsed
+
+        except Exception as e:
+            self.key_pool.report_error(api_key)
+            raise
+
     def start_chat(
         self,
         temperature: float = 0.7,
@@ -605,4 +767,3 @@ class LLMFactory:
             system_instruction=system_instruction,
             **kwargs,
         )
-

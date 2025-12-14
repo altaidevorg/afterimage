@@ -182,18 +182,20 @@ Each persona should be written on a separate line, and each line must begin with
 </personas>
 """
 
+
 def get_correspondent_instruction_generation_prompt(assistant_prompt: str) -> str:
     """given the respondent prompt, generate a prompt for correspondent prompt generation"""
-   
+
     prompt = correspondent_instruction_creation_prompt.format(
-                example_correspondent_prompt_1=example_correspondent_prompt_1,
-                example_correspondent_prompt_2=example_correspondent_prompt_2,
-                example_respondent_prompt_1=example_respondent_prompt_1,
-                example_respondent_prompt_2=example_respondent_prompt_2,
-                new_assistant_prompt=assistant_prompt,
-            )
+        example_correspondent_prompt_1=example_correspondent_prompt_1,
+        example_correspondent_prompt_2=example_correspondent_prompt_2,
+        example_respondent_prompt_1=example_respondent_prompt_1,
+        example_respondent_prompt_2=example_respondent_prompt_2,
+        new_assistant_prompt=assistant_prompt,
+    )
 
     return prompt
+
 
 def parse_personas(text: str) -> list[str]:
     """parse the personas from the text using regex"""
@@ -201,11 +203,11 @@ def parse_personas(text: str) -> list[str]:
 
 
 if __name__ == "__main__":
-   # test parse_personas function
-   text = """Persona 1: A young woman in her twenties, interested in fashion and technology.
+    # test parse_personas function
+    text = """Persona 1: A young woman in her twenties, interested in fashion and technology.
 Persona 2: A man in his thirties, interested in sports and politics.
 Persona 3: A woman in her forties, interested in reading and cooking.
 Persona 4: A man in his fifties, interested in history and science.
 Persona 5: A woman in her sixties, interested in art and music.
 """
-   print(parse_personas(text))
+    print(parse_personas(text))

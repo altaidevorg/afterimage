@@ -12,6 +12,7 @@ from .types import (
     EvaluatedConversationWithContext,
     Document,
 )
+from pydantic import BaseModel
 
 
 class BaseStorage(Protocol):
@@ -20,22 +21,26 @@ class BaseStorage(Protocol):
     @abstractmethod
     def save_conversations(
         self,
-        conversations: List[EvaluatedConversationWithContext | EvaluatedConversationWithContext],
+        conversations: List[
+            EvaluatedConversationWithContext | ConversationWithContext | BaseModel
+        ],
     ) -> None:
         pass
 
     @abstractmethod
     async def asave_conversations(
         self,
-        conversations: List[ConversationWithContext | EvaluatedConversationWithContext],
+        conversations: List[
+            ConversationWithContext | EvaluatedConversationWithContext | BaseModel
+        ],
     ) -> None:
         pass
 
     @abstractmethod
     def load_conversations(
         self,
-        limit: int|None = None,
-        offset: int|None = None,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> List[ConversationWithContext]:
         pass
 
@@ -71,7 +76,9 @@ class JSONLStorage(BaseStorage):
         )
 
         self.documents_path = (
-            Path(documents_path) if documents_path else self._get_default_path("documents")
+            Path(documents_path)
+            if documents_path
+            else self._get_default_path("documents")
         )
         self.documents_lock_path = self.documents_path.with_suffix(
             self.documents_path.suffix + ".lock"
@@ -84,7 +91,9 @@ class JSONLStorage(BaseStorage):
 
     def save_conversations(
         self,
-        conversations: List[ConversationWithContext | EvaluatedConversationWithContext],
+        conversations: List[
+            ConversationWithContext | EvaluatedConversationWithContext | BaseModel
+        ],
     ) -> None:
         with FileLock(self.conversations_lock_path, timeout=self.lock_timeout):
             mode = "a" if self.conversations_path.exists() else "w"
@@ -94,7 +103,9 @@ class JSONLStorage(BaseStorage):
 
     async def asave_conversations(
         self,
-        conversations: List[ConversationWithContext | EvaluatedConversationWithContext],
+        conversations: List[
+            ConversationWithContext | EvaluatedConversationWithContext | BaseModel
+        ],
     ) -> None:
         def _save():
             self.save_conversations(conversations)
@@ -104,8 +115,8 @@ class JSONLStorage(BaseStorage):
 
     def load_conversations(
         self,
-        limit: int|None = None,
-        offset: int|None = None,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> List[EvaluatedConversationWithContext]:
         """Load conversations from JSONL file.
 
@@ -231,14 +242,30 @@ class SQLStorage(BaseStorage):
         records = []
         for conv in conversations:
             data = conv.model_dump()
-            record = {
-                "conversations": data["conversations"],
-                "instruction_context": data["instruction_context"],
-                "response_context": data["response_context"],
-                "metadata": data.get("metadata", {}),
-                "evaluation": data.get("evaluation"),
-                "timestamp": datetime.now(),
-            }
+            # If it's a generic BaseModel, wrapping it in a structure compatible with the table
+            # or we might need a separate table/method for generic types.
+            # GUIDANCE: For now, we assume if it's NOT a Conversation object, we try to fit it or fail if table doesn't match.
+            # But the requirement was mainly for JSONL.
+            # Let's simple check if keys exist.
+            if "conversations" in data:
+                record = {
+                    "conversations": data["conversations"],
+                    "instruction_context": data.get("instruction_context"),
+                    "response_context": data.get("response_context"),
+                    "metadata": data.get("metadata", {}),
+                    "evaluation": data.get("evaluation"),
+                    "timestamp": datetime.now(),
+                }
+            else:
+                # Fallback for generic models: store the whole model in 'metadata' or 'conversations' column?
+                # SQLStorage relies on specific schema. Storing generic models in 'conversations' column as JSON.
+                record = {
+                    "conversations": data,  # Storing the whole object in the JSON column
+                    "timestamp": datetime.now(),
+                    "metadata": {},
+                    "instruction_context": None,
+                    "response_context": None,
+                }
             records.append(record)
 
         # Insert in batches
@@ -249,20 +276,31 @@ class SQLStorage(BaseStorage):
 
     async def asave_conversations(
         self,
-        conversations: List[ConversationWithContext | EvaluatedConversationWithContext],
+        conversations: List[
+            ConversationWithContext | EvaluatedConversationWithContext | BaseModel
+        ],
     ) -> None:
         """Save conversations to database asynchronously."""
         records = []
         for conv in conversations:
             data = conv.model_dump()
-            record = {
-                "conversations": data["conversations"],
-                "instruction_context": data.get("instruction_context"),
-                "response_context": data.get("response_context"),
-                "metadata": data.get("metadata", {}),
-                "evaluation": data.get("evaluation"),
-                "timestamp": datetime.now(),
-            }
+            if "conversations" in data:
+                record = {
+                    "conversations": data["conversations"],
+                    "instruction_context": data.get("instruction_context"),
+                    "response_context": data.get("response_context"),
+                    "metadata": data.get("metadata", {}),
+                    "evaluation": data.get("evaluation"),
+                    "timestamp": datetime.now(),
+                }
+            else:
+                record = {
+                    "conversations": data,
+                    "timestamp": datetime.now(),
+                    "metadata": {},
+                    "instruction_context": None,
+                    "response_context": None,
+                }
             records.append(record)
 
         async with self.async_session_maker() as session:

@@ -133,28 +133,6 @@ class ConversationGenerator(BaseGenerator):
         self.initiators = []
         self.storage = storage or JSONLStorage()
 
-    def initialize(self, instruction_generator_callback=None):
-        """Initializes the generator by creating the correspondent prompt if it doesn't exist."""
-        if self.correspondent_prompt is None:
-            # Use provided callback if given, otherwise use instance attribute
-            callback = (
-                instruction_generator_callback or self.instruction_generator_callback
-            )
-            # Try to use callback first if available
-            if callback is not None:
-                created_prompt = callback.create_correspondent_prompt(
-                    self.respondent_prompt
-                )
-                if created_prompt is not None:
-                    self.correspondent_prompt = created_prompt
-                    self.log_correspondent_prompt(self.correspondent_prompt)
-                    return
-            # Fallback to generator's method
-            self.correspondent_prompt = self.create_correspondent_prompt(
-                self.respondent_prompt
-            )
-        self.log_correspondent_prompt(self.correspondent_prompt)
-
     def create_correspondent_prompt(self, assistant_prompt: str) -> str:
         """Create a correspondent prompt based on the assistant prompt."""
         start_time = time.time()
@@ -522,7 +500,7 @@ class ConversationGenerator(BaseGenerator):
     def generate(
         self,
         num_dialogs: int = 5,
-        max_turns: int = 3,
+        max_turns: int = 1,
         seed_instructions: List = [],
         add_examples: bool = False,
         num_random_examples: int = 3,
@@ -536,7 +514,7 @@ class ConversationGenerator(BaseGenerator):
 
         Args:
             num_dialogs (int, optional): Number of dialogs to generate. Defaults to 5.
-            max_turns (int, optional): Maximum number of turns per dialog. Defaults to 3.
+            max_turns (int, optional): Maximum number of turns per dialog. Actual number of turns is randomly sampled from 1 .. max_turns.
             seed_instructions (List, optional): Seed instructions to guide question generation. Defaults to [].
             add_examples (bool, optional): Whether to use seed instructions as examples. Defaults to False.
             num_random_examples (int, optional): Number of random examples to use. Defaults to 3.

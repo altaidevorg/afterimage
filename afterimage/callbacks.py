@@ -164,14 +164,16 @@ Ask the questions in the same language as this context.
             traceback.print_exc()
             raise
         instructions = response.raw_response.parsed.instructions
-        
+
         return GeneratedInstructions(instructions=instructions, context=full_context)
 
     def create_correspondent_prompt(self, respondent_prompt: str) -> str:
         """Create a correspondent prompt based on the respondent prompt."""
         api_key: str | None = None
         try:
-            prompt = get_correspondent_instruction_generation_prompt(assistant_prompt=respondent_prompt)
+            prompt = get_correspondent_instruction_generation_prompt(
+                assistant_prompt=respondent_prompt
+            )
             api_key = self.key_pool.get_next_key()
             model = LLMFactory.create(
                 "gemini",
@@ -181,7 +183,12 @@ Ask the questions in the same language as this context.
             )
 
             response = model.generate_content(prompt=prompt, temperature=0.7)
-            return response.text.strip().lstrip("<user_system_prompt>").rstrip("</user_system_prompt>").strip()
+            return (
+                response.text.strip()
+                .lstrip("<user_system_prompt>")
+                .rstrip("</user_system_prompt>")
+                .strip()
+            )
 
         except Exception:
             if api_key is not None:
@@ -192,7 +199,9 @@ Ask the questions in the same language as this context.
         """Create a correspondent prompt based on the respondent prompt asynchronously."""
         api_key: str | None = None
         try:
-            prompt = get_correspondent_instruction_generation_prompt(assistant_prompt=respondent_prompt)
+            prompt = get_correspondent_instruction_generation_prompt(
+                assistant_prompt=respondent_prompt
+            )
             api_key = await self.key_pool.aget_next_key()
             model = LLMFactory.create(
                 "gemini",
@@ -202,7 +211,12 @@ Ask the questions in the same language as this context.
             )
 
             response = await model.agenerate_content(prompt=prompt, temperature=0.7)
-            prompt_text = response.text.strip().lstrip("<user_system_prompt>").rstrip("</user_system_prompt>").strip()
+            prompt_text = (
+                response.text.strip()
+                .lstrip("<user_system_prompt>")
+                .rstrip("</user_system_prompt>")
+                .strip()
+            )
 
             return prompt_text
         except Exception:
@@ -243,13 +257,13 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
     def _sample(self) -> tuple[list[Document], str | None]:
         """Sample random contexts and a persona using the document provider."""
         docs = self.provider.get_documents(self.num_random_contexts)
-        
+
         # Collect all personas from sampled documents
         all_personas = []
         for doc in docs:
             for persona_entry in doc.personas:
                 all_personas.extend(persona_entry.descriptions)
-        
+
         selected_persona = random.choice(all_personas) if all_personas else None
         return docs, selected_persona
 
@@ -263,26 +277,28 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
             GeneratedInstructions: The instructions generated along with the context and persona used.
         """
         random_contexts, persona = self._sample()
-        
+        if persona is None:
+            persona = "A curious user"
+
         # Format the system prompt with persona
         # We use self.prompt which might still have placeholders if __init__ skipped formatting
         system_prompt = self.prompt
         if "{persona}" in system_prompt:
-             # We need to handle n_instructions too if it wasn't formatted in __init__
-             format_args = {"persona": persona or "A curious user"}
-             if "{n_instructions}" in system_prompt:
-                 format_args["n_instructions"] = self.n_instructions
-             system_prompt = system_prompt.format(**format_args)
+            # We need to handle n_instructions too if it wasn't formatted in __init__
+            format_args = {"persona": persona}
+            if "{n_instructions}" in system_prompt:
+                format_args["n_instructions"] = self.n_instructions
+            system_prompt = system_prompt.format(**format_args)
 
         model = self._create_model(system_instruction=system_prompt)
         full_context = self._merge_contexts([c.text for c in random_contexts])
-        
+
         original_prompt = (
-            original_prompt.format(n_instructions=self.n_instructions, persona=persona or "A curious user")
+            original_prompt.format(n_instructions=self.n_instructions, persona=persona)
             if "{n_instructions}" in original_prompt and "{persona}" in original_prompt
             else original_prompt
         )
-        
+
         prompt = f"""{original_prompt}
 ----------------------------
 
@@ -297,29 +313,33 @@ Ask the questions in the same language as this context.
             prompt=prompt,
         ).raw_response.parsed.instructions
 
-        return GeneratedInstructions(instructions=instructions, context=full_context, persona=persona)
+        return GeneratedInstructions(
+            instructions=instructions, context=full_context, persona=persona
+        )
 
     async def agenerate(self, original_prompt):
         """Generates instructions based on the provided prompt, sampled context and persona asynchronously."""
         random_contexts, persona = self._sample()
-        
+        if persona is None:
+            persona = "A curious user"
+
         # Format the system prompt with persona
         system_prompt = self.prompt
         if "{persona}" in system_prompt:
-             format_args = {"persona": persona or "A curious user"}
-             if "{n_instructions}" in system_prompt:
-                 format_args["n_instructions"] = self.n_instructions
-             system_prompt = system_prompt.format(**format_args)
+            format_args = {"persona": persona}
+            if "{n_instructions}" in system_prompt:
+                format_args["n_instructions"] = self.n_instructions
+            system_prompt = system_prompt.format(**format_args)
 
         model = self._create_model(system_instruction=system_prompt)
         full_context = self._merge_contexts([c.text for c in random_contexts])
-        
+
         original_prompt = (
-            original_prompt.format(n_instructions=self.n_instructions, persona=persona or "A curious user")
+            original_prompt.format(n_instructions=self.n_instructions, persona=persona)
             if "{n_instructions}" in original_prompt and "{persona}" in original_prompt
             else original_prompt
         )
-        
+
         prompt = f"""{original_prompt}
 ----------------------------
 
@@ -338,9 +358,10 @@ Ask the questions in the same language as this context.
             traceback.print_exc()
             raise
         instructions = response.raw_response.parsed.instructions
-        
-        return GeneratedInstructions(instructions=instructions, context=full_context, persona=persona)
 
+        return GeneratedInstructions(
+            instructions=instructions, context=full_context, persona=persona
+        )
 
 
 class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):

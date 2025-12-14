@@ -123,33 +123,6 @@ class AsyncConversationGenerator(BaseGenerator):
         self.initiators = []
         self.storage = storage or JSONLStorage()
 
-    async def initialize(self, instruction_generator_callback=None):
-        """Initializes the generator by creating the correspondent prompt if it doesn't exist."""
-        if self.correspondent_prompt is None:
-            # Use provided callback if given, otherwise use instance attribute
-            callback = (
-                instruction_generator_callback or self.instruction_generator_callback
-            )
-            # Try to use callback first if available
-            if callback is not None:
-                if hasattr(callback, "acreate_correspondent_prompt"):
-                    created_prompt = await callback.acreate_correspondent_prompt(
-                        self.respondent_prompt
-                    )
-                else:
-                    created_prompt = await asyncio.to_thread(
-                        callback.create_correspondent_prompt, self.respondent_prompt
-                    )
-                if created_prompt is not None:
-                    self.correspondent_prompt = created_prompt
-                    self.log_correspondent_prompt(self.correspondent_prompt)
-                    return
-            # Fallback to generator's method
-            self.correspondent_prompt = await self.create_correspondent_prompt(
-                self.respondent_prompt
-            )
-        self.log_correspondent_prompt(self.correspondent_prompt)
-
     async def create_correspondent_prompt(self, assistant_prompt: str) -> str:
         """Create a correspondent prompt based on the assistant prompt."""
         start_time = time.time()
@@ -415,32 +388,14 @@ class AsyncConversationGenerator(BaseGenerator):
         respondent_prompt_modifier,
     ) -> AsyncGenerator[Union[EvaluatedConversationWithContext, Conversation], None]:
         """Generates conversations for a single session and yields them."""
+        # ainitialize ensures correspondent_prompt is set
+        await self.ainitialize(instruction_generator_callback)
+
         correspondent_prompt = self.correspondent_prompt
         respondent_prompt = self.respondent_prompt
         turns = random.randint(1, max_turns)
 
         if instruction_generator_callback:
-            # If correspondent_prompt is None, try to create it using the callback
-            if correspondent_prompt is None:
-                if hasattr(
-                    instruction_generator_callback, "acreate_correspondent_prompt"
-                ):
-                    created_prompt = await instruction_generator_callback.acreate_correspondent_prompt(
-                        respondent_prompt
-                    )
-                else:
-                    created_prompt = await asyncio.to_thread(
-                        instruction_generator_callback.create_correspondent_prompt,
-                        respondent_prompt,
-                    )
-                if created_prompt is not None:
-                    correspondent_prompt = created_prompt
-                else:
-                    # Fallback to generator's method if callback doesn't implement it
-                    correspondent_prompt = await self.create_correspondent_prompt(
-                        respondent_prompt
-                    )
-
             if hasattr(instruction_generator_callback, "acall"):
                 gen_instructions = await instruction_generator_callback.acall(
                     correspondent_prompt
@@ -537,7 +492,7 @@ class AsyncConversationGenerator(BaseGenerator):
     async def generate(
         self,
         num_dialogs: int = 5,
-        max_turns: int = 3,
+        max_turns: int = 1,
         seed_instructions: List = [],
         add_examples: bool = False,
         num_random_examples: int = 3,
@@ -551,7 +506,7 @@ class AsyncConversationGenerator(BaseGenerator):
 
         Args:
             num_dialogs (int, optional): Number of dialogs to generate. Defaults to 5.
-            max_turns (int, optional): Maximum number of turns per dialog. Defaults to 3.
+            max_turns (int, optional): Maximum number of turns per dialog. Actual number of turns is randomly sampled from 1 .. max_turns.
             seed_instructions (List, optional): Seed instructions to guide question generation. Defaults to [].
             add_examples (bool, optional): Whether to use seed instructions as examples. Defaults to False.
             num_random_examples (int, optional): Number of random examples to use. Defaults to 3.
@@ -606,7 +561,7 @@ class AsyncConversationGenerator(BaseGenerator):
                     f"`num_dialogs` is set to {n_conversations} because you set {n_conversations} seed instructions"
                 )
 
-        await self.initialize(instruction_generator_callback)
+        await self.ainitialize(instruction_generator_callback)
 
         pbar = tqdm(total=num_dialogs, desc="Generating...", unit="conversation")
         stop = asyncio.Event()
