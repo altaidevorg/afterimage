@@ -6,7 +6,7 @@ It is designed to be highly customizable, enabling tailored instruction generati
 
 ## 🚀 Getting Started
 
-To get started with AfterImage, please refer to the **[Quickstart Guide](quickstart.md)**. It covers:
+To get started with AfterImage, please refer to the **[Quickstart Guide](https://github.com/altaidevorg/afterimage/blob/main/docs/README.md)**. It covers:
 
 *   **Installation**: How to set up the library.
 *   **Basic Usage**: Generating simple conversations.
@@ -15,7 +15,7 @@ To get started with AfterImage, please refer to the **[Quickstart Guide](quickst
 
 ## 📖 Documentation
 
-*   **[Quickstart Guide](quickstart.md)**: The best place to start.
+*   **[Quickstart Guide](https://github.com/altaidevorg/afterimage/blob/main/docs/README.md)**: The best place to start.
 *   **[Design & Architecture](DESIGN.md)**: Understanding the core concepts and codebase structure.
 *   **[Examples](./examples)**: Examples of how to use AfterImage.
 
@@ -32,3 +32,4 @@ pip install git+https://github.com/altaidevorg/afterimage.git
 *   **Context-Aware**: Grounds conversations in your documents (RAG).
 *   **Multi-Modal**: Support for text and potentially other modalities in future.
 *   **Monitoring**: Real-time generation metrics and alerts.
+
