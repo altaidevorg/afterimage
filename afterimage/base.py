@@ -21,18 +21,10 @@ class BaseGenerator:
         Args:
             correspondent_prompt: The correspondent prompt to log, or None if not set.
         """
-        if correspondent_prompt is None:
-            logger.info("Correspondent prompt: Not set (will be generated on demand)")
-        else:
-            # Log the prompt, truncating if too long for readability
-            prompt_preview = (
-                correspondent_prompt[:200] + "..."
-                if len(correspondent_prompt) > 200
-                else correspondent_prompt
-            )
-            logger.info(
-                f"Correspondent prompt initialized (length: {len(correspondent_prompt)}): {prompt_preview}"
-            )
+        self.monitor.log_info(
+            "Correspondent prompt set",
+            correspondent_prompt=correspondent_prompt,
+        )
 
     async def ainitialize(self, instruction_generator_callback=None):
         """Initializes the generator by creating the correspondent prompt if it doesn't exist."""

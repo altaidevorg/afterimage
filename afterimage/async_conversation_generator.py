@@ -66,14 +66,18 @@ class AsyncConversationGenerator(BaseGenerator):
             evaluator_model_name: Model name for the evaluator when auto_improve is True
             evaluator_method: method to be used for evaluation.
             model_provider_name: Provider used for accessing LLMs. `"gemini"` or `"openai"` for Openai-compatible APIs.
-            storage: Storage implementation for saving conversations
-                    If None, creates JSONLStorage with datetime-based filename
-            monitor: GenerationMonitor instance for tracking generation metrics
+            storage: Storage implementation for saving conversations.
+                    If `None`, creates JSONLStorage with datetime-based filename.
+            monitor: GenerationMonitor instance for tracking generation metrics.
+                If  `None`, a default one is created.
             instruction_generator_callback: Callback for instruction generation. Can also be passed to generate() method (deprecated).
             respondent_prompt_modifier: Callback to modify respondent prompts. Can also be passed to generate() method (deprecated).
         """
-        self.monitor = monitor
-        self.key_pool = (
+        self.monitor: GenerationMonitor = (
+            monitor or GenerationMonitor()
+        )  # ensure it's always created
+
+        self.key_pool: SmartKeyPool = (
             api_key
             if isinstance(api_key, SmartKeyPool)
             else SmartKeyPool.from_single_key(api_key)
@@ -81,6 +85,12 @@ class AsyncConversationGenerator(BaseGenerator):
 
         self.model_provider_name = model_provider_name
         self.model_name = model_name if model_name is not None else default_model_name
+        self.monitor.log_info(
+            "Model info set",
+            model_provider=self.model_provider_name,
+            model_name=self.model_name,
+            num_api_keys=len(self.key_pool),
+        )
         self.safety_settings = (
             safety_settings if safety_settings is not None else default_safety_settings
         )
@@ -89,15 +99,25 @@ class AsyncConversationGenerator(BaseGenerator):
         # if both are passed, the correspondent prompt will be used as is passed.
         # if neither are passed, raise an error.
         if correspondent_prompt is None and instruction_generator_callback is None:
-            raise ValueError(
+            error = ValueError(
                 "At least one of `correspondent_prompt` or `instruction_generator_callback` should be passed."
             )
-        if correspondent_prompt is None:
-            warnings.warn(
-                "A correspondent prompt will be automatically created because you did not pass one."
+            self.monitor.log_error(
+                "failed to initialize because correspondent prompt and instruction generator callback are both None",
+                error,
             )
+            raise error
+
+        if correspondent_prompt is None:
+            warning_msg = "A correspondent prompt will be automatically created because you did not pass one."
+            self.monitor.log_warning(warning_msg)
+            warnings.warn(warning_msg)
 
         self.respondent_prompt = respondent_prompt
+        self.monitor.log_info(
+            "Respondent prompt set",
+            respondent_prompt=respondent_prompt,
+        )
         self.correspondent_prompt = correspondent_prompt
 
         self.instruction_generator_callback = instruction_generator_callback
@@ -522,12 +542,18 @@ class AsyncConversationGenerator(BaseGenerator):
             respondent_prompt_modifier = self.respondent_prompt_modifier
 
         if instruction_generator_callback is None:
-            raise ValueError("An `instruction_generator_callback` must be provided.")
+            error = ValueError("An `instruction_generator_callback` must be provided.")
+            self.monitor.log_error("No instruction generator callback set", error)
+            raise error
+        else:
+            self.monitor.log_info(
+                "Instruction generator callback set",
+                type=instruction_generator_callback.__class__.__name__,
+            )
 
         if self.correspondent_prompt is None:
+            self.monitor.log_info("No correspondent prompt set, initializing...")
             await self.ainitialize(instruction_generator_callback)
-
-        self._ensure_monitor()
 
         # Handle stopping criteria
         final_stopping_criteria = stopping_criteria or []
@@ -573,6 +599,10 @@ class AsyncConversationGenerator(BaseGenerator):
 
                             for criteria in final_stopping_criteria:
                                 if await criteria.should_stop(state):
+                                    self.monitor.log_info(
+                                        "Stopping criteria met, stopping generation...",
+                                        criteria=criteria.__class__.__name__,
+                                    )
                                     state.stop_event.set()
                                     break
 

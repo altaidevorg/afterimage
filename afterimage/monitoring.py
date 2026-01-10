@@ -1,17 +1,21 @@
-from typing import Dict, Any, List, Optional, Callable, Protocol
-from datetime import datetime, timedelta
-import logging
-from dataclasses import dataclass
-import json
-from pathlib import Path
-import warnings
-from threading import Lock, Event, Thread
-import queue
 import asyncio
-import matplotlib.pyplot as plt
-import seaborn as sns
-import pandas as pd
+import json
+import logging
+import queue
+import uuid
+import warnings
 from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
+from threading import Event, Lock, Thread
+from typing import Any, Callable, Dict, List, Literal, Optional, Protocol
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+
+LogLevel = Literal["info", "warning", "error"]
 
 
 class MetricHandler(Protocol):
@@ -57,8 +61,9 @@ class FileLogHandler(LogHandler):
     """Default file-based log handler."""
 
     def __init__(self, log_dir: Path):
-        self.logger = logging.getLogger("afterimage.monitoring")
-        handler = logging.FileHandler(log_dir / "generation_metrics.log")
+        self.logger = logging.getLogger(f"afterimage.monitoring.{uuid.uuid4().hex}")
+        self.logger.propagate = False
+        handler = logging.FileHandler(log_dir / "afterimage.log")
         handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
         self.logger.addHandler(handler)
 
@@ -99,8 +104,12 @@ class GenerationMonitor:
             metrics_interval: How often to calculate metrics (seconds)
             shutdown_timeout: Timeout for graceful shutdown (seconds)
         """
-        self.log_dir = Path(log_dir) if log_dir else Path("monitoring")
-        self.log_dir.mkdir(exist_ok=True)
+        self.log_dir = (
+            Path(log_dir)
+            if log_dir
+            else Path("monitoring") / datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        )
+        self.log_dir.mkdir(exist_ok=True, parents=True)
 
         # Initialize handlers
         self.metric_handlers = metric_handlers or [FileMetricHandler(self.log_dir)]
@@ -195,9 +204,26 @@ class GenerationMonitor:
             {"timestamp": timestamp, "value": value, **(metadata or {})}
         )
 
-    def _enqueue_log(self, message: Dict[str, Any]):
+    def _enqueue_log(self, message: Dict[str, Any], level: LogLevel = "info"):
         """Add log message to queue."""
+        message["level"] = level
         self.log_queue.put(message)
+
+    def log_info(self, message: str, **data):
+        """Log an info message."""
+        self._enqueue_log({"message": message, **data}, "info")
+
+    def log_warning(self, message: str, **data):
+        """Log a warning message."""
+        self._enqueue_log({"message": message, **data}, "warning")
+
+    def log_error(self, message: str, error: Exception = None, **data):
+        """Log an error message."""
+        error_data = {}
+        if error is not None:
+            error_data["error"] = str(error)
+            error_data["error_type"] = error.__class__.__name__
+        self._enqueue_log({"message": message, **error_data, **data}, "error")
 
     def record_metric(
         self, metric_name: str, value: float, metadata: Optional[Dict] = None

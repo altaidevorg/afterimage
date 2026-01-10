@@ -58,10 +58,16 @@ class AsyncStructuredGenerator(BaseGenerator):
             respondent_prompt_modifier: Callback to modify the system prompt per instruction.
             correspondent_prompt: The initial prompt for the correspondent, if already known.
         """
+        self.monitor: GenerationMonitor = (
+            monitor or GenerationMonitor()
+        )  # ensure it's always created
+
         self.output_schema = output_schema
-        self.respondent_prompt = respondent_prompt
-        self.correspondent_prompt = correspondent_prompt
-        self.monitor = monitor
+        self.monitor.log_info(
+            "Initializing structured generator",
+            schema=output_schema.model_json_schema(),
+        )
+
         self.key_pool = (
             api_key
             if isinstance(api_key, SmartKeyPool)
@@ -69,17 +75,43 @@ class AsyncStructuredGenerator(BaseGenerator):
         )
         self.model_provider_name = model_provider_name
         self.model_name = model_name if model_name is not None else default_model_name
+        self.monitor.log_info(
+            "Model info set",
+            model_provider=self.model_provider_name,
+            model_name=self.model_name,
+            num_api_keys=len(self.key_pool),
+        )
         self.safety_settings = (
             safety_settings if safety_settings is not None else default_safety_settings
         )
-        self.storage = storage or JSONLStorage()
+
+        # users should pass at least one of correspondent prompt and instruction generator callback.
+        # if both are passed, the correspondent prompt will be used as is passed.
+        # if neither are passed, raise an error.
+        if correspondent_prompt is None and instruction_generator_callback is None:
+            error = ValueError(
+                "At least one of `correspondent_prompt` or `instruction_generator_callback` should be passed."
+            )
+            self.monitor.log_error(
+                "failed to initialize because correspondent prompt and instruction generator callback are both None",
+                error,
+            )
+            raise error
+
+        if correspondent_prompt is None:
+            warning_msg = "A correspondent prompt will be automatically created because you did not pass one."
+            self.monitor.log_warning(warning_msg)
+            warnings.warn(warning_msg)
+
+        self.respondent_prompt = respondent_prompt
+        self.monitor.log_info(
+            "Respondent prompt set", respondent_prompt=respondent_prompt
+        )
+        self.correspondent_prompt = correspondent_prompt
+
         self.instruction_generator_callback = instruction_generator_callback
         self.respondent_prompt_modifier = respondent_prompt_modifier
-
-        if self.instruction_generator_callback is None:
-            warnings.warn(
-                "No `instruction_generator_callback` provided. You must provide one to drive generation."
-            )
+        self.storage = storage or JSONLStorage()
 
     async def create_correspondent_prompt(self, respondent_prompt: str) -> str:
         # Fallback default correspondent prompt if callback doesn't provide one
@@ -239,12 +271,18 @@ class AsyncStructuredGenerator(BaseGenerator):
             respondent_prompt_modifier = self.respondent_prompt_modifier
 
         if instruction_generator_callback is None:
-            raise ValueError("instruction_generator_callback must be set.")
+            error = ValueError("instruction_generator_callback must be set.")
+            self.monitor.log_error("No instruction generator callback set", error)
+            raise error
+        else:
+            self.monitor.log_info(
+                "Instruction generator callback set",
+                type=instruction_generator_callback.__class__.__name__,
+            )
 
         if self.correspondent_prompt is None:
+            self.monitor.log_info("No correspondent prompt set, initializing...")
             await self.ainitialize(instruction_generator_callback)
-
-        self._ensure_monitor()
 
         # Handle stopping criteria
         final_stopping_criteria = stopping_criteria or []
@@ -287,6 +325,10 @@ class AsyncStructuredGenerator(BaseGenerator):
 
                             for criteria in final_stopping_criteria:
                                 if await criteria.should_stop(state):
+                                    self.monitor.log_info(
+                                        "Stopping criteria met, stopping generation...",
+                                        criteria=criteria.__class__.__name__,
+                                    )
                                     state.stop_event.set()
                                     break
 

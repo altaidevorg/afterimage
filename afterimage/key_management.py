@@ -1,11 +1,9 @@
+import asyncio
+import warnings
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from threading import Lock
-import asyncio
 from typing import Dict, List, Optional
-import warnings
-from contextlib import contextmanager
-
 
 
 @dataclass
@@ -204,3 +202,6 @@ class SmartKeyPool:
                 }
                 for key, stats in self._keys.items()
             }
+
+    def __len__(self) -> int:
+        return len(self._keys)
