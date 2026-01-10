@@ -3,23 +3,27 @@ import traceback
 import warnings
 from typing import AsyncGenerator, Dict, List, Literal, Optional, Type, TypeVar
 import time
+import logging
 
 from tqdm.asyncio import tqdm
 from pydantic import BaseModel
 
-from .base import (
-    BaseGenerator,
+from .base import BaseGenerator, BaseStoppingCallback
+from .callbacks import (
     BaseInstructionGeneratorCallback,
     BaseRespondentPromptModifierCallback,
+    FixedNumberStoppingCallback,
 )
 from .common import default_model_name, default_safety_settings
 from .key_management import SmartKeyPool
 from .providers import LLMFactory
 from .monitoring import GenerationMonitor
 from .storage import BaseStorage, JSONLStorage
-from .types import StructuredGenerationRow
+from .types import StructuredGenerationRow, GenerationState
 
 T = TypeVar("T", bound=BaseModel)
+
+logger = logging.getLogger(__name__)
 
 
 class AsyncStructuredGenerator(BaseGenerator):
@@ -83,17 +87,27 @@ class AsyncStructuredGenerator(BaseGenerator):
 
     async def generate_single(
         self,
-        instruction_generator_callback: BaseInstructionGeneratorCallback,
-        respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None,
+        instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
+        respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
     ) -> AsyncGenerator[StructuredGenerationRow[T], None]:
         """Generates structured outputs for a single batch of instructions."""
 
-        # We pass the correspondent_prompt to the callback.
-        # This prompt dictates how the user (correspondent) should behave (e.g. persona).
-        # ainitialize() ensures self.correspondent_prompt is set.
+        # ainitialize ensures self.correspondent_prompt is set
         await self.ainitialize(instruction_generator_callback)
 
         correspondent_prompt = self.correspondent_prompt
+        respondent_prompt = self.respondent_prompt
+
+        # Use provided callback or default
+        instruction_generator_callback = (
+            instruction_generator_callback or self.instruction_generator_callback
+        )
+        respondent_prompt_modifier = (
+            respondent_prompt_modifier or self.respondent_prompt_modifier
+        )
+
+        if instruction_generator_callback is None:
+            raise ValueError("instruction_generator_callback must be set.")
 
         if hasattr(instruction_generator_callback, "acall"):
             gen_instructions = await instruction_generator_callback.acall(
@@ -108,18 +122,18 @@ class AsyncStructuredGenerator(BaseGenerator):
             instruction_context = gen_instructions.context
 
             # Modify prompt if modifier exists
-            current_respondent_prompt = self.respondent_prompt
+            current_respondent_prompt = respondent_prompt
             if respondent_prompt_modifier:
                 if hasattr(respondent_prompt_modifier, "acall"):
                     modified_respondent_prompt = await respondent_prompt_modifier.acall(
-                        self.respondent_prompt,
+                        respondent_prompt,
                         context=instruction_context,
                         instruction=instruction,
                     )
                 else:
                     modified_respondent_prompt = await asyncio.to_thread(
                         respondent_prompt_modifier,
-                        self.respondent_prompt,
+                        respondent_prompt,
                         context=instruction_context,
                         instruction=instruction,
                     )
@@ -165,6 +179,10 @@ class AsyncStructuredGenerator(BaseGenerator):
                     context=instruction_context,
                     persona=gen_instructions.persona,
                     output=output,
+                    metadata={
+                        "context_id": gen_instructions.context_id,
+                        "persona_name": gen_instructions.persona,
+                    },
                 )
 
             except Exception as e:
@@ -182,93 +200,138 @@ class AsyncStructuredGenerator(BaseGenerator):
                 if api_key:
                     await self.key_pool.areport_error(api_key)
 
-                # We raise here or swallow? AsyncConversationGenerator raises.
-                # But here we are inside a loop over instructions.
-                # If one fails, we might want to skip it?
-                # AsyncConversationGenerator raises in `generate_single` but catches in `worker_task` wrapper?
-                # Actually AsyncConversationGenerator swallows in worker_task loop except for cancellation.
-                # Let's log and re-raise to let the worker handle it or skip.
-                # If we raise, we stop processing other instructions in this batch.
-                # Let's print traceback and continue to next instruction?
                 traceback.print_exc()
                 continue
 
     async def generate(
         self,
-        num_samples: int = 10,
+        num_samples: int | None = None,
         max_concurrency: int = 4,
+        stopping_criteria: list[BaseStoppingCallback] | None = None,
+        instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
+        respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
     ) -> None:
         """Generates structured samples and saves them to storage.
 
         Args:
-            num_samples: Total number of samples to generate.
+            num_samples: Total number of samples to generate. Defaults to 5.
             max_concurrency: Maximum number of concurrent tasks.
+            stopping_criteria: A list of callbacks to determine when to stop generation. If num_dialogs is specified, FixedNumberStoppingCallback is added to this list.
         """
-        if not self.instruction_generator_callback:
+        if instruction_generator_callback is not None:
+            warnings.warn(
+                "Passing `instruction_generator_callback` to `generate()` is deprecated. "
+                "Please pass it to the constructor instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        else:
+            instruction_generator_callback = self.instruction_generator_callback
+
+        if respondent_prompt_modifier is not None:
+            warnings.warn(
+                "Passing `respondent_prompt_modifier` to `generate()` is deprecated. "
+                "Please pass it to the constructor instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        else:
+            respondent_prompt_modifier = self.respondent_prompt_modifier
+
+        if instruction_generator_callback is None:
             raise ValueError("instruction_generator_callback must be set.")
 
-        await self.ainitialize(self.instruction_generator_callback)
+        if self.correspondent_prompt is None:
+            await self.ainitialize(instruction_generator_callback)
+
+        self._ensure_monitor()
+
+        # Handle stopping criteria
+        final_stopping_criteria = stopping_criteria or []
+        if num_samples is not None:
+            final_stopping_criteria.append(FixedNumberStoppingCallback(n=num_samples))
+
+        # Default if nothing specified
+        if not final_stopping_criteria:
+            num_samples = 5
+            final_stopping_criteria.append(FixedNumberStoppingCallback(n=num_samples))
+
+        state = GenerationState(
+            num_requested=num_samples or 0,
+            monitor=self.monitor,
+            stop_event=asyncio.Event(),
+        )
+
+        semaphore = asyncio.Semaphore(max_concurrency)
+
+        async def save_samples(samples: List[StructuredGenerationRow]):
+            if samples:
+                if hasattr(self.storage, "asave_conversations"):
+                    await self.storage.asave_conversations(samples)
+                else:
+                    await asyncio.to_thread(self.storage.save_conversations, samples)
+
+        async def worker_task():
+            while not state.stop_event.is_set():
+                async with semaphore:
+                    if state.stop_event.is_set():
+                        break
+
+                    try:
+                        async for sample in self.generate_single(
+                            instruction_generator_callback=instruction_generator_callback,
+                            respondent_prompt_modifier=respondent_prompt_modifier,
+                        ):
+                            # Update state and check stopping criteria
+                            state.update(sample)
+
+                            for criteria in final_stopping_criteria:
+                                if await criteria.should_stop(state):
+                                    state.stop_event.set()
+                                    break
+
+                            await save_samples([sample])
+
+                            if state.stop_event.is_set():
+                                break
+
+                    except Exception as e:
+                        logger.error(f"Error in generation: {e}")
+                        traceback.print_exc()
+                        if self.monitor:
+                            self.monitor.record_metric("error_rate", 1.0)
+                        continue
 
         pbar = tqdm(
             total=num_samples, desc="Generating structured data...", unit="sample"
         )
-        stop = asyncio.Event()
-        num_generated = 0
-        semaphore = asyncio.Semaphore(max_concurrency)
         tasks: list[asyncio.Task] = []
 
-        # We need a way to continuously fetch instructions until we have enough samples.
-        # But `instruction_generator_callback` usually returns a batch.
-        # We'll loop calling it.
+        # Create initial set of tasks
+        for _ in range(max_concurrency):
+            tasks.append(asyncio.create_task(worker_task()))
 
-        async def save_output(output: StructuredGenerationRow[T]):
-            if output:
-                if hasattr(self.storage, "asave_conversations"):
-                    # We reuse asave_conversations which we patched to accept BaseModel (including StructuredGenerationRow)
-                    await self.storage.asave_conversations([output])
-                else:
-                    await asyncio.to_thread(self.storage.save_conversations, [output])
+        last_count = 0
+        while not state.stop_event.is_set() or any(not t.done() for t in tasks):
+            # Update progress bar
+            if state.num_generated > last_count:
+                pbar.update(state.num_generated - last_count)
+                last_count = state.num_generated
 
-        async def worker_task():
-            nonlocal num_generated
-            async with semaphore:
-                async for output in self.generate_single(
-                    self.instruction_generator_callback, self.respondent_prompt_modifier
-                ):
-                    if stop.is_set():
-                        break
+            if state.stop_event.is_set():
+                for t in tasks:
+                    if not t.done():
+                        t.cancel()
+                break
 
-                    await save_output(output)
-                    num_generated += 1
-                    pbar.update(1)
+            await asyncio.sleep(0.1)
 
-                    if num_generated >= num_samples:
-                        stop.set()
-                        break
+            if all(t.done() for t in tasks):
+                break
 
-        # Spawn tasks loop
-        while not stop.is_set() and num_generated < num_samples:
-            # We spawn a new worker which fetches a batch of instructions and processes them
-            t = asyncio.create_task(worker_task())
-            tasks.append(t)
-            await asyncio.sleep(
-                0.01
-            )  # Small delay to prevent tight loop if callback is fast
-
-        # wait for all spawned tasks to finish/cancel cleanly
-        for future in asyncio.as_completed(tasks):
-            try:
-                await future
-                if stop.is_set():
-                    for t in tasks:
-                        if not t.done():
-                            t.cancel()
-                    break
-            except asyncio.CancelledError:
-                # swallow cancellations
-                pass
-            except Exception as e:
-                traceback.print_exc()
-                warnings.warn(f"Exception in future: {str(e)}")
-
+        pbar.update(state.num_generated - last_count)
         pbar.close()
+
+        # Wait for any remaining tasks to finish/cancel
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)

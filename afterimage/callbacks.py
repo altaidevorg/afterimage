@@ -1,23 +1,37 @@
 import json
-import traceback
 import random
-from typing import List, Literal, Optional, Union, Type
-from .base import BaseInstructionGeneratorCallback, BaseRespondentPromptModifierCallback
-from .common import default_model_name, default_safety_settings, GeneratedInstructions
+import traceback
+from typing import List, Literal, Optional, Type, Union
+
+from pydantic import BaseModel
+
+from .base import (
+    BaseInstructionGeneratorCallback,
+    BaseRespondentPromptModifierCallback,
+    BaseStoppingCallback,
+)
+from .common import (
+    GeneratedInstructions,
+    default_model_name,
+    default_safety_settings,
+)
 from .key_management import SmartKeyPool
 from .prompts import (
     default_instruction_generation_prompt,
-    default_respondent_prompt_with_context,
-    default_rag_respondent_prompt_with_context,
     default_persona_instruction_generation_prompt,
-    get_correspondent_instruction_generation_prompt,
+    default_rag_respondent_prompt_with_context,
+    default_respondent_prompt_with_context,
     default_tool_calling_persona_instruction_generation_prompt,
+    get_correspondent_instruction_generation_prompt,
 )
 from .providers import DocumentProvider, InMemoryDocumentProvider
 from .providers.llm_providers import LLMFactory
 from .retrievers import ContextRetriever
-from .types import GeneratedResponsePrompt, Document
-from pydantic import BaseModel
+from .types import (
+    Document,
+    GeneratedResponsePrompt,
+    GenerationState,
+)
 
 
 class InstructionsSchema(BaseModel):
@@ -134,7 +148,12 @@ Ask the questions in the same language as this context.
             schema=InstructionsSchema,
         ).instructions
 
-        return GeneratedInstructions(instructions=instructions, context=full_context)
+        # Pick the first document ID as the context_id for the merged context
+        context_id = random_contexts[0].id if random_contexts else None
+
+        return GeneratedInstructions(
+            instructions=instructions, context=full_context, context_id=context_id
+        )
 
     async def agenerate(self, original_prompt):
         """Generates instructions based on the provided prompt and sampled context asynchronously."""
@@ -161,8 +180,13 @@ Ask the questions in the same language as this context.
                 prompt=prompt,
                 schema=InstructionsSchema,
             )
+            # Pick the first document ID as the context_id for the merged context
+            context_id = random_contexts[0].id if random_contexts else None
+
             return GeneratedInstructions(
-                instructions=response.instructions, context=full_context
+                instructions=response.instructions,
+                context=full_context,
+                context_id=context_id,
             )
         except Exception:
             traceback.print_exc()
@@ -315,8 +339,14 @@ Ask the questions in the same language as this context.
             schema=InstructionsSchema,
         ).instructions
 
+        # Pick the first document ID as the context_id for the merged context
+        context_id = random_contexts[0].id if random_contexts else None
+
         return GeneratedInstructions(
-            instructions=instructions, context=full_context, persona=persona
+            instructions=instructions,
+            context=full_context,
+            persona=persona,
+            context_id=context_id,
         )
 
     async def agenerate(self, original_prompt):
@@ -357,10 +387,13 @@ Ask the questions in the same language as this context.
                 prompt=prompt,
                 schema=InstructionsSchema,
             )
+            context_id = random_contexts[0].id if random_contexts else None
+
             return GeneratedInstructions(
                 instructions=response.instructions,
                 context=full_context,
                 persona=persona,
+                context_id=context_id,
             )
         except Exception:
             traceback.print_exc()
@@ -608,14 +641,18 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
         # We don't really use original_prompt here because we have a very specific system prompt
         # but we follow the interface.
         prompt = "Generate the instructions now."
-
         instructions = model.generate_structured(
             prompt=prompt,
             schema=InstructionsSchema,
         ).instructions
 
+        context_id = random_contexts[0].id if random_contexts else None
+
         return GeneratedInstructions(
-            instructions=instructions, context=full_context, persona=persona
+            instructions=instructions,
+            context=full_context,
+            persona=persona,
+            context_id=context_id,
         )
 
     async def agenerate(self, original_prompt):
@@ -645,11 +682,103 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
                 prompt=prompt,
                 schema=InstructionsSchema,
             )
+            context_id = random_contexts[0].id if random_contexts else None
+
             return GeneratedInstructions(
                 instructions=response.instructions,
                 context=full_context,
                 persona=persona,
+                context_id=context_id,
             )
         except Exception:
             traceback.print_exc()
             raise
+
+
+class FixedNumberStoppingCallback(BaseStoppingCallback):
+    """Stops after generating a fixed number of samples."""
+
+    def __init__(self, n: int):
+        self.n = n
+
+    async def should_stop(self, state: GenerationState) -> bool:
+        return state.num_generated >= self.n
+
+
+class ContextCoverageStoppingCallback(BaseStoppingCallback):
+    """Stops after all (or a percentage of) contexts have been used N times."""
+
+    def __init__(
+        self,
+        provider: DocumentProvider,
+        target_visits: int = 1,
+        coverage_threshold: float = 1.0,
+    ):
+        self.provider = provider
+        self.target_visits = target_visits
+        self.coverage_threshold = coverage_threshold
+
+    async def should_stop(self, state: GenerationState) -> bool:
+        all_docs = self.provider.get_all()
+        if not all_docs:
+            return True
+
+        covered_count = 0
+        for doc in all_docs:
+            context_count = state.context_counts.get(doc.id, 0)
+            if context_count >= self.target_visits:
+                covered_count += 1
+
+        actual_coverage = covered_count / len(all_docs)
+
+        return actual_coverage >= self.coverage_threshold
+
+
+class PersonaUsageStoppingCallback(BaseStoppingCallback):
+    """Stops after N unique personas have been utilized."""
+
+    def __init__(self, n_personas: int):
+        self.n_personas = n_personas
+
+    async def should_stop(self, state: GenerationState) -> bool:
+        return len(state.unique_personas) >= self.n_personas
+
+
+class BudgetStoppingCallback(BaseStoppingCallback):
+    """Stops when token usage exceeds a threshold."""
+
+    def __init__(self, max_tokens: int):
+        self.max_tokens = max_tokens
+
+    async def should_stop(self, state: GenerationState) -> bool:
+        if state.monitor is None:
+            return False
+
+        # We rely on internal _metrics of monitor
+        with state.monitor._lock:
+            total_tokens = sum(
+                m["value"] for m in state.monitor._metrics["token_usage"]
+            )
+
+        return total_tokens >= self.max_tokens
+
+
+class RateLimitStoppingCallback(BaseStoppingCallback):
+    """Stops if error rate exceeds a threshold."""
+
+    def __init__(self, max_error_rate: float = 0.5, min_samples: int = 10):
+        self.max_error_rate = max_error_rate
+        self.min_samples = min_samples
+
+    async def should_stop(self, state: GenerationState) -> bool:
+        if state.num_generated < self.min_samples:
+            return False
+
+        if state.monitor is None:
+            return False
+
+        recent_errors = state.monitor.get_metrics("error_rate")
+        if not recent_errors:
+            return False
+
+        return recent_errors["mean"] >= self.max_error_rate

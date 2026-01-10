@@ -15,8 +15,10 @@ wheels/
 *.jsonl
 
 # monitoring
-logs
-plots
-*.png
+monitoring/
+logs/
+plots/
 *_logs/
+*.png
+*.log
 TODO.md

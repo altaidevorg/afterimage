@@ -2,7 +2,12 @@ import asyncio
 import logging
 
 from .common import GeneratedInstructions
-from .types import GeneratedResponsePrompt, EvaluatedConversationWithContext
+from .monitoring import GenerationMonitor
+from .types import (
+    EvaluatedConversationWithContext,
+    GeneratedResponsePrompt,
+    GenerationState,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +91,23 @@ class BaseGenerator:
         offset: int | None = None,
     ) -> list[EvaluatedConversationWithContext]:
         return self.storage.load_conversations(limit=limit, offset=offset)
+
+    def _ensure_monitor(self):
+        """Ensures that a monitor exists, creating a default one if necessary."""
+        if self.monitor is None:
+            self.monitor = GenerationMonitor()
+
+
+class BaseStoppingCallback:
+    """Base class for callbacks that decide when to stop generation."""
+
+    async def should_stop(self, state: GenerationState) -> bool:
+        """Return True if generation should stop.
+
+        Args:
+            state: The current state of the generation process.
+        """
+        raise NotImplementedError
 
 
 class BaseInstructionGeneratorCallback:

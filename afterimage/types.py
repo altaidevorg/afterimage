@@ -1,9 +1,12 @@
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
-from typing import Any, List, Optional, Generic, TypeVar, Dict
+from typing import Any, Dict, Generic, List, Optional, TypedDict, TypeVar
+
 from pydantic import BaseModel, Field
 
 T = TypeVar("T")
-import uuid
 
 
 class GradeSchema(str, Enum):
@@ -40,17 +43,17 @@ class ConversationEntry(BaseModel):
 
 class Conversation(BaseModel):
     conversations: List[ConversationEntry]
-    metadata: Optional[dict[str, Any]] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ConversationWithContext(Conversation):
-    instruction_context: Optional[str] = None
-    response_context: Optional[str] = None
-    persona: Optional[str] = None
+    instruction_context: str | None = None
+    response_context: str | None = None
+    persona: str | None = None
 
 
 class EvaluatedConversationWithContext(ConversationWithContext):
-    evaluation: EvaluationSchema
+    evaluation: EvaluationSchema | None = None
     final_score: Optional[float] = 0.0
 
 
@@ -104,3 +107,53 @@ class Document(BaseModel):
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Any associated metadata"
     )
+
+
+class GenerationMetadata(TypedDict, total=False):
+    """Structured metadata for generation samples."""
+
+    context_id: str
+    persona_name: Optional[str]
+    instruction_index: int
+    batch_id: str
+    session_id: str
+
+
+@dataclass
+class GenerationState:
+    """Current state of the generation process."""
+
+    num_generated: int = 0
+    num_requested: int = 0
+    start_time: datetime = field(default_factory=datetime.now)
+    last_item: Optional[BaseModel] = None
+    monitor: Optional[Any] = None  # GenerationMonitor
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    stop_event: Optional[Any] = None  # asyncio.Event
+
+    # Context coverage tracking
+    context_counts: Dict[str, int] = field(default_factory=dict)
+    unique_personas: list[str] = field(default_factory=list)
+
+    def update(self, item: Any):
+        """Update state with a new generated item."""
+        self.num_generated += 1
+        self.last_item = item if isinstance(item, BaseModel) else None
+
+        # Extract metadata if available
+        meta = None
+        if hasattr(item, "metadata"):
+            meta = item.metadata
+        elif isinstance(item, dict):
+            meta = item.get("metadata")
+
+        if meta is not None and isinstance(meta, dict):
+            ctx_id = meta.get("context_id")
+            if ctx_id:
+                self.context_counts[ctx_id] = self.context_counts.get(ctx_id, 0) + 1
+
+        persona = getattr(item, "persona", None) or (
+            meta.get("persona_name") if isinstance(meta, dict) else None
+        )
+        if persona and persona not in self.unique_personas:
+            self.unique_personas.append(persona)

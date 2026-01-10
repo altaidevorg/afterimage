@@ -84,12 +84,17 @@ class DocumentProvider(Protocol):
 class InMemoryDocumentProvider(DocumentProvider):
     """Simple provider backed by a list of strings."""
 
-    def __init__(self, texts: list[str]):
-        if not isinstance(texts, list) or not all(
-            isinstance(d, str) for d in texts
+    def __init__(self, texts: list[str | Document]):
+        if not isinstance(texts, list) or not (
+            all(isinstance(d, str) for d in texts)
+            or all(isinstance(d, Document) for d in texts)
         ):
-            raise TypeError("texts must be a List[str]")
-        self._documents = [Document(text=text) for text in texts]
+            raise TypeError("texts must be a list[str|Document] but got: " + str(texts))
+        self._documents = (
+            [Document(text=text) for text in texts]
+            if len(texts) > 0 and isinstance(texts[0], str)
+            else texts
+        )
 
     def _load_documents(self) -> list[Document]:
         return self._documents

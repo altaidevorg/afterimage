@@ -6,6 +6,11 @@ from afterimage.callbacks import (
     WithContextRespondentPromptModifier,  # noqa
     WithRAGRespondentPromptModifier,  # noqa
     ToolCallingInstructionGeneratorCallback,  # noqa
+    FixedNumberStoppingCallback,  # noqa
+    ContextCoverageStoppingCallback,  # noqa
+    PersonaUsageStoppingCallback,  # noqa
+    BudgetStoppingCallback,  # noqa
+    RateLimitStoppingCallback,  # noqa
 )
 from afterimage.conversation_generator import ConversationGenerator  # noqa
 from afterimage.evaluator import (
@@ -30,4 +35,4 @@ from afterimage.providers import (
 from afterimage.storage import BaseStorage, JSONLStorage, SQLStorage  # noqa
 from afterimage.types import PersonaEntry, Document  # noqa
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"

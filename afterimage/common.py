@@ -15,3 +15,4 @@ class GeneratedInstructions(BaseModel):
     instructions: List[str]
     context: str
     persona: str | None = None
+    context_id: str | None = None

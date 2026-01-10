@@ -1,32 +1,37 @@
-import traceback
-import random
-import warnings
 import asyncio
-from typing import AsyncGenerator, Dict, List, Literal, Optional, Union
+import logging
+import random
 import time
+import traceback
+import warnings
+from typing import AsyncGenerator, Dict, List, Literal, Optional, Union
 
 from tqdm.asyncio import tqdm
 
-from .base import (
-    BaseGenerator,
+from .base import BaseGenerator, BaseStoppingCallback
+from .callbacks import (
     BaseInstructionGeneratorCallback,
     BaseRespondentPromptModifierCallback,
+    FixedNumberStoppingCallback,
 )
 from .common import default_model_name, default_safety_settings
-from .evaluator import SimpleSyntheticDatasetEvaluator, HybridSyntheticDatasetEvaluator
+from .evaluator import HybridSyntheticDatasetEvaluator, SimpleSyntheticDatasetEvaluator
+from .key_management import SmartKeyPool
+from .monitoring import GenerationMonitor
 from .prompts import get_correspondent_instruction_generation_prompt
+from .providers import ChatSession, LLMFactory
+from .storage import BaseStorage, JSONLStorage
 from .types import (
-    ConversationEntry,
     Conversation,
+    ConversationEntry,
     ConversationWithContext,
     EvaluatedConversationWithContext,
+    GenerationState,
     GradeSchema,
     Role,
 )
-from .key_management import SmartKeyPool
-from .providers import ChatSession, LLMFactory
-from .monitoring import GenerationMonitor
-from .storage import BaseStorage, JSONLStorage
+
+logger = logging.getLogger(__name__)
 
 
 class AsyncConversationGenerator(BaseGenerator):
@@ -39,7 +44,7 @@ class AsyncConversationGenerator(BaseGenerator):
         correspondent_prompt: str | None = None,
         model_name: str | None = None,
         safety_settings: List[Dict[str, str]] | None = None,
-        auto_improve: bool = True,
+        auto_improve: bool = False,
         evaluator_model_name: str | None = None,
         model_provider_name: Literal["gemini", "openai"] = "gemini",
         evaluator_method: Literal["simple", "hybrid"] = "simple",
@@ -114,7 +119,7 @@ class AsyncConversationGenerator(BaseGenerator):
                 )
             elif evaluator_method == "hybrid":
                 evaluator_llm = LLMFactory.create(
-                    self.model_provider_name, self.evaluator_model_name, self.key_pool
+                    self.model_provider_name, evaluator_model_name, self.key_pool
                 )
                 self.evaluator = HybridSyntheticDatasetEvaluator(
                     llm=evaluator_llm, monitor=self.monitor
@@ -377,15 +382,10 @@ class AsyncConversationGenerator(BaseGenerator):
 
     async def generate_single(
         self,
-        i,
-        max_turns,
-        seed_questions,
-        add_examples,
-        num_random_examples,
-        generation_examples_delay,
-        check_for_near_duplicates,
-        instruction_generator_callback,
-        respondent_prompt_modifier,
+        max_turns: int,
+        check_for_near_duplicates: bool = False,
+        instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
+        respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
     ) -> AsyncGenerator[Union[EvaluatedConversationWithContext, Conversation], None]:
         """Generates conversations for a single session and yields them."""
         # ainitialize ensures correspondent_prompt is set
@@ -442,6 +442,10 @@ class AsyncConversationGenerator(BaseGenerator):
                     instruction_context=instruction_context,
                     response_context=response_context,
                     persona=persona,
+                    metadata={
+                        "context_id": gen_instructions.context_id,
+                        "persona_name": persona,
+                    },
                 )
 
                 evaluation_grade = GradeSchema.NOT_ACCEPTABLE
@@ -474,55 +478,32 @@ class AsyncConversationGenerator(BaseGenerator):
 
                 yield conversation_row
         else:
-            first_question = seed_questions[i] if seed_questions else None
-            # If correspondent_prompt is None and no callback, create it using generator's method
-            if correspondent_prompt is None:
-                correspondent_prompt = await self.create_correspondent_prompt(
-                    respondent_prompt
-                )
-            conversation = await self.go(
-                turns=turns,
-                first_question=first_question,
-                check_for_near_duplicates=check_for_near_duplicates,
-                correspondent_prompt=correspondent_prompt,
-                respondent_prompt=respondent_prompt,
-            )
-            yield Conversation(conversations=conversation)
+            raise ValueError("An `instruction_generator_callback` must be provided.")
 
     async def generate(
         self,
-        num_dialogs: int = 5,
+        num_dialogs: int | None = None,
         max_turns: int = 1,
-        seed_instructions: List = [],
-        add_examples: bool = False,
-        num_random_examples: int = 3,
-        generation_examples_delay: int = 100,
-        check_for_near_duplicates: bool = False,
+        max_concurrency: int = 4,
+        stopping_criteria: Optional[List[BaseStoppingCallback]] = None,
         instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
         respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
-        max_concurrency: int = 4,
     ) -> None:
-        """Generates multiple conversation dialogs and saves them to a file if specified.
+        """Generates multiple conversation dialogs until stopping criteria is met.
 
         Args:
             num_dialogs (int, optional): Number of dialogs to generate. Defaults to 5.
             max_turns (int, optional): Maximum number of turns per dialog. Actual number of turns is randomly sampled from 1 .. max_turns.
-            seed_instructions (List, optional): Seed instructions to guide question generation. Defaults to [].
-            add_examples (bool, optional): Whether to use seed instructions as examples. Defaults to False.
-            num_random_examples (int, optional): Number of random examples to use. Defaults to 3.
-            generation_examples_delay (int, optional): Delay before using generated examples. Defaults to 100.
-            check_for_near_duplicates (bool, optional): Avoid generating duplicate questions. Defaults to False.
+            stopping_criteria: A list of callbacks to determine when to stop generation. If num_dialogs is specified, FixedNumberStoppingCallback is added to this list.
             instruction_generator_callback (callable, optional): Callback for instruction generation.
                 Deprecated: Pass this to the constructor instead. Defaults to None.
             respondent_prompt_modifier (callable, optional): Callback to modify respondent prompts.
                 Deprecated: Pass this to the constructor instead. Defaults to None.
             max_concurrency (int, optional): Number of concurrent generations. Defaults to 4.
         """
-        # Use provided callbacks if given, otherwise use instance attributes
-        # Show deprecation warnings if callbacks are provided as arguments
         if instruction_generator_callback is not None:
             warnings.warn(
-                "Passing `instruction_generator_callback` to `generate()` is deprecated and may be removed in a future version. "
+                "Passing `instruction_generator_callback` to `generate()` is deprecated. "
                 "Please pass it to the constructor instead.",
                 DeprecationWarning,
                 stacklevel=2,
@@ -532,7 +513,7 @@ class AsyncConversationGenerator(BaseGenerator):
 
         if respondent_prompt_modifier is not None:
             warnings.warn(
-                "Passing `respondent_prompt_modifier` to `generate()` is deprecated and may be removed in a future version. "
+                "Passing `respondent_prompt_modifier` to `generate()` is deprecated. "
                 "Please pass it to the constructor instead.",
                 DeprecationWarning,
                 stacklevel=2,
@@ -540,34 +521,31 @@ class AsyncConversationGenerator(BaseGenerator):
         else:
             respondent_prompt_modifier = self.respondent_prompt_modifier
 
-        n_conversations = num_dialogs
-        gen_iter = None
+        if instruction_generator_callback is None:
+            raise ValueError("An `instruction_generator_callback` must be provided.")
 
-        if instruction_generator_callback is not None:
-            if add_examples:
-                warnings.warn(
-                    "You set `add_examples`, but `instruction_generator_callback` will take precedence, and examples will be ignored."
-                )
+        if self.correspondent_prompt is None:
+            await self.ainitialize(instruction_generator_callback)
 
-            if seed_instructions:
-                warnings.warn(
-                    "You set `seed_instructions`, but `instruction_generator_callback` will take precedence, and `seed_instructions`will be ignored."
-                )
+        self._ensure_monitor()
 
-            if seed_instructions and not add_examples:
-                n_conversations = len(seed_instructions)
-                gen_iter = iter(range(n_conversations))
-                warnings.warn(
-                    f"`num_dialogs` is set to {n_conversations} because you set {n_conversations} seed instructions"
-                )
+        # Handle stopping criteria
+        final_stopping_criteria = stopping_criteria or []
+        if num_dialogs is not None:
+            final_stopping_criteria.append(FixedNumberStoppingCallback(n=num_dialogs))
 
-        await self.ainitialize(instruction_generator_callback)
+        # Default if nothing specified
+        if not final_stopping_criteria:
+            num_dialogs = 5
+            final_stopping_criteria.append(FixedNumberStoppingCallback(n=num_dialogs))
 
-        pbar = tqdm(total=num_dialogs, desc="Generating...", unit="conversation")
-        stop = asyncio.Event()
-        num_generated = 0
+        state = GenerationState(
+            num_requested=num_dialogs or 0,
+            monitor=self.monitor,
+            stop_event=asyncio.Event(),
+        )
+
         semaphore = asyncio.Semaphore(max_concurrency)
-        tasks: list[asyncio.Task] = []
 
         async def save_conversations(conversations: list[ConversationWithContext]):
             if conversations:
@@ -579,51 +557,65 @@ class AsyncConversationGenerator(BaseGenerator):
                     )
 
         async def worker_task():
-            nonlocal num_generated
-            async with semaphore:
-                i = next(gen_iter) if gen_iter else 0
-                async for conv in self.generate_single(
-                    i,
-                    max_turns,
-                    seed_instructions,
-                    add_examples,
-                    num_random_examples,
-                    generation_examples_delay,
-                    check_for_near_duplicates,
-                    instruction_generator_callback,
-                    respondent_prompt_modifier,
-                ):
-                    if stop.is_set():
-                        break
-                    await save_conversations([conv])
-                    num_generated += 1
-                    pbar.update(1)
-
-                    if num_generated >= n_conversations:
-                        stop.set()
+            while not state.stop_event.is_set():
+                async with semaphore:
+                    if state.stop_event.is_set():
                         break
 
-        # dynamically spawn tasks only when needed
-        while not stop.is_set() and num_generated < num_dialogs:
-            t = asyncio.create_task(worker_task())
-            tasks.append(t)
-            # optional tiny sleep to let loop schedule
-            await asyncio.sleep(0.001)
+                    try:
+                        async for conversation in self.generate_single(
+                            max_turns=max_turns,
+                            instruction_generator_callback=instruction_generator_callback,
+                            respondent_prompt_modifier=respondent_prompt_modifier,
+                        ):
+                            # Update state and check stopping criteria
+                            state.update(conversation)
 
-        # wait for all spawned tasks to finish/cancel cleanly
-        for future in asyncio.as_completed(tasks):
-            try:
-                await future
-                if stop.is_set():
-                    for t in tasks:
-                        if not t.done():
-                            t.cancel()
-                    break
-            except asyncio.CancelledError:
-                # swallow cancellations
-                pass
-            except Exception as e:
-                traceback.print_exc()
-                warnings.warn(f"Exception in future: {str(e)}")
+                            for criteria in final_stopping_criteria:
+                                if await criteria.should_stop(state):
+                                    state.stop_event.set()
+                                    break
 
+                            await save_conversations([conversation])
+
+                            if state.stop_event.is_set():
+                                break
+
+                    except Exception as e:
+                        logger.error(f"Error in generation: {e}")
+                        traceback.print_exc()
+                        if self.monitor:
+                            self.monitor.record_metric("error_rate", 1.0)
+                        continue
+
+        pbar = tqdm(total=num_dialogs, desc="Generating...", unit="conversation")
+        tasks: list[asyncio.Task] = []
+
+        # Create initial set of tasks
+        for _ in range(max_concurrency):
+            tasks.append(asyncio.create_task(worker_task()))
+
+        last_count = 0
+        while not state.stop_event.is_set() or any(not t.done() for t in tasks):
+            # Update progress bar
+            if state.num_generated > last_count:
+                pbar.update(state.num_generated - last_count)
+                last_count = state.num_generated
+
+            if state.stop_event.is_set():
+                for t in tasks:
+                    if not t.done():
+                        t.cancel()
+                break
+
+            await asyncio.sleep(0.1)
+
+            if all(t.done() for t in tasks):
+                break
+
+        pbar.update(state.num_generated - last_count)
         pbar.close()
+
+        # Wait for any remaining tasks to finish/cancel
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
