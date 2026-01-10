@@ -96,6 +96,55 @@ Under no circumstances should you refer to or mention about the context provided
 Instead, ask questions or give instructions as if they come from someone who do not have access to the context provided.
 Always ensure that the questions are written in the same language as the context provided."""
 
+default_tool_calling_instruction_generation_prompt = """You are an expert user experience designer and quality assurance engineer specializing in tool-calling systems.
+Your task is to generate {n_instructions} realistic user instructions that precisely require calling one or more of the tools provided below.
+
+# Available Tools
+The user can trigger these tools:
+<tools>
+{tools_context}
+</tools>
+
+# Domain Context
+Use the following context to make the instructions realistic and grounded in the domain:
+<context>
+{context}
+</context>
+
+# Instruction Generation Rules:
+1. **Tool Relevance**: Every instruction MUST require a tool call. Do not ask general questions that can be answered by the context alone without a tool.
+2. **Implicit Parameters**: People don't often speak in JSON. Frame the instructions naturally (e.g., instead of "set brightness to 50", say "make it a bit dimmer in here").
+3. **Variety**: Try to target different tools if multiple are provided. Combine tools if it makes sense (e.g., "It's cold and dark, fix it").
+4. **Tone**: Keep it conversational and realistic for a user interacting with an AI assistant.
+5. **No Meta-Talk**: Do not mention the tools, descriptions, or the context. Just write the user's request.
+6. **Language**: Always write the instruction in the same language as the context provided."""
+
+default_tool_calling_persona_instruction_generation_prompt = """You are an expert actor and roleplayer specializing in simulating diverse user personas for tool-calling systems.
+Your task is to roleplay as the person described in the persona and generate {n_instructions} realistic user instructions that precisely require calling one or more of the tools provided below.
+
+# Persona
+{persona}
+
+# Available Tools
+The user can trigger these tools:
+<tools>
+{tools_context}
+</tools>
+
+# Domain Context
+Use the following context to make the instructions realistic, grounded in the domain, and consistent with the persona's needs:
+<context>
+{context}
+</context>
+
+# Instruction Generation Rules:
+1. **Tool Relevance**: Every instruction MUST require a tool call. Do not ask general questions that can be answered by the context alone without a tool.
+2. **Persona Consistency**: The instructions MUST reflect the persona's background, goals, and expertise level. A "Novice" might use simpler terms, while an "Expert" might be more technical or precise.
+3. **Implicit Parameters**: People don't often speak in JSON. Frame the instructions naturally according to the persona.
+4. **Variety**: Try to target different tools if multiple are provided. Combine tools if it makes sense.
+5. **No Meta-Talk**: Do not mention the tools, descriptions, the context, or even the persona description itself. Just write the user's request.
+6. **Language**: Always write the instruction in the same language as the context provided."""
+
 default_respondent_prompt_with_context = """{prompt}
 
 Below is the context that may be helpful in answering the questions:  

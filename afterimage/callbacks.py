@@ -1,5 +1,7 @@
+import json
 import traceback
-from typing import List, Literal, Optional, Union
+import random
+from typing import List, Literal, Optional, Union, Type
 from .base import BaseInstructionGeneratorCallback, BaseRespondentPromptModifierCallback
 from .common import default_model_name, default_safety_settings, GeneratedInstructions
 from .key_management import SmartKeyPool
@@ -9,13 +11,12 @@ from .prompts import (
     default_rag_respondent_prompt_with_context,
     default_persona_instruction_generation_prompt,
     get_correspondent_instruction_generation_prompt,
+    default_tool_calling_persona_instruction_generation_prompt,
 )
 from .providers import DocumentProvider, InMemoryDocumentProvider
 from .providers.llm_providers import LLMFactory
 from .retrievers import ContextRetriever
 from .types import GeneratedResponsePrompt, Document
-import random
-
 from pydantic import BaseModel
 
 
@@ -91,8 +92,6 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
             api_key=self.key_pool,
             system_instruction=system_instruction or self.prompt,
             safety_settings=self.safety_settings,
-            response_mime_type="application/json",
-            response_schema=InstructionsSchema,
         )
 
     def _sample(self) -> list[Document]:
@@ -130,9 +129,10 @@ Ask the questions in the same language as this context.
 </context>
         """
 
-        instructions = model.generate_content(
+        instructions = model.generate_structured(
             prompt=prompt,
-        ).raw_response.parsed.instructions
+            schema=InstructionsSchema,
+        ).instructions
 
         return GeneratedInstructions(instructions=instructions, context=full_context)
 
@@ -157,15 +157,16 @@ Ask the questions in the same language as this context.
         """
 
         try:
-            response = await model.agenerate_content(
+            response = await model.agenerate_structured(
                 prompt=prompt,
+                schema=InstructionsSchema,
+            )
+            return GeneratedInstructions(
+                instructions=response.instructions, context=full_context
             )
         except Exception:
             traceback.print_exc()
             raise
-        instructions = response.raw_response.parsed.instructions
-
-        return GeneratedInstructions(instructions=instructions, context=full_context)
 
     def create_correspondent_prompt(self, respondent_prompt: str) -> str:
         """Create a correspondent prompt based on the respondent prompt."""
@@ -309,9 +310,10 @@ Ask the questions in the same language as this context.
 </context>
         """
 
-        instructions = model.generate_content(
+        instructions = model.generate_structured(
             prompt=prompt,
-        ).raw_response.parsed.instructions
+            schema=InstructionsSchema,
+        ).instructions
 
         return GeneratedInstructions(
             instructions=instructions, context=full_context, persona=persona
@@ -351,17 +353,18 @@ Ask the questions in the same language as this context.
         """
 
         try:
-            response = await model.agenerate_content(
+            response = await model.agenerate_structured(
                 prompt=prompt,
+                schema=InstructionsSchema,
+            )
+            return GeneratedInstructions(
+                instructions=response.instructions,
+                context=full_context,
+                persona=persona,
             )
         except Exception:
             traceback.print_exc()
             raise
-        instructions = response.raw_response.parsed.instructions
-
-        return GeneratedInstructions(
-            instructions=instructions, context=full_context, persona=persona
-        )
 
 
 class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
@@ -474,3 +477,179 @@ class WithRAGRespondentPromptModifier(WithContextRespondentPromptModifier):
                 f"{current_context}\n\nAdditional relevant information:\n{rag_context}"
             )
         return rag_context
+
+
+class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallback):
+    """Generates instructions that specifically require calling provided tools, optionally using personas."""
+
+    def __init__(
+        self,
+        api_key: str | SmartKeyPool,
+        tools: List[Union[dict, Type[BaseModel]]],
+        documents: Union[list[str], DocumentProvider],
+        prompt: str | None = None,
+        model_name: str | None = None,
+        model_provider_name: Literal["gemini", "openai"] = "gemini",
+        num_random_contexts: int = 1,
+        n_instructions: int = 3,
+        num_tools_to_sample: int = 2,
+        separator_text: str = "\n" + "-" * 80 + "\n\n",
+        safety_settings: Optional[dict] = None,
+    ):
+        """Initialize the tool-calling instruction generator callback.
+
+        Args:
+            api_key: API key for the generative AI service
+            tools: List of tools (OpenAI schema dicts or Pydantic models)
+            documents: Either a list of documents or a DocumentProvider instance
+            prompt: Custom instruction generation prompt
+            model_name: Model name to use
+            model_provider_name: Model provider name to use
+            num_random_contexts: Number of contexts to sample for domain grounding
+            n_instructions: Number of instructions to generate per call
+            num_tools_to_sample: Number of tools to present to the model as targets
+            separator_text: Separator text for merging contexts
+            safety_settings: Safety settings for the model
+        """
+        super().__init__(
+            api_key=api_key,
+            documents=documents,
+            prompt=prompt
+            if prompt is not None
+            else default_tool_calling_persona_instruction_generation_prompt,
+            model_name=model_name,
+            model_provider_name=model_provider_name,
+            num_random_contexts=num_random_contexts,
+            n_instructions=n_instructions,
+            separator_text=separator_text,
+            safety_settings=safety_settings,
+        )
+        self.tools = self._normalize_tools(tools)
+        self.num_tools_to_sample = num_tools_to_sample
+
+    def _normalize_tools(self, tools: List[Union[dict, Type[BaseModel]]]) -> List[dict]:
+        """Convert Pydantic models to OpenAI function schema if necessary."""
+        normalized = []
+        for t in tools:
+            if isinstance(t, type) and issubclass(t, BaseModel):
+                normalized.append(self._tool_model_to_openai_schema(t))
+            else:
+                normalized.append(t)
+        return normalized
+
+    def _tool_model_to_openai_schema(self, tool_model: Type[BaseModel]) -> dict:
+        """Convert a Pydantic model into the OpenAI function schema format."""
+        # Use existing logic from tool_calling_generator.py
+        name = getattr(tool_model, "name", tool_model.__name__.lower())
+        if hasattr(tool_model, "model_fields") and "name" in tool_model.model_fields:
+            name = tool_model.model_fields["name"].default
+
+        # Assume the model has an 'arguments' field if it's a wrapper,
+        # otherwise use the model itself as arguments.
+        if (
+            hasattr(tool_model, "model_fields")
+            and "arguments" in tool_model.model_fields
+        ):
+            args_model = tool_model.model_fields["arguments"].annotation
+        else:
+            args_model = tool_model
+
+        args_schema = args_model.model_json_schema()
+
+        params = {
+            "type": "object",
+            "properties": args_schema.get("properties", {}),
+            "required": args_schema.get("required", []),
+        }
+
+        # Clean up schema for OpenAI
+        for v in params["properties"].values():
+            if "title" in v:
+                del v["title"]
+
+        return {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": tool_model.__doc__ or "",
+                "parameters": params,
+            },
+        }
+
+    def _sample_tools(self) -> List[dict]:
+        """Sample a subset of tools to focus on."""
+        n = min(len(self.tools), self.num_tools_to_sample)
+        return random.sample(self.tools, n)
+
+    def _format_tools_context(self, tools: List[dict]) -> str:
+        """Format tools into a readable string for the prompt."""
+        return json.dumps(tools, indent=2)
+
+    def generate(self, original_prompt):
+        """Generates instructions that require tool calls."""
+        random_contexts, persona = self._sample()
+        if persona is None:
+            persona = "A curious user"
+
+        full_context = self._merge_contexts([c.text for c in random_contexts])
+
+        target_tools = self._sample_tools()
+        tools_context = self._format_tools_context(target_tools)
+
+        system_prompt = self.prompt.format(
+            n_instructions=self.n_instructions,
+            tools_context=tools_context,
+            context=full_context,
+            persona=persona,
+        )
+
+        model = self._create_model(system_instruction=system_prompt)
+
+        # We don't really use original_prompt here because we have a very specific system prompt
+        # but we follow the interface.
+        prompt = "Generate the instructions now."
+
+        instructions = model.generate_structured(
+            prompt=prompt,
+            schema=InstructionsSchema,
+        ).instructions
+
+        return GeneratedInstructions(
+            instructions=instructions, context=full_context, persona=persona
+        )
+
+    async def agenerate(self, original_prompt):
+        """Generates instructions that require tool calls asynchronously."""
+        random_contexts, persona = self._sample()
+        if persona is None:
+            persona = "A curious user"
+
+        full_context = self._merge_contexts([c.text for c in random_contexts])
+
+        target_tools = self._sample_tools()
+        tools_context = self._format_tools_context(target_tools)
+
+        system_prompt = self.prompt.format(
+            n_instructions=self.n_instructions,
+            tools_context=tools_context,
+            context=full_context,
+            persona=persona,
+        )
+
+        model = self._create_model(system_instruction=system_prompt)
+
+        prompt = "Generate the instructions now."
+
+        try:
+            response = await model.agenerate_structured(
+                prompt=prompt,
+                schema=InstructionsSchema,
+            )
+            return GeneratedInstructions(
+                instructions=response.instructions,
+                context=full_context,
+                persona=persona,
+            )
+        except Exception:
+            traceback.print_exc()
+            raise

@@ -97,6 +97,7 @@ TECH_GADGET_POLICIES = [
 
 async def main():
     api_key = os.environ.get("GEMINI_API_KEY")
+    # api_key = "chengethis"
     if not api_key:
         print("Please set GEMINI_API_KEY environment variable.")
         return
