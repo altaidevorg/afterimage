@@ -229,7 +229,7 @@ async def main():
 
     print("Starting generation of synthetic tool-calling dataset...")
     # Generate 10 samples
-    await generator.generate(num_samples=50, max_concurrency=1)
+    await generator.generate(num_samples=500, max_concurrency=4)
     print("Generation complete. Check the output JSONL file.")
 
 

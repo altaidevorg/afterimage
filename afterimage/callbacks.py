@@ -694,6 +694,16 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
             traceback.print_exc()
             raise
 
+    def create_correspondent_prompt(self, respondent_prompt: str) -> str:
+        """Create a prompt for the correspondent."""
+        # tool calling instruction generator callback uses a special correspondent prompt.
+        # so we don't need to create a new one.
+        return self.prompt
+
+    async def acreate_correspondent_prompt(self, respondent_prompt: str) -> str:
+        """Create a prompt for the correspondent asynchronously."""
+        return self.create_correspondent_prompt(respondent_prompt)
+
 
 class FixedNumberStoppingCallback(BaseStoppingCallback):
     """Stops after generating a fixed number of samples."""
@@ -745,22 +755,59 @@ class PersonaUsageStoppingCallback(BaseStoppingCallback):
 
 
 class BudgetStoppingCallback(BaseStoppingCallback):
-    """Stops when token usage exceeds a threshold."""
+    """Stops when token usage exceeds a threshold.
 
-    def __init__(self, max_tokens: int):
-        self.max_tokens = max_tokens
+    Args:
+        max_prompt_tokens: Maximum number of prompt tokens to use.
+        max_completion_tokens: Maximum number of completion tokens to use.
+        max_total_tokens: Maximum number of total tokens to use.
+    """
+
+    def __init__(
+        self,
+        max_prompt_tokens: int | None = None,
+        max_completion_tokens: int | None = None,
+        max_total_tokens: int | None = None,
+    ):
+        self.max_prompt_tokens = max_prompt_tokens
+        self.max_completion_tokens = max_completion_tokens
+        self.max_total_tokens = max_total_tokens
 
     async def should_stop(self, state: GenerationState) -> bool:
         if state.monitor is None:
             return False
 
+        if (
+            self.max_prompt_tokens is None
+            and self.max_completion_tokens is None
+            and self.max_total_tokens is None
+        ):
+            return False
+
         # We rely on internal _metrics of monitor
         with state.monitor._lock:
-            total_tokens = sum(
-                m["value"] for m in state.monitor._metrics["token_usage"]
-            )
+            if self.max_total_tokens is not None:
+                total_tokens = sum(
+                    m["value"] for m in state.monitor._metrics["total_token_count"]
+                )
+                if total_tokens >= self.max_total_tokens:
+                    return True
 
-        return total_tokens >= self.max_tokens
+            if self.max_completion_tokens is not None:
+                total_tokens = sum(
+                    m["value"] for m in state.monitor._metrics["completion_token_count"]
+                )
+                if total_tokens >= self.max_completion_tokens:
+                    return True
+
+            if self.max_prompt_tokens is not None:
+                total_tokens = sum(
+                    m["value"] for m in state.monitor._metrics["prompt_token_count"]
+                )
+                if total_tokens >= self.max_prompt_tokens:
+                    return True
+
+        return False
 
 
 class RateLimitStoppingCallback(BaseStoppingCallback):

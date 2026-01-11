@@ -247,31 +247,30 @@ class AsyncConversationGenerator(BaseGenerator):
             response = await correspondent.asend_message(answer)
             question = response.text
 
-            if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=True,
-                    metadata={
-                        "operation": "question_generation",
-                        "answer_length": len(answer)
-                        if isinstance(answer, str)
-                        else len(answer.content),
-                        "question_length": len(question),
-                    },
-                )
+            self.monitor.track_generation(
+                duration=time.time() - start_time,
+                success=True,
+                prompt_token_count=response.prompt_token_count,
+                completion_token_count=response.completion_token_count,
+                total_token_count=response.total_token_count,
+                finish_reason=response.finish_reason,
+                model_name=response.model_name,
+                metadata={
+                    "operation": "question_generation",
+                },
+            )
 
             return question
         except Exception as e:
-            if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=False,
-                    error=str(e),
-                    metadata={
-                        "operation": "question_generation",
-                        "error_type": e.__class__.__name__,
-                    },
-                )
+            self.monitor.track_generation(
+                duration=time.time() - start_time,
+                success=False,
+                error=str(e),
+                metadata={
+                    "operation": "question_generation",
+                    "error_type": e.__class__.__name__,
+                },
+            )
             raise
 
     async def answer(
@@ -283,36 +282,35 @@ class AsyncConversationGenerator(BaseGenerator):
             response = await respondent.asend_message(question)
             answer = response.text
 
-            if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=True,
-                    metadata={
-                        "operation": "answer_generation",
-                        "question_length": len(question)
-                        if isinstance(question, str)
-                        else len(question.content),
-                        "answer_length": len(answer),
-                    },
-                )
+            self.monitor.track_generation(
+                duration=time.time() - start_time,
+                success=True,
+                prompt_token_count=response.prompt_token_count,
+                completion_token_count=response.completion_token_count,
+                total_token_count=response.total_token_count,
+                finish_reason=response.finish_reason,
+                model_name=response.model_name,
+                metadata={
+                    "operation": "answer_generation",
+                },
+            )
 
             return answer
         except Exception as e:
-            if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=False,
-                    error=str(e),
-                    metadata={
-                        "operation": "answer_generation",
-                        "error_type": e.__class__.__name__,
-                    },
-                )
+            self.monitor.track_generation(
+                duration=time.time() - start_time,
+                success=False,
+                error=str(e),
+                metadata={
+                    "operation": "answer_generation",
+                    "error_type": e.__class__.__name__,
+                },
+            )
             raise
 
     async def go(
         self,
-        turns: int = 5,
+        turns: int = 1,
         first_question: str | None = None,
         check_for_near_duplicates: bool = False,
         correspondent_prompt: str | None = None,
@@ -320,7 +318,6 @@ class AsyncConversationGenerator(BaseGenerator):
     ) -> List[ConversationEntry]:
         """Simulates a multi-turn conversation between the correspondent and respondent."""
         start_time = time.time()
-        total_tokens = 0
         conversation = []
 
         try:
@@ -338,11 +335,6 @@ class AsyncConversationGenerator(BaseGenerator):
             correspondent = await self.create_model(correspondent_prompt)
             respondent = await self.create_model(respondent_prompt)
 
-            if hasattr(correspondent, "token_count"):
-                total_tokens += correspondent.token_count
-            if hasattr(respondent, "token_count"):
-                total_tokens += respondent.token_count
-
             question = first_question or await self.ask(
                 correspondent, "Ask your first question."
             )
@@ -351,8 +343,6 @@ class AsyncConversationGenerator(BaseGenerator):
 
             for turn in range(turns):
                 answer = await self.answer(respondent, question)
-                if hasattr(respondent, "token_count"):
-                    total_tokens += respondent.token_count
 
                 conversation.append(
                     ConversationEntry(role=Role.ASSISTANT, content=answer)
@@ -362,42 +352,36 @@ class AsyncConversationGenerator(BaseGenerator):
                     break
                 else:
                     question = await self.ask(correspondent, answer)
-                    if hasattr(correspondent, "token_count"):
-                        total_tokens += correspondent.token_count
 
                     conversation.append(
                         ConversationEntry(role=Role.USER, content=question)
                     )
                     self.initiators.append(question)
 
-            if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=True,
-                    tokens=total_tokens,
-                    turns=len(conversation) // 2,
-                    metadata={
-                        "operation": "conversation_generation",
-                        "planned_turns": turns,
-                        "actual_turns": len(conversation) // 2,
-                    },
-                )
+            self.monitor.track_generation(
+                duration=time.time() - start_time,
+                success=True,
+                conversation_length=len(conversation) // 2,
+                metadata={
+                    "operation": "conversation_generation",
+                    "planned_turns": turns,
+                    "actual_turns": len(conversation) // 2,
+                },
+            )
 
             return conversation
 
         except Exception as e:
-            if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=False,
-                    error=str(e),
-                    tokens=total_tokens,
-                    metadata={
-                        "operation": "conversation_generation",
-                        "error_type": e.__class__.__name__,
-                        "completed_turns": len(conversation) // 2,
-                    },
-                )
+            self.monitor.track_generation(
+                duration=time.time() - start_time,
+                success=False,
+                error=str(e),
+                metadata={
+                    "operation": "conversation_generation",
+                    "error_type": e.__class__.__name__,
+                    "completed_turns": len(conversation) // 2,
+                },
+            )
             raise
 
     async def generate_single(
@@ -647,5 +631,12 @@ class AsyncConversationGenerator(BaseGenerator):
         pbar.close()
 
         # Wait for any remaining tasks to finish/cancel
-        if tasks:
+        try:
             await asyncio.gather(*tasks, return_exceptions=True)
+        except Exception as e:
+            self.monitor.log_error("Error while trying to finalize generation", error=e)
+            self.monitor.record_metric("error_rate", 1.0)
+            traceback.print_exc()
+        finally:
+            self.monitor.log_info("Generation complete")
+            self.monitor.visualize_metrics()

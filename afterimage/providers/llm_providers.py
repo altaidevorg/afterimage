@@ -1,13 +1,13 @@
-from typing import Protocol, List, Optional, Any, Dict, Type, Union
 from dataclasses import dataclass
-import asyncio
+from typing import Any, Dict, List, Optional, Protocol, Type
+
 from google import genai
-from openai import OpenAI, AsyncOpenAI
+from openai import AsyncOpenAI, OpenAI
 from pydantic import BaseModel
 
-from ..types import ConversationEntry
-from ..key_management import SmartKeyPool
 from ..common import default_safety_settings
+from ..key_management import SmartKeyPool
+from ..types import ConversationEntry
 
 
 @dataclass
@@ -15,7 +15,9 @@ class LLMResponse:
     """Standardized LLM response."""
 
     text: str
-    tokens_used: int
+    prompt_token_count: int
+    completion_token_count: int
+    total_token_count: int
     finish_reason: str
     model_name: str
     raw_response: Any  # Provider-specific response
@@ -55,15 +57,14 @@ class GeminiChatSession(ChatSession):
 
         response = self.chat.send_message(content)
 
-        tokens_used = (
-            response.candidates[0].token_count
-            or response.usage_metadata.total_token_count
-        )
-        self.token_count = tokens_used
+        total_token_count = response.usage_metadata.total_token_count
+        self.token_count = total_token_count
         return LLMResponse(
             text=response.text,
             finish_reason=str(response.candidates[0].finish_reason),
-            tokens_used=tokens_used,
+            prompt_token_count=response.usage_metadata.prompt_token_count,
+            completion_token_count=response.usage_metadata.candidates_token_count,
+            total_token_count=total_token_count,
             model_name=self.model_name,
             raw_response=response,
         )
@@ -84,15 +85,14 @@ class AsyncGeminiChatSession(ChatSession):
 
         response = await self.chat.send_message(content)
 
-        tokens_used = (
-            response.candidates[0].token_count
-            or response.usage_metadata.total_token_count
-        )
-        self.token_count = tokens_used
+        total_token_count = response.usage_metadata.total_token_count
+        self.token_count = total_token_count
         return LLMResponse(
             text=response.text,
             finish_reason=str(response.candidates[0].finish_reason),
-            tokens_used=tokens_used,
+            prompt_token_count=response.usage_metadata.prompt_token_count,
+            completion_token_count=response.usage_metadata.candidates_token_count,
+            total_token_count=total_token_count,
             model_name=self.model_name,
             raw_response=response,
         )
@@ -145,13 +145,14 @@ class OpenAIChatSession(ChatSession):
             {"role": assistant_message.role, "content": assistant_message.content}
         )
 
-        tokens_used = response.usage.total_tokens
-        self.token_count = tokens_used
-
+        total_token_count = response.usage.total_tokens
+        self.token_count = total_token_count
         return LLMResponse(
             text=assistant_message.content,
             finish_reason=response.choices[0].finish_reason,
-            tokens_used=tokens_used,
+            prompt_token_count=response.usage.prompt_tokens,
+            completion_token_count=response.usage.completion_tokens,
+            total_token_count=total_token_count,
             model_name=self.model_name,
             raw_response=response,
         )
@@ -204,13 +205,15 @@ class AsyncOpenAIChatSession(ChatSession):
             {"role": assistant_message.role, "content": assistant_message.content}
         )
 
-        tokens_used = response.usage.total_tokens
-        self.token_count = tokens_used
+        total_token_count = response.usage.total_tokens
+        self.token_count = total_token_count
 
         return LLMResponse(
             text=assistant_message.content,
             finish_reason=response.choices[0].finish_reason,
-            tokens_used=tokens_used,
+            prompt_token_count=response.usage.prompt_tokens,
+            completion_token_count=response.usage.completion_tokens,
+            total_token_count=total_token_count,
             model_name=self.model_name,
             raw_response=response,
         )
@@ -322,13 +325,15 @@ class GeminiProvider(LLMProvider):
 
             return LLMResponse(
                 text=response.text,
-                tokens_used=response.candidates[0].token_count,
+                prompt_token_count=response.usage_metadata.prompt_token_count,
+                completion_token_count=response.usage_metadata.candidates_token_count,
+                total_token_count=response.usage_metadata.total_token_count,
                 finish_reason=str(response.candidates[0].finish_reason),
                 model_name=self.model_name,
                 raw_response=response,
             )
 
-        except Exception as e:
+        except Exception:
             self.key_pool.report_error(api_key)
             raise
 
@@ -363,13 +368,15 @@ class GeminiProvider(LLMProvider):
 
             return LLMResponse(
                 text=response.text,
-                tokens_used=response.candidates[0].token_count,
+                prompt_token_count=response.usage_metadata.prompt_token_count,
+                completion_token_count=response.usage_metadata.candidates_token_count,
+                total_token_count=response.usage_metadata.total_token_count,
                 finish_reason=str(response.candidates[0].finish_reason),
                 model_name=self.model_name,
                 raw_response=response,
             )
 
-        except Exception as e:
+        except Exception:
             self.key_pool.report_error(api_key)
             raise
 
@@ -399,21 +406,10 @@ class GeminiProvider(LLMProvider):
                 model=self.model_name, contents=prompt, config=generation_config
             )
 
-            # Gemini Python SDK with response_schema automatically returns parsed object if using parsed field,
-            # but usually it returns text.
-            # Using parsed=True in latest SDKs or manually parsing.
-            # Let's trust that client.models.generate_content returns a response with .parsed
-            # if we pass response_schema? Actually genai v1 usually returns text.
-            # But the newer google-genai package might return parsed.
-            # Let's inspect how the google.genai package works or assume we need to parse it.
-            # Actually, with the new `google-genai` package, we should just use it as doc says.
-            # If `response_schema` is passed, `response.parsed` might be available
-            # or we assume we get JSON text and parse it.
-
-            # Safest is to parse the text with the schema
+            # TODO: update this interface to return token counts
             return schema.model_validate_json(response.text)
 
-        except Exception as e:
+        except Exception:
             self.key_pool.report_error(api_key)
             raise
 
@@ -444,7 +440,7 @@ class GeminiProvider(LLMProvider):
             )
             return schema.model_validate_json(response.text)
 
-        except Exception as e:
+        except Exception:
             self.key_pool.report_error(api_key)
             raise
 
@@ -476,7 +472,7 @@ class GeminiProvider(LLMProvider):
 
             return GeminiChatSession(chat, self.model_name)
 
-        except Exception as e:
+        except Exception:
             self.key_pool.report_error(api_key)
             raise
 
@@ -510,7 +506,7 @@ class GeminiProvider(LLMProvider):
 
             return AsyncGeminiChatSession(chat, self.model_name)
 
-        except Exception as e:
+        except Exception:
             self.key_pool.report_error(api_key)
             raise
 
@@ -575,13 +571,15 @@ class OpenAIProvider(LLMProvider):
 
             return LLMResponse(
                 text=response.choices[0].message.content,
-                tokens_used=response.usage.total_tokens,
+                prompt_token_count=response.usage.prompt_tokens,
+                completion_token_count=response.usage.completion_tokens,
+                total_token_count=response.usage.total_tokens,
                 finish_reason=response.choices[0].finish_reason,
                 model_name=self.model_name,
                 raw_response=response,
             )
 
-        except Exception as e:
+        except Exception:
             self.key_pool.report_error(api_key)
             raise
 
@@ -616,13 +614,15 @@ class OpenAIProvider(LLMProvider):
 
             return LLMResponse(
                 text=response.choices[0].message.content,
-                tokens_used=response.usage.total_tokens,
+                prompt_token_count=response.usage.prompt_tokens,
+                completion_token_count=response.usage.completion_tokens,
+                total_token_count=response.usage.total_tokens,
                 finish_reason=response.choices[0].finish_reason,
                 model_name=self.model_name,
                 raw_response=response,
             )
 
-        except Exception as e:
+        except Exception:
             self.key_pool.report_error(api_key)
             raise
 
@@ -655,7 +655,7 @@ class OpenAIProvider(LLMProvider):
 
             return response.choices[0].message.parsed
 
-        except Exception as e:
+        except Exception:
             self.key_pool.report_error(api_key)
             raise
 
@@ -688,7 +688,7 @@ class OpenAIProvider(LLMProvider):
 
             return response.choices[0].message.parsed
 
-        except Exception as e:
+        except Exception:
             self.key_pool.report_error(api_key)
             raise
 
@@ -712,7 +712,7 @@ class OpenAIProvider(LLMProvider):
                 **self.kwargs,
                 **kwargs,
             )
-        except Exception as e:
+        except Exception:
             self.key_pool.report_error(client.api_key)
             raise
 
@@ -736,7 +736,7 @@ class OpenAIProvider(LLMProvider):
                 **self.kwargs,
                 **kwargs,
             )
-        except Exception as e:
+        except Exception:
             self.key_pool.report_error(client.api_key)
             raise
 

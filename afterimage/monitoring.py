@@ -245,7 +245,22 @@ class GenerationMonitor:
         )
 
     def track_generation(self, duration: float, success: bool, **kwargs):
-        """Track generation metrics using queue."""
+        """Track generation metrics using queue.
+
+        Args:
+            duration: Time taken for generation.
+            success: Whether generation completed successfully.
+            **kwargs: Additional metrics or metadata for logging.
+                Some common metrics include:
+                - prompt_token_count: Number of tokens in the prompt (input tokens).
+                - completion_token_count: Number of tokens in the completion (output tokens).
+                - total_token_count: Total number of tokens used (input + output tokens).
+                - model_name: Name of the model used.
+                - finish_reason: Reason for generation completion.
+                - error: Error message if generation failed.
+                - turns: Number of turns in the conversation.
+                These metrics are automatically converted to individual metrics and logged with the timestamp when they are passed as kwargs.
+        """
         timestamp = datetime.now()  # Create timestamp once
 
         # Create JSON-serializable metrics for logging
@@ -257,25 +272,42 @@ class GenerationMonitor:
         }
 
         # Record individual metrics with datetime object
+
+        # success and error metrics
         self.record_metric("generation_time", duration, {"timestamp": timestamp})
         self.record_metric(
-            "success_rate", 1 if success else 0, {"timestamp": timestamp}
+            "success_rate", 1.0 if success else 0.0, {"timestamp": timestamp}
         )
-
         if "error" in kwargs:
             self.record_metric(
-                "error_rate", 1 if kwargs["error"] else 0, {"timestamp": timestamp}
+                "error_rate", 1.0 if kwargs["error"] else 0.0, {"timestamp": timestamp}
+            )
+        if "model_name" in kwargs:
+            self.record_metric(
+                f"model_usage:{kwargs['model_name']}", 1.0, {"timestamp": timestamp}
+            )
+        if "finish_reason" in kwargs:
+            self.record_metric(
+                f"finish_reason:{kwargs['finish_reason']}",
+                1.0,
+                {"timestamp": timestamp},
             )
 
-        if "tokens" in kwargs:
-            self.record_metric(
-                "token_usage", kwargs["tokens"], {"timestamp": timestamp}
-            )
-
-        if "turns" in kwargs:
-            self.record_metric(
-                "conversation_length", kwargs["turns"], {"timestamp": timestamp}
-            )
+        # metrics to record individually
+        # add any metric name to this list and pass it as a kwarg to record it individually
+        metrics_to_record = [
+            "prompt_token_count",
+            "completion_token_count",
+            "total_token_count",
+            "conversation_length",
+        ]
+        for metric in metrics_to_record:
+            if metric in kwargs:
+                self.record_metric(
+                    metric,
+                    kwargs[metric],
+                    {"timestamp": timestamp},
+                )
 
         # Log complete metrics
         self._enqueue_log({"message": "Generation metrics", "data": metrics})
@@ -375,6 +407,9 @@ class GenerationMonitor:
         Returns:
             Dict containing metric aggregates
         """
+        if metric_name not in self._metrics:
+            raise ValueError(f"Metric {metric_name} not found")
+
         with self._lock:
             now = datetime.now()
             window_start = now - window
@@ -398,6 +433,8 @@ class GenerationMonitor:
 
     def _check_alerts(self, metrics: Dict[str, Any]):
         """Check metrics against alert conditions."""
+        # TODO: make thresholds configurable
+
         # Check success rate
         recent_success = self.get_metrics("success_rate", timedelta(minutes=5))
         if recent_success and recent_success["mean"] < 0.8:  # Below 80% success
@@ -438,11 +475,33 @@ class GenerationMonitor:
             )
 
         # Check token usage spikes
-        recent_tokens = self.get_metrics("token_usage", timedelta(minutes=5))
-        if recent_tokens and recent_tokens["mean"] > 5000:  # High token usage
+        recent_tokens = self.get_metrics("prompt_token_count", timedelta(minutes=5))
+        if recent_tokens and recent_tokens["mean"] > 4096:  # High token usage
             self._send_alert(
                 Alert(
-                    name="high_token_usage",
+                    name="high_token_usage:prompt",
+                    message=f"Average token usage: {recent_tokens['mean']:.0f}",
+                    level="warning",
+                    timestamp=datetime.now(),
+                    data=recent_tokens,
+                )
+            )
+        recent_tokens = self.get_metrics("completion_token_count", timedelta(minutes=5))
+        if recent_tokens and recent_tokens["mean"] > 4096:  # High token usage
+            self._send_alert(
+                Alert(
+                    name="high_token_usage:completion",
+                    message=f"Average token usage: {recent_tokens['mean']:.0f}",
+                    level="warning",
+                    timestamp=datetime.now(),
+                    data=recent_tokens,
+                )
+            )
+        recent_tokens = self.get_metrics("total_token_count", timedelta(minutes=5))
+        if recent_tokens and recent_tokens["mean"] > 8192:  # High token usage
+            self._send_alert(
+                Alert(
+                    name="high_token_usage:total",
                     message=f"Average token usage: {recent_tokens['mean']:.0f}",
                     level="warning",
                     timestamp=datetime.now(),
@@ -450,12 +509,12 @@ class GenerationMonitor:
                 )
             )
 
-        # Check for short conversations
+        # Check for long conversations
         recent_turns = self.get_metrics("conversation_length", timedelta(minutes=5))
-        if recent_turns and recent_turns["mean"] < 2:  # Less than 2 turns on average
+        if recent_turns and recent_turns["mean"] > 2:  # Less than 2 turns on average
             self._send_alert(
                 Alert(
-                    name="short_conversations",
+                    name="long_conversations",
                     message=f"Average conversation length: {recent_turns['mean']:.1f} turns",
                     level="warning",
                     timestamp=datetime.now(),
@@ -573,17 +632,28 @@ class GenerationMonitor:
                 raise ValueError(f"Unsupported format: {format}")
 
     def visualize_metrics(
-        self, save_dir: Optional[str | Path] = None, figsize: tuple = (12, 6)
-    ) -> Dict[str, plt.Figure]:
+        self,
+        save_dir: str | Path | None = None,
+        figsize: tuple = (12, 6),
+        return_figures: bool = False,
+    ) -> Dict[str, plt.Figure] | None:
         """Generate visualizations for metrics.
 
         Args:
-            save_dir: Optional directory to save plots
-            figsize: Figure size for plots
+            save_dir: Optional directory to save plots.
+            figsize: Figure size for plots.
+            return_figures: Whether to return the figures.
 
         Returns:
-            Dict of matplotlib figures
+            Dict of matplotlib figures if return_figures is True, otherwise None.
         """
+        if save_dir is None:
+            save_dir = self.log_dir / "plots"
+
+        if isinstance(save_dir, str):
+            save_dir = Path(save_dir)
+
+        save_dir.mkdir(parents=True, exist_ok=True)
         figures = {}
 
         try:
@@ -650,20 +720,46 @@ class GenerationMonitor:
             plt.tight_layout()
             figures["generation_time"] = fig
 
-        # 3. Token Usage Over Time
-        if "token_usage" in dfs:
+        # 3. Total Token Usage Over Time
+        if "total_token_count" in dfs:
             fig, ax = plt.subplots(figsize=figsize)
-            df = dfs["token_usage"]
+            df = dfs["total_token_count"]
             df["rolling_avg"] = df["value"].rolling(window=10, min_periods=1).mean()
             ax.plot(df["timestamp"], df["rolling_avg"], color="blue")
-            ax.set_title("Token Usage Over Time")
+            ax.set_title("Total Token Usage Over Time")
             ax.set_xlabel("Time")
             ax.set_ylabel("Tokens")
             plt.xticks(rotation=45)
             plt.tight_layout()
-            figures["token_usage"] = fig
+            figures["total_token_count"] = fig
 
-        # 4. Evaluation Scores Over Time
+        # 4. Prompt Token Usage Over Time
+        if "prompt_token_count" in dfs:
+            fig, ax = plt.subplots(figsize=figsize)
+            df = dfs["prompt_token_count"]
+            df["rolling_avg"] = df["value"].rolling(window=10, min_periods=1).mean()
+            ax.plot(df["timestamp"], df["rolling_avg"], color="blue")
+            ax.set_title("Prompt Token Usage Over Time")
+            ax.set_xlabel("Time")
+            ax.set_ylabel("Tokens")
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            figures["prompt_token_count"] = fig
+
+        # 5. Completion Token Usage Over Time
+        if "completion_token_count" in dfs:
+            fig, ax = plt.subplots(figsize=figsize)
+            df = dfs["completion_token_count"]
+            df["rolling_avg"] = df["value"].rolling(window=10, min_periods=1).mean()
+            ax.plot(df["timestamp"], df["rolling_avg"], color="blue")
+            ax.set_title("Completion Token Usage Over Time")
+            ax.set_xlabel("Time")
+            ax.set_ylabel("Tokens")
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            figures["completion_token_count"] = fig
+
+        # 6. Evaluation Scores Over Time
         evaluation_metrics = [
             metric for metric in dfs.keys() if metric.startswith("evaluation_score_")
         ]
@@ -689,7 +785,7 @@ class GenerationMonitor:
             plt.tight_layout()
             figures["evaluation_scores"] = fig
 
-        # 5. Evaluation Time Distribution
+        # 7. Evaluation Time Distribution
         if "evaluation_time" in dfs:
             fig, ax = plt.subplots(figsize=figsize)
             df = dfs["evaluation_time"]
@@ -700,13 +796,10 @@ class GenerationMonitor:
             figures["evaluation_time"] = fig
 
         # Save if directory provided
-        if save_dir:
-            save_dir = Path(save_dir)
-            save_dir.mkdir(exist_ok=True)
-            for name, fig in figures.items():
-                fig.savefig(save_dir / f"{name}.png")
-
-        return figures
+        for name, fig in figures.items():
+            fig.savefig(save_dir / f"{name}.png")
+        if return_figures:
+            return figures
 
     def plot_metric(
         self,

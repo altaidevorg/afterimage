@@ -375,5 +375,12 @@ class AsyncStructuredGenerator(BaseGenerator):
         pbar.close()
 
         # Wait for any remaining tasks to finish/cancel
-        if tasks:
+        try:
             await asyncio.gather(*tasks, return_exceptions=True)
+        except Exception as e:
+            self.monitor.log_error("Error while trying to finalize generation", error=e)
+            self.monitor.record_metric("error_rate", 1.0)
+            traceback.print_exc()
+        finally:
+            self.monitor.log_info("Generation complete")
+            self.monitor.visualize_metrics()
