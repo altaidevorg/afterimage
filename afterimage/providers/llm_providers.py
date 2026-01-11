@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Protocol, Type
+from typing import Any, Dict, Generic, List, Optional, Protocol, Type, TypeVar
 
 from google import genai
 from openai import AsyncOpenAI, OpenAI
@@ -8,6 +8,8 @@ from pydantic import BaseModel
 from ..common import default_safety_settings
 from ..key_management import SmartKeyPool
 from ..types import ConversationEntry
+
+T = TypeVar("T", bound=BaseModel)
 
 
 @dataclass
@@ -21,6 +23,13 @@ class LLMResponse:
     finish_reason: str
     model_name: str
     raw_response: Any  # Provider-specific response
+
+
+@dataclass
+class StructuredLLMResponse(LLMResponse, Generic[T]):
+    """Standardized LLM response with structured output."""
+
+    parsed: T
 
 
 class ChatSession:
@@ -57,14 +66,12 @@ class GeminiChatSession(ChatSession):
 
         response = self.chat.send_message(content)
 
-        total_token_count = response.usage_metadata.total_token_count
-        self.token_count = total_token_count
         return LLMResponse(
             text=response.text,
             finish_reason=str(response.candidates[0].finish_reason),
             prompt_token_count=response.usage_metadata.prompt_token_count,
             completion_token_count=response.usage_metadata.candidates_token_count,
-            total_token_count=total_token_count,
+            total_token_count=response.usage_metadata.total_token_count,
             model_name=self.model_name,
             raw_response=response,
         )
@@ -247,20 +254,20 @@ class LLMProvider(Protocol):
     def generate_structured(
         self,
         prompt: str,
-        schema: Type[BaseModel],
+        schema: Type[T],
         temperature: float = 0.7,
         **kwargs,
-    ) -> BaseModel:
+    ) -> StructuredLLMResponse[T]:
         """Generate structured output that matches the given schema."""
         ...
 
     async def agenerate_structured(
         self,
         prompt: str,
-        schema: Type[BaseModel],
+        schema: Type[T],
         temperature: float = 0.7,
         **kwargs,
-    ) -> BaseModel:
+    ) -> StructuredLLMResponse[T]:
         """Generate structured output that matches the given schema asynchronously."""
         ...
 
@@ -383,10 +390,10 @@ class GeminiProvider(LLMProvider):
     def generate_structured(
         self,
         prompt: str,
-        schema: Type[BaseModel],
+        schema: Type[T],
         temperature: float = 0.7,
         **kwargs,
-    ) -> BaseModel:
+    ) -> StructuredLLMResponse[T]:
         api_key = self.key_pool.get_next_key()
         client = genai.Client(api_key=api_key, vertexai=False)
 
@@ -406,8 +413,18 @@ class GeminiProvider(LLMProvider):
                 model=self.model_name, contents=prompt, config=generation_config
             )
 
-            # TODO: update this interface to return token counts
-            return schema.model_validate_json(response.text)
+            return StructuredLLMResponse(
+                text=response.text or "",
+                parsed=response.parsed
+                if hasattr(response, "parsed")
+                else schema.model_validate_json(response.text),
+                prompt_token_count=response.usage_metadata.prompt_token_count,
+                completion_token_count=response.usage_metadata.candidates_token_count,
+                total_token_count=response.usage_metadata.total_token_count,
+                finish_reason=str(response.candidates[0].finish_reason),
+                model_name=self.model_name,
+                raw_response=response,
+            )
 
         except Exception:
             self.key_pool.report_error(api_key)
@@ -416,10 +433,10 @@ class GeminiProvider(LLMProvider):
     async def agenerate_structured(
         self,
         prompt: str,
-        schema: Type[BaseModel],
+        schema: Type[T],
         temperature: float = 0.7,
         **kwargs,
-    ) -> BaseModel:
+    ) -> StructuredLLMResponse[T]:
         api_key = self.key_pool.get_next_key()
         client = genai.Client(api_key=api_key, vertexai=False)
 
@@ -438,7 +455,18 @@ class GeminiProvider(LLMProvider):
             response = await client.aio.models.generate_content(
                 model=self.model_name, contents=prompt, config=generation_config
             )
-            return schema.model_validate_json(response.text)
+            return StructuredLLMResponse(
+                text=response.text or "",
+                parsed=response.parsed
+                if hasattr(response, "parsed")
+                else schema.model_validate_json(response.text),
+                prompt_token_count=response.usage_metadata.prompt_token_count,
+                completion_token_count=response.usage_metadata.candidates_token_count,
+                total_token_count=response.usage_metadata.total_token_count,
+                finish_reason=str(response.candidates[0].finish_reason),
+                model_name=self.model_name,
+                raw_response=response,
+            )
 
         except Exception:
             self.key_pool.report_error(api_key)
@@ -629,10 +657,10 @@ class OpenAIProvider(LLMProvider):
     def generate_structured(
         self,
         prompt: str,
-        schema: Type[BaseModel],
+        schema: Type[T],
         temperature: float = 0.7,
         **kwargs,
-    ) -> BaseModel:
+    ) -> StructuredLLMResponse[T]:
         client = self._get_client()
         api_key = client.api_key
 
@@ -653,8 +681,16 @@ class OpenAIProvider(LLMProvider):
                 **current_kwargs,
             )
 
-            return response.choices[0].message.parsed
-
+            return StructuredLLMResponse(
+                text=response.choices[0].message.content or "",
+                parsed=response.choices[0].message.parsed,
+                prompt_token_count=response.usage.prompt_tokens,
+                completion_token_count=response.usage.completion_tokens,
+                total_token_count=response.usage.total_tokens,
+                finish_reason=response.choices[0].finish_reason,
+                model_name=self.model_name,
+                raw_response=response,
+            )
         except Exception:
             self.key_pool.report_error(api_key)
             raise
@@ -662,10 +698,10 @@ class OpenAIProvider(LLMProvider):
     async def agenerate_structured(
         self,
         prompt: str,
-        schema: Type[BaseModel],
+        schema: Type[T],
         temperature: float = 0.7,
         **kwargs,
-    ) -> BaseModel:
+    ) -> StructuredLLMResponse[T]:
         client = self._get_async_client()
         api_key = client.api_key
 
@@ -686,8 +722,16 @@ class OpenAIProvider(LLMProvider):
                 **current_kwargs,
             )
 
-            return response.choices[0].message.parsed
-
+            return StructuredLLMResponse(
+                text=response.choices[0].message.content or "",
+                parsed=response.choices[0].message.parsed,
+                prompt_token_count=response.usage.prompt_tokens,
+                completion_token_count=response.usage.completion_tokens,
+                total_token_count=response.usage.total_tokens,
+                finish_reason=response.choices[0].finish_reason,
+                model_name=self.model_name,
+                raw_response=response,
+            )
         except Exception:
             self.key_pool.report_error(api_key)
             raise

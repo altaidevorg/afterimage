@@ -148,6 +148,12 @@ class AsyncConversationGenerator(BaseGenerator):
         self.initiators = []
         self.storage = storage or JSONLStorage()
 
+        if (
+            self.instruction_generator_callback
+            and self.instruction_generator_callback.monitor is None
+        ):
+            self.instruction_generator_callback.set_monitor(self.monitor)
+
     async def create_correspondent_prompt(self, assistant_prompt: str) -> str:
         """Create a correspondent prompt based on the assistant prompt."""
         start_time = time.time()
@@ -534,6 +540,9 @@ class AsyncConversationGenerator(BaseGenerator):
                 "Instruction generator callback set",
                 type=instruction_generator_callback.__class__.__name__,
             )
+
+        if instruction_generator_callback.monitor is None:
+            instruction_generator_callback.set_monitor(self.monitor)
 
         if self.correspondent_prompt is None:
             self.monitor.log_info("No correspondent prompt set, initializing...")

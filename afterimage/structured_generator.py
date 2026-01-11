@@ -113,6 +113,12 @@ class AsyncStructuredGenerator(BaseGenerator):
         self.respondent_prompt_modifier = respondent_prompt_modifier
         self.storage = storage or JSONLStorage()
 
+        if (
+            self.instruction_generator_callback
+            and self.instruction_generator_callback.monitor is None
+        ):
+            self.instruction_generator_callback.set_monitor(self.monitor)
+
     async def create_correspondent_prompt(self, respondent_prompt: str) -> str:
         # Fallback default correspondent prompt if callback doesn't provide one
         return "You are a user asking for assistance."
@@ -199,18 +205,22 @@ class AsyncStructuredGenerator(BaseGenerator):
                     temperature=0.7,  # Default temperature
                 )
 
-                if self.monitor:
-                    self.monitor.record_metric(
-                        "structured_generation_time",
-                        time.time() - start_time,
-                        metadata={"success": True},
-                    )
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    prompt_token_count=output.prompt_token_count,
+                    completion_token_count=output.completion_token_count,
+                    total_token_count=output.total_token_count,
+                    finish_reason=output.finish_reason,
+                    model_name=output.model_name,
+                    metadata={"operation": "structured_generation"},
+                )
 
                 yield StructuredGenerationRow(
                     instruction=instruction,
                     context=instruction_context,
                     persona=gen_instructions.persona,
-                    output=output,
+                    output=output.parsed,
                     metadata={
                         "context_id": gen_instructions.context_id,
                         "persona_name": gen_instructions.persona,
@@ -219,16 +229,15 @@ class AsyncStructuredGenerator(BaseGenerator):
 
             except Exception as e:
                 # Log error and continue
-                if self.monitor:
-                    self.monitor.record_metric(
-                        "structured_generation_time",
-                        time.time() - start_time,
-                        metadata={
-                            "success": False,
-                            "error": str(e),
-                            "error_type": e.__class__.__name__,
-                        },
-                    )
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    error=str(e),
+                    metadata={
+                        "operation": "structured_generation",
+                        "error_type": e.__class__.__name__,
+                    },
+                )
                 if api_key:
                     await self.key_pool.areport_error(api_key)
 
@@ -279,6 +288,9 @@ class AsyncStructuredGenerator(BaseGenerator):
                 "Instruction generator callback set",
                 type=instruction_generator_callback.__class__.__name__,
             )
+
+        if instruction_generator_callback.monitor is None:
+            instruction_generator_callback.set_monitor(self.monitor)
 
         if self.correspondent_prompt is None:
             self.monitor.log_info("No correspondent prompt set, initializing...")

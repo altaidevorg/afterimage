@@ -1,6 +1,6 @@
 import json
 import random
-import traceback
+import time
 from typing import List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel
@@ -16,6 +16,7 @@ from .common import (
     default_safety_settings,
 )
 from .key_management import SmartKeyPool
+from .monitoring import GenerationMonitor
 from .prompts import (
     default_instruction_generation_prompt,
     default_persona_instruction_generation_prompt,
@@ -52,6 +53,7 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
         n_instructions: int = 3,
         separator_text: str = "\n" + "-" * 80 + "\n\n",
         safety_settings: Optional[dict] = None,
+        monitor: GenerationMonitor | None = None,
     ):
         """Initialize the callback with configuration parameters.
 
@@ -64,8 +66,10 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
             num_random_contexts: Number of contexts to sample
             separator_text: Separator text for merging contexts
             safety_settings: Safety settings for the model
+            monitor: GenerationMonitor instance to use for tracking
         """
         assert api_key is not None, "You need to provide an API key"
+        self.monitor = monitor
 
         self.key_pool = (
             api_key
@@ -97,6 +101,9 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
         self.safety_settings = (
             safety_settings if safety_settings is not None else default_safety_settings
         )
+
+    def set_monitor(self, monitor: GenerationMonitor) -> None:
+        self.monitor = monitor
 
     def _create_model(self, system_instruction=None):
         """Creates and configures the LLM model."""
@@ -143,17 +150,43 @@ Ask the questions in the same language as this context.
 </context>
         """
 
-        instructions = model.generate_structured(
-            prompt=prompt,
-            schema=InstructionsSchema,
-        ).instructions
+        start = time.time()
+        try:
+            output = model.generate_structured(
+                prompt=prompt,
+                schema=InstructionsSchema,
+            )
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start,
+                    success=True,
+                    prompt_token_count=output.prompt_token_count,
+                    completion_token_count=output.completion_token_count,
+                    total_token_count=output.total_token_count,
+                    finish_reason=output.finish_reason,
+                    model_name=output.model_name,
+                    metadata={"operation": "instruction_generation"},
+                )
 
-        # Pick the first document ID as the context_id for the merged context
-        context_id = random_contexts[0].id if random_contexts else None
+            # Pick the first document ID as the context_id for the merged context
+            context_id = random_contexts[0].id if random_contexts else None
 
-        return GeneratedInstructions(
-            instructions=instructions, context=full_context, context_id=context_id
-        )
+            return GeneratedInstructions(
+                instructions=output.parsed.instructions,
+                context=full_context,
+                context_id=context_id,
+            )
+        except Exception as e:
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start,
+                    success=False,
+                    error=str(e),
+                    metadata={
+                        "operation": "instruction_generation",
+                        "error_type": e.__class__.__name__,
+                    },
+                )
 
     async def agenerate(self, original_prompt):
         """Generates instructions based on the provided prompt and sampled context asynchronously."""
@@ -174,23 +207,42 @@ Ask the questions in the same language as this context.
 {full_context}
 </context>
         """
-
+        start = time.time()
         try:
             response = await model.agenerate_structured(
                 prompt=prompt,
                 schema=InstructionsSchema,
             )
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start,
+                    success=True,
+                    prompt_token_count=response.prompt_token_count,
+                    completion_token_count=response.completion_token_count,
+                    total_token_count=response.total_token_count,
+                    finish_reason=response.finish_reason,
+                    model_name=response.model_name,
+                    metadata={"operation": "instruction_generation"},
+                )
             # Pick the first document ID as the context_id for the merged context
             context_id = random_contexts[0].id if random_contexts else None
 
             return GeneratedInstructions(
-                instructions=response.instructions,
+                instructions=response.parsed.instructions,
                 context=full_context,
                 context_id=context_id,
             )
-        except Exception:
-            traceback.print_exc()
-            raise
+        except Exception as e:
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start,
+                    success=False,
+                    error=str(e),
+                    metadata={
+                        "operation": "instruction_generation",
+                        "error_type": e.__class__.__name__,
+                    },
+                )
 
     def create_correspondent_prompt(self, respondent_prompt: str) -> str:
         """Create a correspondent prompt based on the respondent prompt."""
@@ -264,6 +316,7 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
         n_instructions: int = 3,
         separator_text: str = "\n" + "-" * 80 + "\n\n",
         safety_settings: Optional[dict] = None,
+        monitor: GenerationMonitor | None = None,
     ):
         super().__init__(
             api_key=api_key,
@@ -277,6 +330,7 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
             n_instructions=n_instructions,
             separator_text=separator_text,
             safety_settings=safety_settings,
+            monitor=monitor,
         )
 
     def _sample(self) -> tuple[list[Document], str | None]:
@@ -334,20 +388,44 @@ Ask the questions in the same language as this context.
 </context>
         """
 
-        instructions = model.generate_structured(
-            prompt=prompt,
-            schema=InstructionsSchema,
-        ).instructions
+        start = time.time()
+        try:
+            output = model.generate_structured(
+                prompt=prompt,
+                schema=InstructionsSchema,
+            )
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start,
+                    success=True,
+                    prompt_token_count=output.prompt_token_count,
+                    completion_token_count=output.completion_token_count,
+                    total_token_count=output.total_token_count,
+                    finish_reason=output.finish_reason,
+                    model_name=output.model_name,
+                    metadata={"operation": "instruction_generation"},
+                )
 
-        # Pick the first document ID as the context_id for the merged context
-        context_id = random_contexts[0].id if random_contexts else None
+            # Pick the first document ID as the context_id for the merged context
+            context_id = random_contexts[0].id if random_contexts else None
 
-        return GeneratedInstructions(
-            instructions=instructions,
-            context=full_context,
-            persona=persona,
-            context_id=context_id,
-        )
+            return GeneratedInstructions(
+                instructions=output.parsed.instructions,
+                context=full_context,
+                persona=persona,
+                context_id=context_id,
+            )
+        except Exception as e:
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start,
+                    success=False,
+                    error=str(e),
+                    metadata={
+                        "operation": "instruction_generation",
+                        "error_type": e.__class__.__name__,
+                    },
+                )
 
     async def agenerate(self, original_prompt):
         """Generates instructions based on the provided prompt, sampled context and persona asynchronously."""
@@ -381,23 +459,43 @@ Ask the questions in the same language as this context.
 {full_context}
 </context>
         """
-
+        start = time.time()
         try:
             response = await model.agenerate_structured(
                 prompt=prompt,
                 schema=InstructionsSchema,
             )
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start,
+                    success=True,
+                    prompt_token_count=response.prompt_token_count,
+                    completion_token_count=response.completion_token_count,
+                    total_token_count=response.total_token_count,
+                    finish_reason=response.finish_reason,
+                    model_name=response.model_name,
+                    metadata={"operation": "instruction_generation"},
+                )
+
             context_id = random_contexts[0].id if random_contexts else None
 
             return GeneratedInstructions(
-                instructions=response.instructions,
+                instructions=response.parsed.instructions,
                 context=full_context,
                 persona=persona,
                 context_id=context_id,
             )
-        except Exception:
-            traceback.print_exc()
-            raise
+        except Exception as e:
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start,
+                    success=False,
+                    error=str(e),
+                    metadata={
+                        "operation": "instruction_generation",
+                        "error_type": e.__class__.__name__,
+                    },
+                )
 
 
 class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
@@ -528,6 +626,7 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
         num_tools_to_sample: int = 2,
         separator_text: str = "\n" + "-" * 80 + "\n\n",
         safety_settings: Optional[dict] = None,
+        monitor: GenerationMonitor | None = None,
     ):
         """Initialize the tool-calling instruction generator callback.
 
@@ -556,6 +655,7 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
             n_instructions=n_instructions,
             separator_text=separator_text,
             safety_settings=safety_settings,
+            monitor=monitor,
         )
         self.tools = self._normalize_tools(tools)
         self.num_tools_to_sample = num_tools_to_sample
@@ -641,19 +741,44 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
         # We don't really use original_prompt here because we have a very specific system prompt
         # but we follow the interface.
         prompt = "Generate the instructions now."
-        instructions = model.generate_structured(
-            prompt=prompt,
-            schema=InstructionsSchema,
-        ).instructions
 
-        context_id = random_contexts[0].id if random_contexts else None
+        start = time.time()
+        try:
+            response = model.generate_structured(
+                prompt=prompt,
+                schema=InstructionsSchema,
+            )
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start,
+                    success=True,
+                    prompt_token_count=response.prompt_token_count,
+                    completion_token_count=response.completion_token_count,
+                    total_token_count=response.total_token_count,
+                    finish_reason=response.finish_reason,
+                    model_name=response.model_name,
+                    metadata={"operation": "instruction_generation"},
+                )
 
-        return GeneratedInstructions(
-            instructions=instructions,
-            context=full_context,
-            persona=persona,
-            context_id=context_id,
-        )
+            context_id = random_contexts[0].id if random_contexts else None
+
+            return GeneratedInstructions(
+                instructions=response.parsed.instructions,
+                context=full_context,
+                persona=persona,
+                context_id=context_id,
+            )
+        except Exception as e:
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start,
+                    success=False,
+                    error=str(e),
+                    metadata={
+                        "operation": "instruction_generation",
+                        "error_type": e.__class__.__name__,
+                    },
+                )
 
     async def agenerate(self, original_prompt):
         """Generates instructions that require tool calls asynchronously."""
@@ -677,22 +802,43 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
 
         prompt = "Generate the instructions now."
 
+        start = time.time()
         try:
             response = await model.agenerate_structured(
                 prompt=prompt,
                 schema=InstructionsSchema,
             )
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start,
+                    success=True,
+                    prompt_token_count=response.prompt_token_count,
+                    completion_token_count=response.completion_token_count,
+                    total_token_count=response.total_token_count,
+                    finish_reason=response.finish_reason,
+                    model_name=response.model_name,
+                    metadata={"operation": "instruction_generation"},
+                )
+
             context_id = random_contexts[0].id if random_contexts else None
 
             return GeneratedInstructions(
-                instructions=response.instructions,
+                instructions=response.parsed.instructions,
                 context=full_context,
                 persona=persona,
                 context_id=context_id,
             )
-        except Exception:
-            traceback.print_exc()
-            raise
+        except Exception as e:
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start,
+                    success=False,
+                    error=str(e),
+                    metadata={
+                        "operation": "instruction_generation",
+                        "error_type": e.__class__.__name__,
+                    },
+                )
 
     def create_correspondent_prompt(self, respondent_prompt: str) -> str:
         """Create a prompt for the correspondent."""

@@ -186,7 +186,7 @@ async def main():
 
     # 2. Setup Persona Generator
     persona_gen = PersonaGenerator(api_key=api_key)
-    await persona_gen.generate_from_documents(docs, n_iterations=1)
+    await persona_gen.generate_from_documents(docs, n_iterations=0)
     print("Need some sleep")
     await asyncio.sleep(30)
 
@@ -229,7 +229,7 @@ async def main():
 
     print("Starting generation of synthetic tool-calling dataset...")
     # Generate 10 samples
-    await generator.generate(num_samples=500, max_concurrency=4)
+    await generator.generate(num_samples=10, max_concurrency=4)
     print("Generation complete. Check the output JSONL file.")
 
 
