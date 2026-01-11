@@ -4,11 +4,11 @@ The core capability of Afterimage is generating rigorous synthetic conversations
 
 ## `AsyncConversationGenerator`
 
-The `AsyncConversationGenerator` is the primary workhorse for this task. It orchestrates the multi-turn interaction, manages state, and handles concurrent generation for high throughput.
+The `AsyncConversationGenerator` is the primary workhorse for this task. It orchestrates the multi-turn interaction, manages state, handles concurrency, and can even self-correct using an evaluator loop.
 
 ### Initialization
 
-To start generating, you need to initialize the generator with at least a `respondent_prompt` (the system instruction for the assistant you are simulating) and your API key.
+To start generating, you need to initialize the generator. The recommended pattern is to configure all strategy callbacks (for instructions and prompt modification) at initialization time.
 
 ```python
 from afterimage import AsyncConversationGenerator
@@ -18,6 +18,12 @@ generator = AsyncConversationGenerator(
     respondent_prompt="You are a helpful assistant.",
     api_key=os.getenv("GEMINI_API_KEY"),
     model_name="gemini-2.0-flash",
+    # Strategies are now passed here
+    instruction_generator_callback=my_instruction_gen,
+    respondent_prompt_modifier=my_prompt_modifier,
+    # Optional: Enable auto-improvement
+    auto_improve=True,
+    evaluator_model_name="gemini-2.0-flash"
 )
 ```
 
@@ -25,46 +31,54 @@ generator = AsyncConversationGenerator(
 
 *   `respondent_prompt` (str): The system prompt that defines the behavior of the assistant.
 *   `api_key` (str | SmartKeyPool): Your API key or a pool of keys for rotation.
-*   `correspondent_prompt` (str, optional): The system prompt for the user simulator. If omitted, Afterimage automatically generates one based on the respondent prompt to ensure relevant questions are asked.
-*   `instruction_generator_callback` (BaseInstructionGeneratorCallback, optional): A strategy to dynamically generate the first question/instruction. Essential for RAG or Persona-based generation.
-*   `respondent_prompt_modifier` (BaseRespondentPromptModifierCallback, optional): A strategy to modify the respondent's prompt per conversation (e.g., to inject RAG context).
-*   `storage` (BaseStorage, optional): Where to save the results. Defaults to `JSONLStorage` (local file).
+*   `instruction_generator_callback` (BaseInstructionGeneratorCallback): Controls **what** the user asks (e.g., questions based on docs or personas).
+*   `respondent_prompt_modifier` (BaseRespondentPromptModifierCallback, optional): Controls **context** (e.g., injecting RAG data into the system prompt).
+*   `correspondent_prompt` (str, optional): A static system prompt for the user simulator. If neither this nor a callback is provided, one is auto-generated.
+*   `auto_improve` (bool): If `True`, an internal evaluator checks each conversation. If quality is low, it regenerates the conversation automatically (up to a limit).
+*   `storage` (BaseStorage, optional): Where to save the results. Defaults to `JSONLStorage`.
 
 ### Generating Conversations
 
 Use the `generate` method to start the simulation.
 
 ```python
+from afterimage.callbacks import PersonUsageStoppingCallback
+
 await generator.generate(
     num_dialogs=100,
     max_turns=5,
-    max_concurrency=4
+    max_concurrency=4,
+    stopping_criteria=[
+        PersonUsageStoppingCallback(n_personas=50) # Stop if 50 unique personas are used
+    ]
 )
 ```
 
 **Parameters:**
 
-*   `num_dialogs` (int): Total number of independent conversations to generate.
-*   `max_turns` (int): THe maximum number of exchanges (User question + Assistant answer) per conversation. The actual number of turns is randomly sampled from a range `[1, max_turns]`.
-*   `max_concurrency` (int): How many conversations to simulate in parallel. Increase this for higher throughput if your rate limits allow.
-*   `seed_instructions` (List[str], optional): A list of specific starting questions to use. If provided, these will be used instead of the instruction generator for the first `N` dialogs.
+*   `num_dialogs` (int, optional): Number of conversations to generate.
+*   `max_turns` (int): Maximum exchanges per conversation.
+*   `max_concurrency` (int): Parallel generation limit.
+*   `stopping_criteria` (List[BaseStoppingCallback], optional): Custom logic for when to stop generating (e.g., when all personas are covered). If `num_dialogs` is set, a `FixedNumberStoppingCallback` is automatically added.
 
-## Customization with Callbacks
+## Strategies & Callbacks
 
-For realistic data, you rarely want a generic user. You want a user who asks about *your* specific data or acts like *your* specific customers.
+Afterimage uses a callback system to modularize "User Behavior" and "Assistant Knowledge".
 
-### 1. Instruction Generators (The "What")
-These determine **what** the user asks about.
-*   **`ContextualInstructionGeneratorCallback`**: Reads documents and prompts the user to ask a question based on a specific random document.
-*   **`PersonaInstructionGeneratorCallback`**: similar to above, but also assigns a specific persona to the user for that conversation.
+### 1. Instruction Generators (The "User")
+These determine what the simulated user wants to talk about.
+*   **`ContextualInstructionGeneratorCallback`**: Samples a document and generates a question based on it.
+*   **`PersonaInstructionGeneratorCallback`**: Samples a persona ("Angry Customer", "Novice") and a document to generate a styled question.
+*   **`ToolCallingInstructionGeneratorCallback`**: Generates instructions specifically designed to trigger tool/function calls (requires a list of tools).
 
-### 2. Prompt Modifiers (The "Context")
-These determine **what content** the assistant has access to.
-*   **`WithContextRespondentPromptModifier`**: Injects the content of the document chosen by the instruction generator into the assistant's system prompt. This simulates a RAG setup where the assistant "knows" the answer.
+### 2. Prompt Modifiers (The "Assistant")
+These modify the assistant's system prompt at runtime, usually to inject context.
+*   **`WithContextRespondentPromptModifier`**: Injects the text of the document selected by the instruction generator into the assistant's system prompt.
+*   **`WithRAGRespondentPromptModifier`**: Uses a retriever to fetch relevant chunks based on the user's generated question (simulating a real RAG pipeline).
 
 ## Complete Example
 
-Here is a full example showing how to generate a dataset for a technical support bot using a manual document provider.
+Here is a full example showing how to generate a dataset for a technical support bot.
 
 ```python
 import asyncio
@@ -86,6 +100,7 @@ async def main():
     ])
 
     # 2. Configure User Behavior (Ask questions about the docs)
+    # We pass this to the generator constructor
     instruction_gen = ContextualInstructionGeneratorCallback(
         api_key=api_key,
         documents=docs
@@ -100,6 +115,7 @@ async def main():
         api_key=api_key,
         instruction_generator_callback=instruction_gen,
         respondent_prompt_modifier=prompt_modifier,
+        auto_improve=True  # Ensure high quality
     )
 
     # 5. Run Generation

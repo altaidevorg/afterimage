@@ -15,6 +15,8 @@ This generator works differently than the conversation generator. Instead of sim
 
 ### Initialization
 
+The strategy callbacks (for instructions and prompt modification) should be configured at initialization.
+
 ```python
 from afterimage import AsyncStructuredGenerator
 from pydantic import BaseModel, Field
@@ -25,28 +27,45 @@ class CustomerFeedback(BaseModel):
     topics: list[str] = Field(..., description="List of topics mentioned (e.g., Pricing, UI)")
     summary: str = Field(..., description="One sentence summary")
 
-# 2. Initialize Generator
+# 2. Initialize Generator with Strategies
 generator = AsyncStructuredGenerator(
     output_schema=CustomerFeedback,
     respondent_prompt="You are an expert data analyst. Extract insights from the feedback.",
-    api_key=os.getenv("GEMINI_API_KEY")
+    api_key=os.getenv("GEMINI_API_KEY"),
+    # Strategies are passed here
+    instruction_generator_callback=my_instruction_gen,
+    respondent_prompt_modifier=my_prompt_modifier
 )
 ```
 
-### Methods
+**Key Parameters:**
 
-#### `generate`
+*   `output_schema` (Type[BaseModel]): The Pydantic model defining the expected output structure.
+*   `respondent_prompt` (str): System prompt for the generation model.
+*   `instruction_generator_callback` (BaseInstructionGeneratorCallback, optional): Strategy to generate the input/instruction for each sample.
+*   `respondent_prompt_modifier` (BaseRespondentPromptModifierCallback, optional): Strategy to modify the system prompt per sample.
+*   `correspondent_prompt` (str, optional): A static prompt for the "user" side, if not using a callback.
+*   `storage` (BaseStorage, optional): Where to save results. Defaults to `JSONLStorage`.
 
-Generate multiple samples in parallel.
+### Generating Data
+
+Use the `generate` method to produce samples.
 
 ```python
+from afterimage.callbacks import FixedNumberStoppingCallback
+
 await generator.generate(
     num_samples=50,
-    max_concurrency=4
+    max_concurrency=4,
+    stopping_criteria=[FixedNumberStoppingCallback(50)]
 )
 ```
 
-By default, without an instruction generator, this will just ask the model to "generate a sample". For useful results, you usually want to feed it input documents.
+**Parameters:**
+
+*   `num_samples` (int, optional): Total number of samples to generate.
+*   `max_concurrency` (int): Maximum concurrent generations.
+*   `stopping_criteria` (List[BaseStoppingCallback], optional): Custom logic for stopping generation. If `num_samples` is set, a `FixedNumberStoppingCallback` is automatically added.
 
 ## Example: Data Extraction from Documents
 
@@ -83,7 +102,9 @@ async def main():
     instruction_gen = ContextualInstructionGeneratorCallback(
         api_key=api_key,
         documents=raw_reviews,
-        num_random_contexts=1
+        num_random_contexts=1,
+        # Just ask to analyze the context
+        prompt="Analyze the review provided in the context." 
     )
 
     # 4. Initialize Generator
@@ -97,6 +118,7 @@ async def main():
     # 5. Run Extraction
     print("Extracting data...")
     await generator.generate(num_samples=3)
+    print("Done. Data saved to JSONL.")
 
 if __name__ == "__main__":
     asyncio.run(main())

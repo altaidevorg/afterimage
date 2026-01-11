@@ -20,6 +20,11 @@ Afterimage is designed as a modular pipeline for synthetic data generation. The 
 4.  **Storage (`BaseStorage`)**: Persistence layer.
     *   Decoupled from generation logic.
     *   Can be swapped (JSONL vs SQL) without changing the generator.
+5.  **LLM Abstraction Layer (`afterimage.providers.llm_providers`)**:
+    *   **Uniform Interface**: `LLMProvider` protocol normalizes interactions across models (Gemini, OpenAI, etc.).
+    *   **Unified Responses**: Returns standardized `LLMResponse` or `StructuredLLMResponse` objects with consistent token counts and usage metadata.
+    *   **Chat Abstraction**: `ChatSession` manages conversation history statefully, independent of the underlying API's specific mechanics.
+    *   **Factory Creation**: `LLMFactory` allows dynamic instantiation of providers via strings.
 
 ## Extension Points
 
@@ -58,6 +63,45 @@ class MyCloudStorage(BaseStorage):
         # Fetch from cloud
         return []
 ```
+
+### Custom LLM Provider
+
+To support a new model family (e.g., Anthropic, Mistral, or a local VLLM), implement the `LLMProvider` protocol. You must also implement a corresponding `ChatSession`.
+
+```python
+from afterimage.providers import LLMProvider, ChatSession, LLMResponse
+
+class MyCustomChat(ChatSession):
+    async def asend_message(self, message, **kwargs) -> LLMResponse:
+        # Implement stateful chat logic
+        pass
+
+class MyCustomProvider(LLMProvider):
+    def initialize(self, api_key: str):
+        self.client = ...
+
+    async def agenerate_content(self, prompt: str, **kwargs) -> LLMResponse:
+        # Call your API
+        return LLMResponse(
+            text="response",
+            prompt_token_count=10,
+            completion_token_count=10,
+            total_token_count=20,
+            finish_reason="stop",
+            model_name="my-model",
+            raw_response={}
+        )
+
+    def start_chat(self, **kwargs) -> ChatSession:
+        return MyCustomChat()
+```
+
+**Developer Tips for LLM Providers:**
+
+*   **Async Support**: Always implement both sync and async methods. The library core relies heavily on `agenerate_content` for performance.
+*   **Token Counting**: Ensure you populate token counts in `LLMResponse`. This is critical for the `GenerationMonitor` to track costs and throughput.
+*   **Structured Output**: For `generate_structured`, leveraging Pydantic is highly recommended. If the underlying API doesn't support JSON schema natively, use a robust parser or instructor library.
+*   **Error Handling**: Wrap your API calls in try/except blocks and use `SmartKeyPool.report_error(key)` if an API error occurs, so the pool can rotate keys or back off.
 
 ## Design Patterns
 
