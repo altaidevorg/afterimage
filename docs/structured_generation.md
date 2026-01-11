@@ -52,12 +52,9 @@ generator = AsyncStructuredGenerator(
 Use the `generate` method to produce samples.
 
 ```python
-from afterimage.callbacks import FixedNumberStoppingCallback
-
 await generator.generate(
     num_samples=50,
     max_concurrency=4,
-    stopping_criteria=[FixedNumberStoppingCallback(50)]
 )
 ```
 

@@ -42,14 +42,14 @@ generator = AsyncConversationGenerator(
 Use the `generate` method to start the simulation.
 
 ```python
-from afterimage.callbacks import PersonUsageStoppingCallback
+from afterimage.callbacks import PersonaUsageStoppingCallback
 
 await generator.generate(
     num_dialogs=100,
     max_turns=5,
     max_concurrency=4,
     stopping_criteria=[
-        PersonUsageStoppingCallback(n_personas=50) # Stop if 50 unique personas are used
+        PersonaUsageStoppingCallback(n_personas=50) # Stop if 50 unique personas are used
     ]
 )
 ```
