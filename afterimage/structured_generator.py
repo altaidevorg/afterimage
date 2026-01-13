@@ -248,17 +248,21 @@ class AsyncStructuredGenerator(BaseGenerator):
     async def generate(
         self,
         num_samples: int | None = None,
-        max_concurrency: int = 4,
         stopping_criteria: list[BaseStoppingCallback] | None = None,
         instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
         respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
+        max_concurrency: int = 4,
     ) -> None:
         """Generates structured samples and saves them to storage.
 
         Args:
-            num_samples: Total number of samples to generate. Defaults to 5.
+            num_samples: Total number of samples to generate. Defaults to 5 if no other stopping criteria is specified.
+            stopping_criteria: A list of callbacks to determine when to stop generation. If `num_samples` is specified, :class:`~FixedNumberStoppingCallback` is added to this list.
+            instruction_generator_callback: Callback for instruction generation.
+                Deprecated: Pass this to the constructor instead. Defaults to None.
+            respondent_prompt_modifier: Callback to modify respondent prompts.
+                Deprecated: Pass this to the constructor instead. Defaults to None.
             max_concurrency: Maximum number of concurrent tasks.
-            stopping_criteria: A list of callbacks to determine when to stop generation. If num_dialogs is specified, FixedNumberStoppingCallback is added to this list.
         """
         if instruction_generator_callback is not None:
             warnings.warn(

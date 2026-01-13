@@ -96,6 +96,3 @@ The evaluation results will typically contain:
 *   **Needs Regeneration**: A boolean flag suggesting if this sample should be discarded.
 
 You can use these signals to filter your dataset, keeping only the high-quality examples for fine-tuning.
-
----
-[Previous: Persona Generation](persona_generation.md) | [Next: Structured Generation](structured_generation.md)

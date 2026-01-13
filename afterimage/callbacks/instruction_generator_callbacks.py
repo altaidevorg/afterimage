@@ -33,7 +33,22 @@ class InstructionsSchema(BaseModel):
 
 
 class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
-    """Generates instructions based on randomly sampled contexts."""
+    """Generates instructions based on randomly sampled contexts.
+
+    Args:
+        api_key: API key for the generative AI service.
+        documents: Either a list of texts or a DocumentProvider instance providing context to ground the instructions.
+            For each round of generation `num_random_contexts` documents are sampled from this collection.
+        prompt: Prompt that guides the instruction generation. If None, uses the default instruction generation prompt.
+        model_name: Model name to use.
+        model_provider_name: Model provider name to use.
+        num_random_contexts: Number of contexts to sample for each round of generation.
+        n_instructions: Number of instructions to generate in each round of generation.
+        separator_text: Separator text for merging contexts if more than one context is sampled.
+        safety_settings: Safety settings for the model. Mainly intended for Gemini models.
+            Deprecated and may be removed in the future.
+        monitor: GenerationMonitor instance to use for tracking.
+            If `None`, Conversation and/or structured generators will set their own monitor."""
 
     def __init__(
         self,
@@ -48,19 +63,6 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
         safety_settings: Optional[dict] = None,
         monitor: GenerationMonitor | None = None,
     ):
-        """Initialize the callback with configuration parameters.
-
-        Args:
-            api_key: API key for the generative AI service
-            documents: Either a list of texts or a DocumentProvider instance.
-            prompt: Prompt that guides the instruction generation. If None, uses the default instruction generation prompt.
-            model_name: Model name to use
-            model_provider_name: Model provider name to use
-            num_random_contexts: Number of contexts to sample
-            separator_text: Separator text for merging contexts
-            safety_settings: Safety settings for the model
-            monitor: GenerationMonitor instance to use for tracking
-        """
         assert api_key is not None, "You need to provide an API key"
         self.monitor = monitor
 
@@ -336,7 +338,25 @@ Ask the questions in the same language as this context.
 
 
 class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback):
-    """Generates instructions based on randomly sampled contexts and personas."""
+    """Generates instructions based on randomly sampled contexts and personas.
+
+    It works very similarly to `~ContextualInstructionGeneratorCallback` but it also samples a persona from the sampled documents.
+        This usually results in more diverse yet still contextually relevant instructions.
+
+    Args:
+        api_key: API key for the generative AI service.
+        documents: Either a list of texts or a DocumentProvider instance providing context to ground the instructions.
+            For each round of generation `num_random_contexts` documents are sampled from this collection.
+        prompt: Prompt that guides the instruction generation. If None, uses the default instruction generation prompt.
+        model_name: Model name to use.
+        model_provider_name: Model provider name to use.
+        num_random_contexts: Number of contexts to sample for each round of generation.
+        n_instructions: Number of instructions to generate in each round of generation.
+        separator_text: Separator text for merging contexts if more than one context is sampled.
+        safety_settings: Safety settings for the model. Mainly intended for Gemini models.
+            Deprecated and may be removed in the future.
+        monitor: GenerationMonitor instance to use for tracking.
+            If `None`, Conversation and/or structured generators will set their own monitor"""
 
     def __init__(
         self,
@@ -443,7 +463,25 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
 
 
 class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallback):
-    """Generates instructions that specifically require calling provided tools, optionally using personas."""
+    """Generates instructions that specifically require calling provided tools, optionally using personas.
+
+    Args:
+        api_key: API key for the generative AI service.
+        tools: List of tools to use.
+            each item of this list should be an OpenAI-style tool description as a dictionary or a pydantic model.
+        documents: Either a list of texts or a DocumentProvider instance providing context to ground the instructions.
+            For each round of generation `num_random_contexts` documents are sampled from this collection.
+        prompt: Prompt that guides the instruction generation. If None, uses the default instruction generation prompt.
+        model_name: Model name to use.
+        model_provider_name: Model provider name to use.
+        num_random_contexts: Number of contexts to sample for each round of generation.
+        n_instructions: Number of instructions to generate in each round of generation.
+        num_tools_to_sample: Number of tools to sample as the targets for each round of generation.
+        separator_text: Separator text for merging contexts if more than one context is sampled.
+        safety_settings: Safety settings for the model. Mainly intended for Gemini models.
+            Deprecated and may be removed in the future.
+        monitor: GenerationMonitor instance to use for tracking.
+            If `None`, Conversation and/or structured generators will set their own monitor"""
 
     def __init__(
         self,
@@ -460,21 +498,6 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
         safety_settings: Optional[dict] = None,
         monitor: GenerationMonitor | None = None,
     ):
-        """Initialize the tool-calling instruction generator callback.
-
-        Args:
-            api_key: API key for the generative AI service
-            tools: List of tools (OpenAI schema dicts or Pydantic models)
-            documents: Either a list of documents or a DocumentProvider instance
-            prompt: Custom instruction generation prompt
-            model_name: Model name to use
-            model_provider_name: Model provider name to use
-            num_random_contexts: Number of contexts to sample for domain grounding
-            n_instructions: Number of instructions to generate per call
-            num_tools_to_sample: Number of tools to present to the model as targets
-            separator_text: Separator text for merging contexts
-            safety_settings: Safety settings for the model
-        """
         super().__init__(
             api_key=api_key,
             documents=documents,

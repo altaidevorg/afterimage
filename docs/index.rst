@@ -1,0 +1,44 @@
+.. AfterImage documentation master file, created by
+   sphinx-quickstart on Tue Jan 13 14:00:00 2026.
+   You can adapt this file completely to your liking, but it should at least
+   contain the root `toctree` directive.
+
+AfterImage Documentation
+========================
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Introduction
+
+   Overview <overview>
+   QuickStart <README>
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Tutorials
+
+   conversation_generation
+   structured_generation
+   persona_generation
+   monitoring
+   evaluation
+   advanced_usage
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Architecture
+
+   architecture
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API Reference
+
+   api/index
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`

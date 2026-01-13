@@ -5,6 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
+docs/_build
 *.jsonl.lock
 
 # Virtual environments

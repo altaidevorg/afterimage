@@ -5,7 +5,7 @@
 ## Installation
 
 ```bash
-pip install afterimage
+pip install git+https://github.com/altaidevorg/afterimage.git
 ```
 
 ## Core Concepts
@@ -15,17 +15,6 @@ pip install afterimage
 *   **Respondent**: The assistant who answers questions. Its behavior is defined by a **System Prompt** and optional **Prompt Modifiers**.
 *   **Document Provider**: A source of knowledge (text files, JSONL, memory) used to ground the conversation or generate relevant questions.
 *   **Persona**: A specific character or role that the Correspondent adopts to make conversations more diverse and realistic.
-
-## Table of Contents
-
-0.  [Overview](overview.md)
-1.  [Conversation Generation](conversation_generation.md)
-2.  [Persona Generation](persona_generation.md)
-3.  [Evaluation Framework](evaluation.md)
-4.  [Structured Generation](structured_generation.md)
-5.  [Monitoring & Observability](monitoring.md)
-6.  [Advanced Configuration](advanced_usage.md)
-7.  [Architecture & Design](architecture.md)
 
 ---
 
@@ -180,42 +169,3 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 ```
-
----
-
-## API Reference
-
-### `AsyncConversationGenerator`
-
-The main class for generating conversations asynchronously.
-
-**Initialization Arguments:**
-
-| Argument | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `respondent_prompt` | `str` | **Required** | The system prompt for the assistant (Respondent). |
-| `api_key` | `str` \| `SmartKeyPool` | **Required** | Your Google Gemini API key. |
-| `correspondent_prompt` | `str` | `None` | System prompt for the user. If `None`, it is auto-generated from `respondent_prompt`. |
-| `model_name` | `str` | `gemini-2.0-flash` | The LLM model to use for generation. |
-| `instruction_generator_callback` | `BaseInstructionGeneratorCallback` | `None` | Callback to generate the User's first question/instruction. |
-| `respondent_prompt_modifier` | `BaseRespondentPromptModifierCallback` | `None` | Callback to dynamically modify the Assistant's prompt (e.g., add context). |
-| `storage` | `BaseStorage` | `JSONLStorage` | Handles saving generated conversations. Defaults to a local JSONL file. |
-| `monitor` | `GenerationMonitor` | `None` | Optional monitor for tracking metrics. |
-
-**`generate()` Method Arguments:**
-
-| Argument | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `num_dialogs` | `int` | `5` | Total number of conversations to generate. |
-| `max_turns` | `int` | `3` | Maximum number of exchange pairs (User + Assistant) per conversation. |
-| `max_concurrency` | `int` | `4` | Number of parallel generation tasks (Async only). |
-| `seed_instructions` | `List` | `[]` | A list of initial questions to start conversations with (bypasses instruction generator). |
-
-### Document Providers
-
-Helpers to load text data for context-aware generation.
-
-*   **`InMemoryDocumentProvider(texts: List[str])`**: Simple list of strings.
-*   **`JSONLDocumentProvider(path_pattern: str, content_key: str = "text")`**: Reads from `.jsonl` files.
-*   **`DirectoryDocumentProvider(directory: str, file_patterns: List[str])`**: Reads files (e.g., `*.txt`, `*.md`) from a folder.
-*   **`QdrantDocumentProvider(...)`**: Reads from a Qdrant vector database (requires `qdrant-client`).

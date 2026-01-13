@@ -88,6 +88,3 @@ class MyAPIDocumentProvider:
         for item in items:
             yield Document(content=item['text'], metadata=item['meta'])
 ```
-
----
-[Previous: Monitoring & Observability](monitoring.md) | [Next: Architecture & Design](architecture.md)

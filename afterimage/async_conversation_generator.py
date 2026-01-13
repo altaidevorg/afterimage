@@ -36,7 +36,26 @@ logger = logging.getLogger(__name__)
 
 
 class AsyncConversationGenerator(BaseGenerator):
-    """Generates conversations between a correspondent (question generator) and a respondent (answer generator) asynchronously."""
+    """Generates conversations between a correspondent (question generator) and a respondent (answer generator) asynchronously.
+
+    Args:
+        respondent_prompt: System prompt to the respondent, e.g., assistant that you want you fine-tune on this dataset
+        api_key: Either a single API key string or a SmartKeyPool instance for LLM use
+        correspondent_prompt: System prompt to the correspondent, e.g., model that roleplays a user of the assistant
+            that you want to fine-tune on this dataset
+        model_name: Model name to use
+        safety_settings: Safety settings for the model
+        auto_improve: Whether to try to improve low-quality generations
+        evaluator_model_name: Model name for the evaluator when auto_improve is True
+        evaluator_method: method to be used for evaluation.
+        model_provider_name: Provider used for accessing LLMs. `"gemini"` or `"openai"` for Openai-compatible APIs.
+        storage: Storage implementation for saving conversations.
+                If `None`, creates JSONLStorage with datetime-based filename.
+        monitor: GenerationMonitor instance for tracking generation metrics.
+            If  `None`, a default one is created.
+        instruction_generator_callback: Callback for instruction generation. Can also be passed to generate() method (deprecated).
+        respondent_prompt_modifier: Callback to modify respondent prompts. Can also be passed to generate() method (deprecated).
+    """
 
     def __init__(
         self,
@@ -54,26 +73,6 @@ class AsyncConversationGenerator(BaseGenerator):
         instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
         respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
     ):
-        """Initialize the generator with API key(s).
-
-        Args:
-            respondent_prompt: System prompt to the respondent, e.g., assistant that you want you fine-tune on this dataset
-            api_key: Either a single API key string or a SmartKeyPool instance for LLM use
-            correspondent_prompt: System prompt to the correspondent, e.g., model that roleplays a user of the assistant
-                that you want to fine-tune on this dataset
-            model_name: Model name to use
-            safety_settings: Safety settings for the model
-            auto_improve: Whether to try to improve low-quality generations
-            evaluator_model_name: Model name for the evaluator when auto_improve is True
-            evaluator_method: method to be used for evaluation.
-            model_provider_name: Provider used for accessing LLMs. `"gemini"` or `"openai"` for Openai-compatible APIs.
-            storage: Storage implementation for saving conversations.
-                    If `None`, creates JSONLStorage with datetime-based filename.
-            monitor: GenerationMonitor instance for tracking generation metrics.
-                If  `None`, a default one is created.
-            instruction_generator_callback: Callback for instruction generation. Can also be passed to generate() method (deprecated).
-            respondent_prompt_modifier: Callback to modify respondent prompts. Can also be passed to generate() method (deprecated).
-        """
         self.monitor: GenerationMonitor = (
             monitor or GenerationMonitor()
         )  # ensure it's always created
@@ -495,22 +494,22 @@ class AsyncConversationGenerator(BaseGenerator):
         self,
         num_dialogs: int | None = None,
         max_turns: int = 1,
-        max_concurrency: int = 4,
         stopping_criteria: Optional[List[BaseStoppingCallback]] = None,
         instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
         respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
+        max_concurrency: int = 4,
     ) -> None:
         """Generates multiple conversation dialogs until stopping criteria is met.
 
         Args:
-            num_dialogs (int, optional): Number of dialogs to generate. Defaults to 5.
-            max_turns (int, optional): Maximum number of turns per dialog. Actual number of turns is randomly sampled from 1 .. max_turns.
-            stopping_criteria: A list of callbacks to determine when to stop generation. If num_dialogs is specified, FixedNumberStoppingCallback is added to this list.
-            instruction_generator_callback (callable, optional): Callback for instruction generation.
+            num_dialogs: Number of dialogs to generate. Defaults to 5 if no other stopping criteria is specified.
+            max_turns: Maximum number of turns per dialog. Actual number of turns is randomly sampled from 1 .. max_turns.
+            stopping_criteria: A list of callbacks to determine when to stop generation. If num_dialogs is specified, FixedNumberStoppingCallback is added to this list automatically.
+            instruction_generator_callback: Callback for instruction generation.
                 Deprecated: Pass this to the constructor instead. Defaults to None.
-            respondent_prompt_modifier (callable, optional): Callback to modify respondent prompts.
+            respondent_prompt_modifier: Callback to modify respondent prompts.
                 Deprecated: Pass this to the constructor instead. Defaults to None.
-            max_concurrency (int, optional): Number of concurrent generations. Defaults to 4.
+            max_concurrency: Number of concurrent generations. Defaults to 4.
         """
         if instruction_generator_callback is not None:
             warnings.warn(

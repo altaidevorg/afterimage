@@ -139,6 +139,3 @@ monitor = GenerationMonitor(
     metric_handlers=[WandBMetricHandler()]
 )
 ```
-
----
-[Previous: Structured Generation](structured_generation.md) | [Next: Advanced Configuration](advanced_usage.md)

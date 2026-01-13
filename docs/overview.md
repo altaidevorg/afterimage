@@ -50,6 +50,3 @@ The source of knowledge for the generation. Afterimage supports reading from:
 
 ### 5. Personas
 Profiles that shape the Correspondent's tone, vocabulary, and expertise level. Instead of a generic "User", Afterimage can simulate specific demographics to stress-test your model.
-
----
-[Next: Conversation Generation](conversation_generation.md)

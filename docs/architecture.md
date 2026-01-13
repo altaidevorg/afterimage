@@ -108,6 +108,3 @@ class MyCustomProvider(LLMProvider):
 *   **Async-First**: The library is built from the ground up using `asyncio` for high throughput.
 *   **Callback Pattern**: Logic is injected via callbacks rather than subclassing the generator itself.
 *   **Pydantic Models**: All data exchange (config, inputs, outputs) is validated using Pydantic models for type safety.
-
----
-[Previous: Advanced Configuration](advanced_usage.md)

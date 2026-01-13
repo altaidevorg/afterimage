@@ -15,15 +15,13 @@ from ..types import (
 
 
 class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
-    """Modifies respondent prompt by adding context."""
+    """Modifies respondent prompt by adding context.
+
+    Args:
+        prompt_template: Custom prompt template. If None, uses `default_respondent_prompt_with_context`.
+            If it contains `{prompt}` and/or `{context}`, they will be replaced by the respondent prompt and the context, respectively."""
 
     def __init__(self, prompt_template: Optional[str] = None):
-        """Initialize the context-aware prompt modifier.
-
-        Args:
-            prompt_template: Custom prompt template. If None, uses `default_respondent_prompt_with_context`.
-                If t contains {prompt} and/or {context}, they will be replced by the respondent prompt and the context, respectively.
-        """
         self.prompt_template = (
             prompt_template
             if prompt_template is not None
@@ -87,19 +85,17 @@ class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
 
 
 class WithRAGRespondentPromptModifier(WithContextRespondentPromptModifier):
-    """Modifies respondent prompt by adding relevant context using a retrieval strategy."""
+    """Modifies respondent prompt by adding relevant context using a retrieval strategy.
+
+    Args:
+        retriever: Strategy for retrieving relevant context
+        prompt_template: Custom prompt template. If None, uses `default_rag_respondent_prompt_with_context`."""
 
     def __init__(
         self,
         retriever: ContextRetriever,
         prompt_template: Optional[str] = None,
     ):
-        """Initialize the RAG-enhanced prompt modifier.
-
-        Args:
-            retriever: Strategy for retrieving relevant context
-            prompt_template: Custom prompt template. If None, uses default_rag_respondent_prompt_with_context
-        """
         super().__init__(
             prompt_template
             if prompt_template is not None

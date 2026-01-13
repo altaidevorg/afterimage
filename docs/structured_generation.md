@@ -122,6 +122,3 @@ if __name__ == "__main__":
 ```
 
 The output will be saved to a `.jsonl` file where each line is a valid JSON object matching your `ReviewAnalysis` schema.
-
----
-[Previous: Evaluation Framework](evaluation.md) | [Next: Monitoring & Observability](monitoring.md)

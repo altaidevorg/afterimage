@@ -1,6 +1,6 @@
 [project]
 name = "afterimage"
-version = "0.11.3"
+version = "0.11.4"
 keywords = ["afterimage", "synthetic", "dataset-generation", "synthetic-dataset"]
 authors = [
     { name = "Yusuf Sarıgöz", email = "yusuf@altai.dev"}
@@ -44,3 +44,10 @@ repository = "https://github.com/altaidevorg/afterimage"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["afterimage", "afterimage.*"]
+
+[dependency-groups]
+dev = [
+    "myst-parser>=4.0.1",
+    "sphinx>=8.2.3",
+    "sphinx-rtd-theme>=3.1.0",
+]
