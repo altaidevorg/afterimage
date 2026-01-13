@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "afterimage"
-version = "0.10.0"
+version = "0.11.3"
 source = { virtual = "." }
 dependencies = [
     { name = "filelock" },

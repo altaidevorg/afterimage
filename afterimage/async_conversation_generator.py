@@ -8,12 +8,13 @@ from typing import AsyncGenerator, Dict, List, Literal, Optional, Union
 
 from tqdm.asyncio import tqdm
 
-from .base import BaseGenerator, BaseStoppingCallback
-from .callbacks import (
+from .base import (
+    BaseGenerator,
     BaseInstructionGeneratorCallback,
     BaseRespondentPromptModifierCallback,
-    FixedNumberStoppingCallback,
+    BaseStoppingCallback,
 )
+from .callbacks import FixedNumberStoppingCallback
 from .common import default_model_name, default_safety_settings
 from .evaluator import HybridSyntheticDatasetEvaluator, SimpleSyntheticDatasetEvaluator
 from .key_management import SmartKeyPool

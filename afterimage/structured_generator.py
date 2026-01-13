@@ -8,12 +8,13 @@ import logging
 from tqdm.asyncio import tqdm
 from pydantic import BaseModel
 
-from .base import BaseGenerator, BaseStoppingCallback
-from .callbacks import (
+from .base import (
+    BaseGenerator,
     BaseInstructionGeneratorCallback,
     BaseRespondentPromptModifierCallback,
-    FixedNumberStoppingCallback,
+    BaseStoppingCallback,
 )
+from .callbacks import FixedNumberStoppingCallback
 from .common import default_model_name, default_safety_settings
 from .key_management import SmartKeyPool
 from .providers import LLMFactory
