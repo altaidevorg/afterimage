@@ -3,37 +3,43 @@ Afterimage Demo UI - Main Application
 
 A Gradio-based UI for demonstrating synthetic data generation capabilities.
 """
-
 import asyncio
-import os
-
 import gradio as gr
 import pandas as pd
 
 from afterimage import InMemoryDocumentProvider, PersonaGenerator
 
-from storage import CaptureStorage
-from converters import items_to_dataframe_data
-from generators import create_generator, create_generation_task, GenerationMode
-from utils import create_document_provider_from_file
+# Setup environment first
+from core.config import setup_environment, get_api_key
+setup_environment()
 
-# Import Pages
+# Get API key (will raise ValueError if not set)
+api_key = get_api_key()
+
+# Import core functionality
+from core import (
+    CaptureStorage,
+    items_to_dataframe_data,
+    create_generator,
+    create_generation_task,
+    GenerationMode,
+    run_analysis,
+    run_training,
+    run_training_developer,
+    run_evaluation,
+    create_document_provider_from_file,
+)
+
+# Import pages
 from pages.base import create_theme
 from pages.structured_gen import create_structured_gen_page
 from pages.generic_conv import create_generic_conv_page
 from pages.tool_calling import create_tool_calling_page
 from pages.how_it_works import create_how_it_works_page
+from pages.train_model import create_train_model_page
 
 
-# --- Configuration ---
-
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
-    raise ValueError("GEMINI_API_KEY environment variable is not set")
-
-
-# --- Core Generation Logic ---
-
+# --- Context Loading ---
 
 async def load_context(
     context_source: str,
@@ -41,12 +47,7 @@ async def load_context(
     context_file: str | None,
     context_key: str,
 ) -> tuple[list[str] | None, str | None]:
-    """
-    Load context from the specified source.
-    
-    Returns:
-        Tuple of (texts, error_message). If error, texts is None.
-    """
+    """Load context from the specified source."""
     all_texts = []
     
     if context_source == "Manual Entry":
@@ -70,6 +71,8 @@ async def load_context(
     return all_texts, None
 
 
+# --- Generation Task ---
+
 async def run_generation_task(
     context_text: str,
     respondent_prompt: str,
@@ -79,11 +82,7 @@ async def run_generation_task(
     context_key: str = "text",
     generation_mode: GenerationMode = "Structured Generation",
 ):
-    """
-    Main generation task that orchestrates the entire generation process.
-    
-    Yields status updates and results for the Gradio UI.
-    """
+    """Main generation task that orchestrates the entire generation process."""
     if not api_key:
         yield pd.DataFrame(), "### Error: API Key is required", None
         return
@@ -134,7 +133,7 @@ async def run_generation_task(
         data = items_to_dataframe_data(storage.captured_items, truncate=False)
         yield (
             pd.DataFrame(data),
-            "### Status: Generation Complete! ✅",
+            "### Status: Generation Complete!",
             storage.get_download_path(),
         )
 
@@ -142,25 +141,36 @@ async def run_generation_task(
         yield pd.DataFrame(), f"### Error: {str(e)}", None
 
 
-# --- Page Wrappers ---
-
+# --- Page-Specific Generation Wrappers ---
 
 async def start_structured_gen(*args):
-    async for u in run_generation_task(*args, generation_mode="Structured Generation"):
-        yield u
+    async for update in run_generation_task(*args, generation_mode="Structured Generation"):
+        yield update
 
 
 async def start_generic_gen(*args):
-    async for u in run_generation_task(*args, generation_mode="Generic Conversation"):
-        yield u
+    async for update in run_generation_task(*args, generation_mode="Generic Conversation"):
+        yield update
 
 
 async def start_tool_gen(*args):
-    async for u in run_generation_task(*args, generation_mode="Tool Calling Generation"):
-        yield u
+    async for update in run_generation_task(*args, generation_mode="Tool Calling Generation"):
+        yield update
 
 
-# --- Main App ---
+# --- Training Wrappers ---
+
+async def start_training_from_path(file_path: str):
+    """Train model from a generated dataset file path."""
+    if not file_path:
+        yield "Status: No dataset file provided", ""
+        return
+    
+    async for update in run_training(file_path):
+        yield update
+
+
+# --- Main Application ---
 
 with gr.Blocks(title="Afterimage") as demo:
     create_how_it_works_page()
@@ -170,10 +180,13 @@ with demo.route("Generic Conversation", "/conversations"):
     create_generic_conv_page(start_generic_gen)
 
 with demo.route("Tool Calling", "/tools"):
-    create_tool_calling_page(start_tool_gen)
+    create_tool_calling_page(start_tool_gen, start_training_from_path)
 
 with demo.route("Structured Generation", "/structured"):
     create_structured_gen_page(start_structured_gen)
+
+with demo.route("Train Model", "/train"):
+    create_train_model_page(run_analysis, run_training, run_training_developer, run_evaluation)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ import asyncio
 from typing import Literal
 
 from schemas import CustomerSupportInteraction, ToolInvocation, AVAILABLE_TOOLS
-from storage import CaptureStorage
+from .storage import CaptureStorage
 
 from afterimage import (
     AsyncConversationGenerator,

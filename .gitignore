@@ -15,6 +15,14 @@ docs/_build
 *.json
 *.jsonl
 
+# model files
+*.safetensors
+*.bin
+*.model
+*.jinja
+final_model*/
+checkpoints/
+
 # monitoring
 monitoring/
 logs/
