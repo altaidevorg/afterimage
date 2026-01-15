@@ -86,7 +86,7 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
 
         # set the number of instructions to be generated if it has a placeholder for it
         if "{n_instructions}" in self.prompt:
-            self.prompt = self.prompt.format(n_instructions=self.n_instructions)
+            self.prompt = self.prompt.replace("{n_instructions}", str(self.n_instructions))
 
         self.model_name = model_name if model_name is not None else default_model_name
         self.model_provider_name = model_provider_name
