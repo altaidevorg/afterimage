@@ -31,3 +31,6 @@ plots/
 *.png
 *.log
 TODO.md
+
+# storage
+*.db

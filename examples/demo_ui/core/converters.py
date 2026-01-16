@@ -2,6 +2,7 @@
 Converters for transforming generation output items into display rows.
 """
 
+import json
 from typing import Any
 
 from schemas import CustomerSupportInteraction, ToolInvocation
@@ -26,12 +27,20 @@ def customer_support_to_row(item: Any, truncate: bool = False) -> dict:
 
 def tool_invocation_to_row(item: Any, truncate: bool = False) -> dict:
     """Convert a ToolInvocation item to a display row."""
-    tool_calls_str = "\n".join(
-        [
-            f"{tc.function.name}({tc.function.arguments.model_dump_json()})"
-            for tc in item.output.tool_calls
-        ]
-    )
+    tool_calls = []
+    for tc in item.output.tool_calls:
+        args = tc.function.arguments
+        # Handle both Pydantic models (dynamic schema) and dicts (fallback/legacy)
+        if hasattr(args, "model_dump_json"):
+            args_str = args.model_dump_json()
+        elif isinstance(args, dict):
+            args_str = json.dumps(args)
+        else:
+            args_str = str(args)
+            
+        tool_calls.append(f"{tc.function.name}({args_str})")
+
+    tool_calls_str = "\n".join(tool_calls)
     
     reasoning = item.output.reasoning
     if truncate and reasoning:
@@ -76,7 +85,7 @@ def item_to_row(item: Any, truncate: bool = False) -> dict | None:
     if hasattr(item, "output") and isinstance(item.output, CustomerSupportInteraction):
         return customer_support_to_row(item, truncate)
     
-    elif hasattr(item, "output") and isinstance(item.output, ToolInvocation):
+    elif hasattr(item, "output") and hasattr(item.output, "tool_calls"):
         return tool_invocation_to_row(item, truncate)
     
     elif isinstance(item, (ConversationWithContext, EvaluatedConversationWithContext)):

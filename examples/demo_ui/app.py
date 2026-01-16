@@ -28,6 +28,7 @@ from core import (
     run_training_developer,
     run_evaluation,
     create_document_provider_from_file,
+    get_selected_tools,
 )
 
 # Import pages
@@ -37,6 +38,7 @@ from pages.generic_conv import create_generic_conv_page
 from pages.tool_calling import create_tool_calling_page
 from pages.how_it_works import create_how_it_works_page
 from pages.train_model import create_train_model_page
+from pages.custom_tools import create_custom_tools_page
 
 
 # --- Context Loading ---
@@ -81,6 +83,7 @@ async def run_generation_task(
     context_file: str | None = None,
     context_key: str = "text",
     generation_mode: GenerationMode = "Structured Generation",
+    selected_tools: list | None = None,
 ):
     """Main generation task that orchestrates the entire generation process."""
     if not api_key:
@@ -112,6 +115,7 @@ async def run_generation_task(
             docs=docs,
             storage=storage,
             respondent_prompt=respondent_prompt,
+            selected_tools=selected_tools,
         )
         
         # Start generation task
@@ -153,8 +157,34 @@ async def start_generic_gen(*args):
         yield update
 
 
-async def start_tool_gen(*args):
-    async for update in run_generation_task(*args, generation_mode="Tool Calling Generation"):
+async def start_tool_gen(
+    context_text: str,
+    respondent_prompt: str,
+    num_samples: int,
+    context_source: str,
+    context_file: str | None,
+    context_key: str,
+    builtin_tools: list[str],
+    custom_tools: list[str],
+):
+    """Start tool calling generation with selected tools."""
+    # Get the actual tool objects from selected names
+    selected_tools = get_selected_tools(builtin_tools, custom_tools)
+    
+    if not selected_tools:
+        yield pd.DataFrame(), "### Error: Please select at least one tool", None
+        return
+    
+    async for update in run_generation_task(
+        context_text,
+        respondent_prompt,
+        num_samples,
+        context_source,
+        context_file,
+        context_key,
+        generation_mode="Tool Calling Generation",
+        selected_tools=selected_tools,
+    ):
         yield update
 
 
@@ -187,6 +217,9 @@ with demo.route("Structured Generation", "/structured"):
 
 with demo.route("Train Model", "/train"):
     create_train_model_page(run_analysis, run_training, run_training_developer, run_evaluation)
+
+with demo.route("Custom Tools", "/custom-tools"):
+    create_custom_tools_page()
 
 
 if __name__ == "__main__":

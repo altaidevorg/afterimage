@@ -9,6 +9,12 @@ from pages.base import (
 )
 from core.config import get_training_dir
 from core.file_utils import create_model_zip
+from core.tools_db import get_tools_db
+from schemas import AVAILABLE_TOOLS
+
+
+# Built-in tool names for display
+BUILTIN_TOOL_NAMES = [tool.__name__ for tool in AVAILABLE_TOOLS]
 
 
 def create_tool_calling_page(start_gen_fn, train_fn=None):
@@ -26,7 +32,7 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
                 prompt_input = gr.TextArea(
                     label="Respondent System Prompt",
                     value=TOOL_CALLING_RESPONDENT_PROMPT,
-                    lines=8,
+                    lines=6,
                 )
                 num_samples = gr.Slider(
                     minimum=1,
@@ -35,6 +41,27 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
                     step=1,
                     label="Number of Samples",
                 )
+                
+                # Tool Selection Section
+                gr.Markdown("### 3. Select Tools")
+                
+                # Built-in tools
+                builtin_tools_checkbox = gr.CheckboxGroup(
+                    choices=BUILTIN_TOOL_NAMES,
+                    value=BUILTIN_TOOL_NAMES,  # All selected by default
+                    label="Built-in Tools (Smart Home)",
+                    info="Pre-defined tools from schemas.py",
+                )
+                
+                # Custom tools from database
+                custom_tools_checkbox = gr.CheckboxGroup(
+                    choices=[],  # Will be populated dynamically
+                    value=[],
+                    label="Custom Tools",
+                    info="Tools you defined in Custom Tools page",
+                )
+                
+                refresh_tools_btn = gr.Button("Refresh Custom Tools", variant="secondary", size="sm")
                 
                 # Train Model checkbox
                 train_model_checkbox = gr.Checkbox(
@@ -73,7 +100,14 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
             size="lg",
         )
 
-        # Handle generation and training
+        # --- Event Handlers ---
+        
+        def load_custom_tools():
+            """Load custom tools from database and update checkbox choices."""
+            db = get_tools_db()
+            tool_names = db.get_tool_names()
+            return gr.update(choices=tool_names, value=tool_names)
+        
         def on_generate_complete(status_text, train_enabled):
             """Show training section if training is enabled"""
             if train_enabled and status_text and "Complete" in status_text:
@@ -118,6 +152,20 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
             
             return gr.update(visible=False)
         
+        # Wire up events
+        refresh_tools_btn.click(
+            fn=load_custom_tools,
+            inputs=[],
+            outputs=[custom_tools_checkbox],
+        )
+        
+        # Load custom tools on page load
+        page.load(
+            fn=load_custom_tools,
+            inputs=[],
+            outputs=[custom_tools_checkbox],
+        )
+        
         generate_output = generate_btn.click(
             fn=start_gen_fn,
             inputs=[
@@ -127,6 +175,8 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
                 context_ui["source"],
                 context_ui["file"],
                 context_ui["key"],
+                builtin_tools_checkbox,
+                custom_tools_checkbox,
             ],
             outputs=[
                 results_output,
