@@ -5,8 +5,9 @@ import os
 import shutil
 import zipfile
 import pandas as pd
+import json
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Union, Any
 from html.parser import HTMLParser
 
 from afterimage import InMemoryDocumentProvider
@@ -61,6 +62,32 @@ class SimpleTextSplitter:
 
 
 # --- File Operations ---
+
+def merge_dataset_files(source_files: List[Union[str, Any]], dest_dir: str, filename: str = "toolcalldataset.jsonl") -> str:
+    """
+    Merge multiple dataset files into a single temporary training file.
+    
+    Args:
+        source_files: List of file paths or file objects
+        dest_dir: Destination directory path
+        filename: Target filename (default: toolcalldataset.jsonl)
+        
+    Returns:
+        Path to the merged file
+    """
+    os.makedirs(dest_dir, exist_ok=True)
+    dest_path = os.path.join(dest_dir, filename)
+    
+    with open(dest_path, 'wb') as outfile:
+        for f in source_files:
+            source_path = f if isinstance(f, str) else f.name
+            with open(source_path, 'rb') as infile:
+                shutil.copyfileobj(infile, outfile)
+                # Ensure newline between files if missing
+                outfile.write(b'\n')
+                
+    return dest_path
+
 
 def copy_dataset_file(source_file, dest_dir: str, filename: str = "toolcalldataset.jsonl") -> str:
     """

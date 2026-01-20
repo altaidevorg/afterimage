@@ -170,7 +170,7 @@ def main():
         model,
         tokenizer,
         split_dataset["train"],
-        split_dataset["test"],
+        split_dataset["test"] if len(split_dataset["test"]) > 0 else None,
         hyperparams
     )
     

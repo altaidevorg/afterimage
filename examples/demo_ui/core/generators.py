@@ -25,31 +25,22 @@ GenerationMode = Literal["Structured Generation", "Tool Calling Generation", "Ge
 
 
 def get_selected_tools(
-    builtin_tool_names: List[str],
-    custom_tool_names: List[str],
+    tool_names: List[str],
 ) -> List:
     """
     Get the list of tools to use for generation.
     
     Args:
-        builtin_tool_names: List of selected built-in tool class names
-        custom_tool_names: List of selected custom tool names
+        tool_names: List of selected tool names
         
     Returns:
-        List of tool definitions (Pydantic models for built-in, OpenAI schema for custom)
+        List of tool definitions (OpenAI schema dicts)
     """
     tools = []
     
-    # Add selected built-in tools (as Pydantic models)
-    builtin_tool_map = {tool.__name__: tool for tool in AVAILABLE_TOOLS}
-    for name in builtin_tool_names:
-        if name in builtin_tool_map:
-            tools.append(builtin_tool_map[name])
-    
-    # Add selected custom tools (as OpenAI schema dicts)
-    if custom_tool_names:
+    if tool_names:
         db = get_tools_db()
-        for name in custom_tool_names:
+        for name in tool_names:
             parsed = db.get_tool(name)
             if parsed:
                 tools.append(function_to_openai_schema(parsed.definition))

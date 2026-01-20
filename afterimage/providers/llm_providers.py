@@ -283,6 +283,35 @@ class LLMProvider(Protocol):
 class GeminiProvider(LLMProvider):
     """Google Gemini implementation."""
 
+    def _close_client(self, client: genai.Client):
+        """Helper to close sync client resources."""
+        try:
+            # Close httpx client if it exists (private attribute)
+            if hasattr(client, "_api_client"):
+                api_client = client._api_client
+                if hasattr(api_client, "_httpx_client") and api_client._httpx_client:
+                    api_client._httpx_client.close()
+        except Exception:
+            pass
+
+    async def _aclose_client(self, client: genai.Client):
+        """Helper to close async client resources."""
+        try:
+            # Close aiohttp session if it exists (private attribute)
+            # Accessing client.aio creates the async client wrappers,
+            # so we check if _aio is already populated or if we can access the underlying api_client differently.
+            # But client.aio corresponds to the AsyncClient wrapper.
+            
+            # If client.aio was used, it should be initialized.
+            if hasattr(client, "aio"):
+                api_client = client.aio._api_client
+                if hasattr(api_client, "_aiohttp_session") and api_client._aiohttp_session:
+                    await api_client._aiohttp_session.close()
+                if hasattr(api_client, "_async_httpx_client") and api_client._async_httpx_client:
+                    await api_client._async_httpx_client.aclose()
+        except Exception:
+            pass
+
     def __init__(
         self,
         api_key: str | SmartKeyPool,
@@ -343,6 +372,8 @@ class GeminiProvider(LLMProvider):
         except Exception:
             self.key_pool.report_error(api_key)
             raise
+        finally:
+            self._close_client(client)
 
     async def agenerate_content(
         self,
@@ -386,6 +417,8 @@ class GeminiProvider(LLMProvider):
         except Exception:
             self.key_pool.report_error(api_key)
             raise
+        finally:
+            await self._aclose_client(client)
 
     def generate_structured(
         self,
@@ -429,6 +462,8 @@ class GeminiProvider(LLMProvider):
         except Exception:
             self.key_pool.report_error(api_key)
             raise
+        finally:
+            self._close_client(client)
 
     async def agenerate_structured(
         self,
@@ -471,6 +506,8 @@ class GeminiProvider(LLMProvider):
         except Exception:
             self.key_pool.report_error(api_key)
             raise
+        finally:
+            await self._aclose_client(client)
 
     def start_chat(
         self,

@@ -164,12 +164,11 @@ async def start_tool_gen(
     context_source: str,
     context_file: str | None,
     context_key: str,
-    builtin_tools: list[str],
-    custom_tools: list[str],
+    tool_names: list[str],
 ):
     """Start tool calling generation with selected tools."""
     # Get the actual tool objects from selected names
-    selected_tools = get_selected_tools(builtin_tools, custom_tools)
+    selected_tools = get_selected_tools(tool_names)
     
     if not selected_tools:
         yield pd.DataFrame(), "### Error: Please select at least one tool", None

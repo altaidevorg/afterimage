@@ -34,6 +34,7 @@ class ToolsDatabase:
         
         # Initialize database
         self._init_db()
+        self.seed_builtin_tools()
     
     def _get_connection(self) -> sqlite3.Connection:
         """Get a database connection."""
@@ -57,6 +58,73 @@ class ToolsDatabase:
             """)
             conn.commit()
     
+    
+    def seed_builtin_tools(self):
+        """Seed the database with built-in tools from schemas.py."""
+        # Import here to avoid circular dependencies
+        from schemas import AVAILABLE_TOOLS
+        import inspect
+        
+        print("Seeding built-in tools...")
+        for tool_cls in AVAILABLE_TOOLS:
+            try:
+                # Create a schema from the Pydantic model
+                schema = tool_cls.model_json_schema()
+                
+                # Extract name
+                name_prop = schema.get("properties", {}).get("name", {})
+                name = name_prop.get("default", tool_cls.__name__)
+                
+                # Check if tool already exists - skip if it does to preserve customizations
+                if self.tool_exists(name):
+                    continue
+                
+                description = schema.get("description", tool_cls.__doc__ or "")
+                
+                # Extract parameters
+                parameters = {}
+                required = []
+                
+                defs = schema.get("$defs", {})
+                props = schema.get("properties", {})
+                
+                if "arguments" in props:
+                    args_ref = props["arguments"].get("$ref", "")
+                    if args_ref:
+                        args_model_name = args_ref.split("/")[-1]
+                        
+                        if args_model_name in defs:
+                            args_schema = defs[args_model_name]
+                            parameters = args_schema.get("properties", {})
+                            required = args_schema.get("required", [])
+                
+                clean_params = {
+                    "type": "object",
+                    "properties": parameters,
+                    "required": required
+                }
+                
+                # Get source code
+                try:
+                    source_code = inspect.getsource(tool_cls)
+                except (OSError, TypeError):
+                    source_code = f"# Source code not available for {name}"
+
+                # Save to DB
+                print(f"Adding new built-in tool: {name}")
+                self.save_tool(ParsedFunction(
+                    definition=FunctionDefinition(
+                        name=name,
+                        description=description,
+                        parameters=clean_params,
+                        required=required
+                    ),
+                    source_code=source_code
+                ))
+                
+            except Exception as e:
+                print(f"Failed to seed tool {tool_cls}: {e}")
+
     def save_tool(self, parsed: ParsedFunction) -> bool:
         """
         Save a parsed function to the database.

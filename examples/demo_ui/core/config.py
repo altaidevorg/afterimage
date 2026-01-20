@@ -31,6 +31,13 @@ def get_data_dir() -> str:
     return os.path.join(get_training_dir(), "data")
 
 
+def get_datasets_dir() -> str:
+    """Get the path to the datasets library folder."""
+    datasets_dir = os.path.join(os.path.dirname(__file__), "..", "data", "datasets")
+    os.makedirs(datasets_dir, exist_ok=True)
+    return datasets_dir
+
+
 # --- Environment Setup ---
 
 def setup_environment():

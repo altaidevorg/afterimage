@@ -10,7 +10,7 @@ import re
 from typing import AsyncGenerator, Tuple
 
 from ..config import get_training_dir, get_data_dir, SPINNERS
-from ..file_utils import copy_dataset_file
+from ..file_utils import copy_dataset_file, merge_dataset_files
 from .utils import format_time, make_progress_display
 
 
@@ -20,7 +20,7 @@ async def run_training(training_file) -> AsyncGenerator[Tuple[str, str], None]:
     Shows animated progress display with smooth spinner.
     
     Args:
-        training_file: File object from Gradio upload
+        training_file: File object (or list of files) from Gradio
         
     Yields:
         Tuple of (status_message, progress_display)
@@ -39,8 +39,11 @@ async def run_training(training_file) -> AsyncGenerator[Tuple[str, str], None]:
             yield f"Status: {spinner} Preparing files...", ""
             await asyncio.sleep(0.2)
         
-        # Copy dataset file
-        copy_dataset_file(training_file, data_dir)
+        # Copy or merge dataset file(s)
+        if isinstance(training_file, list):
+            merge_dataset_files(training_file, data_dir)
+        else:
+            copy_dataset_file(training_file, data_dir)
         
         yield "Status: ✓ Files ready", ""
         await asyncio.sleep(0.5)
@@ -181,8 +184,11 @@ async def run_training_developer(
         # Preparing phase
         yield "Status: Preparing files...", ""
         
-        # Copy dataset file
-        copy_dataset_file(training_file, data_dir)
+        # Copy or merge dataset file(s)
+        if isinstance(training_file, list):
+            merge_dataset_files(training_file, data_dir)
+        else:
+            copy_dataset_file(training_file, data_dir)
         
         yield "Status: ✓ Files ready, starting training subprocess...", ""
         

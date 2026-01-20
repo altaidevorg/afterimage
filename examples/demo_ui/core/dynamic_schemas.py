@@ -52,7 +52,12 @@ def create_pydantic_model_from_schema(name: str, schema: Dict[str, Any]) -> Type
             fields[param_name] = (py_type, Field(description=description))
         else:
             fields[param_name] = (Optional[py_type], Field(default, description=description))
-            
+    
+    # Gemini API requires at least one property for OBJECT types
+    # If no fields, add a placeholder
+    if not fields:
+        fields["placeholder"] = (Optional[str], Field(None, description="No arguments required"))
+    
     # Create arguments model
     args_model_name = f"{name}Args"
     ArgsModel = create_model(

@@ -14,7 +14,7 @@ from schemas import AVAILABLE_TOOLS
 
 
 # Built-in tool names for display
-BUILTIN_TOOL_NAMES = [tool.__name__ for tool in AVAILABLE_TOOLS]
+
 
 
 def create_tool_calling_page(start_gen_fn, train_fn=None):
@@ -45,23 +45,16 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
                 # Tool Selection Section
                 gr.Markdown("### 3. Select Tools")
                 
-                # Built-in tools
-                builtin_tools_checkbox = gr.CheckboxGroup(
-                    choices=BUILTIN_TOOL_NAMES,
-                    value=BUILTIN_TOOL_NAMES,  # All selected by default
-                    label="Built-in Tools (Smart Home)",
-                    info="Pre-defined tools from schemas.py",
-                )
-                
-                # Custom tools from database
-                custom_tools_checkbox = gr.CheckboxGroup(
+
+                # Tools from database
+                tools_checkbox = gr.CheckboxGroup(
                     choices=[],  # Will be populated dynamically
                     value=[],
-                    label="Custom Tools",
-                    info="Tools you defined in Custom Tools page",
+                    label="Tool Library",
+                    info="Select tools to include (from built-in and custom tools)",
                 )
                 
-                refresh_tools_btn = gr.Button("Refresh Custom Tools", variant="secondary", size="sm")
+                refresh_tools_btn = gr.Button("Refresh Library", variant="secondary", size="sm")
                 
                 # Train Model checkbox
                 train_model_checkbox = gr.Checkbox(
@@ -156,14 +149,14 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
         refresh_tools_btn.click(
             fn=load_custom_tools,
             inputs=[],
-            outputs=[custom_tools_checkbox],
+            outputs=[tools_checkbox],
         )
         
         # Load custom tools on page load
         page.load(
             fn=load_custom_tools,
             inputs=[],
-            outputs=[custom_tools_checkbox],
+            outputs=[tools_checkbox],
         )
         
         generate_output = generate_btn.click(
@@ -175,8 +168,7 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
                 context_ui["source"],
                 context_ui["file"],
                 context_ui["key"],
-                builtin_tools_checkbox,
-                custom_tools_checkbox,
+                tools_checkbox,
             ],
             outputs=[
                 results_output,

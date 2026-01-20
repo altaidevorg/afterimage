@@ -150,40 +150,9 @@ def create_custom_tools_page():
         
         gr.Markdown("---")
         
-        # Saved tools section
-        gr.Markdown("### Saved Tools")
-        
-        tools_table = gr.Dataframe(
-            headers=["Name", "Description", "Parameters"],
-            label="Custom Tools",
-            interactive=False,
-            wrap=True,
-        )
-        
-        refresh_btn = gr.Button("Refresh List", variant="secondary")
+
         
         # --- Event Handlers ---
-        
-        def load_tools_table():
-            """Load all tools into the dataframe."""
-            db = get_tools_db()
-            tools = db.get_all_tools()
-            
-            if not tools:
-                return pd.DataFrame(columns=["Name", "Description", "Parameters"])
-            
-            data = []
-            for parsed in tools:
-                param_names = list(parsed.definition.parameters.keys())
-                params_str = ", ".join(param_names) if param_names else "(none)"
-                desc = parsed.definition.description
-                data.append({
-                    "Name": parsed.definition.name,
-                    "Description": desc[:100] + "..." if len(desc) > 100 else desc,
-                    "Parameters": params_str,
-                })
-            
-            return pd.DataFrame(data)
         
         def get_tool_names():
             """Get list of tool names for dropdown."""
@@ -237,15 +206,27 @@ def create_custom_tools_page():
         def save_from_code(parsed: ParsedFunction):
             """Save the parsed tool to database."""
             if parsed is None:
-                return "### Error: No tool to save. Parse a function first."
+                return (
+                    "### Error: No tool to save. Parse a function first.",
+                    gr.update(), gr.update(), gr.update(), gr.update(),
+                    gr.update(), gr.update(), gr.update()
+                )
             
             db = get_tools_db()
             exists = db.tool_exists(parsed.definition.name)
             db.save_tool(parsed)
             
             if exists:
-                return f"### Updated tool '{parsed.definition.name}'"
-            return f"### Saved new tool '{parsed.definition.name}'"
+                msg = f"### Updated tool '{parsed.definition.name}'"
+            else:
+                msg = f"### Saved new tool '{parsed.definition.name}'"
+            
+            return (
+                msg,
+                "", None,  # Clear code inputs
+                "", "", None, None, # Clear preview
+                gr.update(interactive=False) # Disable save btn
+            )
         
         def clear_code_editor():
             """Clear the code editor and preview."""
@@ -277,12 +258,18 @@ def create_custom_tools_page():
         def save_manual(name: str, desc: str, params_json: str, required_str: str):
             """Save manually entered tool definition."""
             if not name or not name.strip():
-                return "### Error: Function name is required"
+                return (
+                    "### Error: Function name is required",
+                    gr.update(), gr.update(), gr.update(), gr.update()
+                )
             
             try:
                 params = json.loads(params_json) if params_json.strip() else {}
             except json.JSONDecodeError as e:
-                return f"### Error: Invalid JSON: {e}"
+                return (
+                    f"### Error: Invalid JSON: {e}",
+                    gr.update(), gr.update(), gr.update(), gr.update()
+                )
             
             required = [r.strip() for r in required_str.split(",") if r.strip()] if required_str else []
             
@@ -300,8 +287,16 @@ def create_custom_tools_page():
             db.save_tool(parsed)
             
             if exists:
-                return f"### Updated tool '{name.strip()}'"
-            return f"### Saved new tool '{name.strip()}'"
+                msg = f"### Updated tool '{name.strip()}'"
+            else:
+                msg = f"### Saved new tool '{name.strip()}'"
+            
+            return (
+                msg,
+                "", "", # Name, Desc
+                json.dumps(EXAMPLE_PARAMS, indent=2), # Reset params to example
+                "" # Required
+            )
         
         # --- Edit Handlers ---
         
@@ -382,10 +377,12 @@ def create_custom_tools_page():
         save_code_btn.click(
             fn=save_from_code,
             inputs=[current_parsed],
-            outputs=[save_code_status],
-        ).then(
-            fn=load_tools_table,
-            outputs=[tools_table],
+            outputs=[
+                save_code_status,
+                code_input, current_parsed, 
+                preview_name, preview_desc, preview_params, preview_required,
+                save_code_btn
+            ],
         ).then(
             fn=refresh_edit_dropdown,
             outputs=[edit_select],
@@ -409,10 +406,7 @@ def create_custom_tools_page():
         save_manual_btn.click(
             fn=save_manual,
             inputs=[manual_name, manual_desc, manual_params, manual_required],
-            outputs=[manual_status],
-        ).then(
-            fn=load_tools_table,
-            outputs=[tools_table],
+            outputs=[manual_status, manual_name, manual_desc, manual_params, manual_required],
         ).then(
             fn=refresh_edit_dropdown,
             outputs=[edit_select],
@@ -429,9 +423,6 @@ def create_custom_tools_page():
             fn=update_tool,
             inputs=[edit_name, edit_desc, edit_params, edit_required],
             outputs=[edit_status],
-        ).then(
-            fn=load_tools_table,
-            outputs=[tools_table],
         )
         
         delete_edit_btn.click(
@@ -439,25 +430,11 @@ def create_custom_tools_page():
             inputs=[edit_name],
             outputs=[edit_status],
         ).then(
-            fn=load_tools_table,
-            outputs=[tools_table],
-        ).then(
             fn=refresh_edit_dropdown,
             outputs=[edit_select],
         )
         
-        # Refresh button
-        refresh_btn.click(
-            fn=load_tools_table,
-            outputs=[tools_table],
-        )
-        
         # Load on page load
-        page.load(
-            fn=load_tools_table,
-            outputs=[tools_table],
-        )
-        
         page.load(
             fn=refresh_edit_dropdown,
             outputs=[edit_select],
