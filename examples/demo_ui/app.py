@@ -28,7 +28,7 @@ from pages.generic_conv import create_generic_conv_page
 from pages.tool_calling import create_tool_calling_page
 from pages.how_it_works import create_how_it_works_page
 from pages.train_model import create_train_model_page
-from pages.custom_tools import create_custom_tools_page
+from pages.tool_library import create_tool_library_page
 from pages.handlers.chat import chat_with_trained_model
 from pages.handlers.generation import (
     start_structured_gen,
@@ -73,8 +73,8 @@ with demo.route("Train Model", "/train"):
     )
 
 
-with demo.route("Custom Tools", "/custom-tools"):
-    create_custom_tools_page()
+with demo.route("Tool Library", "/tool-library"):
+    create_tool_library_page()
 
 
 if __name__ == "__main__":

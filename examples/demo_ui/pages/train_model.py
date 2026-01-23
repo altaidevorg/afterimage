@@ -7,13 +7,11 @@ from .handlers.training import (
     on_dataset_select,
     create_analyze_handler,
     set_download_loading,
-    update_action_buttons,
+    update_action_buttons_inline,
     open_delete_confirm,
     cancel_delete,
     confirm_delete,
-    open_rename_dialog,
-    cancel_rename,
-    confirm_rename,
+    inline_rename,
     merge_datasets,
 )
 
@@ -60,8 +58,17 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
                         )
                         with gr.Row():
                             refresh_btn = gr.Button("Refresh", size="sm", variant="secondary")
-                            rename_btn = gr.Button("Rename", size="sm", variant="secondary", interactive=False)
                             delete_btn = gr.Button("Delete", size="sm", variant="stop", interactive=False)
+                        
+                        # Inline rename (visible when single dataset selected)
+                        with gr.Row(visible=False) as rename_row:
+                            rename_input = gr.Textbox(
+                                label="Rename",
+                                placeholder="new_name.jsonl",
+                                scale=3,
+                                show_label=False,
+                            )
+                            rename_save_btn = gr.Button("✓", size="sm", variant="primary", scale=1, min_width=40)
                         
                         gr.Markdown("---")
                         merge_name = gr.Textbox(
@@ -149,14 +156,6 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
                 with gr.Row():
                     confirm_delete_btn = gr.Button("Yes, Delete", variant="stop")
                     cancel_delete_btn = gr.Button("Cancel", variant="secondary")
-
-            # Rename dialog
-            with gr.Group(visible=False) as rename_group:
-                gr.Markdown("### Rename Dataset")
-                rename_input = gr.Textbox(label="New name", placeholder="new_dataset_name.jsonl")
-                with gr.Row():
-                    confirm_rename_btn = gr.Button("Rename", variant="primary")
-                    cancel_rename_btn = gr.Button("Cancel", variant="secondary")
 
         # ============================================================
         # STEP 2: Training
@@ -318,9 +317,9 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
             inputs=[dataset_list],
             outputs=[selected_dataset_path, dataset_overview, tool_dist_state, filter_config_state, next_btn_1]
         ).then(
-            fn=update_action_buttons,
+            fn=update_action_buttons_inline,
             inputs=[dataset_list],
-            outputs=[rename_btn, delete_btn, merge_btn],
+            outputs=[delete_btn, merge_btn, rename_row, rename_input, rename_target_path],
         )
 
         # Delete flow
@@ -352,20 +351,21 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
             outputs=[dataset_list],
         )
 
-        # Rename flow
-        rename_btn.click(
-            fn=open_rename_dialog,
-            inputs=[dataset_list],
-            outputs=[rename_group, rename_target_path, rename_input],
-        )
-        cancel_rename_btn.click(
-            fn=cancel_rename,
-            outputs=[rename_group, rename_target_path],
-        )
-        confirm_rename_btn.click(
-            fn=confirm_rename,
+        # Inline rename flow
+        rename_save_btn.click(
+            fn=inline_rename,
             inputs=[rename_target_path, rename_input],
-            outputs=[rename_group, rename_target_path],
+            outputs=None,
+        ).then(
+            fn=load_datasets_list,
+            outputs=[dataset_list],
+        )
+        
+        # Also allow Enter key to save rename
+        rename_input.submit(
+            fn=inline_rename,
+            inputs=[rename_target_path, rename_input],
+            outputs=None,
         ).then(
             fn=load_datasets_list,
             outputs=[dataset_list],

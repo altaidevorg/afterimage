@@ -238,3 +238,61 @@ def delete_tool_edit(name: str):
 def refresh_edit_dropdown():
     """Refresh the edit dropdown choices."""
     return gr.update(choices=get_tool_names())
+
+
+def parse_function_code(code: str):
+    """Parse function code and return dict for preview (used by tool library)."""
+    if not code or not code.strip():
+        return {"error": "Please enter some code to parse."}
+    
+    is_valid, error = validate_function_code(code)
+    if not is_valid:
+        return {"error": f"Validation Error: {error}"}
+    
+    try:
+        parsed = parse_function(code)
+    except FunctionParseError as e:
+        return {"error": f"Parse Error: {str(e)}"}
+    except Exception as e:
+        return {"error": f"Unexpected Error: {str(e)}"}
+    
+    # Convert to dict for preview
+    params_list = []
+    params = parsed.definition.parameters
+    required = parsed.definition.required or []
+    if isinstance(params, dict):
+        props = params.get("properties", params)
+        for pname, pinfo in props.items():
+            params_list.append({
+                "name": pname,
+                "type": pinfo.get("type", "any"),
+                "description": pinfo.get("description", ""),
+                "required": pname in required,
+            })
+    
+    return {
+        "name": parsed.definition.name,
+        "description": parsed.definition.description or "",
+        "parameters": params_list,
+    }
+
+
+def save_tool_from_code(code: str):
+    """Parse and save tool from Python code (used by tool library)."""
+    if not code or not code.strip():
+        raise gr.Error("Please enter some code to parse.")
+    
+    is_valid, error = validate_function_code(code)
+    if not is_valid:
+        raise gr.Error(f"Validation Error: {error}")
+    
+    try:
+        parsed = parse_function(code)
+    except FunctionParseError as e:
+        raise gr.Error(f"Parse Error: {str(e)}")
+    except Exception as e:
+        raise gr.Error(f"Unexpected Error: {str(e)}")
+    
+    db = get_tools_db()
+    db.save_tool(parsed)
+    gr.Info(f"Saved tool '{parsed.definition.name}'")

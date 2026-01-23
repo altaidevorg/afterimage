@@ -318,4 +318,33 @@ CUSTOM_CSS = """
     padding-bottom: 8px !important;
     border-bottom: 2px solid #e2e8f0 !important;
 }
+
+/* Tool Library List */
+/* Tool Library list - !important needed to override Gradio's Radio component styles */
+#tool-library-list {
+    max-height: 450px !important;
+    overflow-y: auto !important;
+}
+#tool-library-list .wrap {
+    gap: 6px !important;
+    flex-direction: column !important;
+}
+#tool-library-list label {
+    border-radius: 8px !important;
+    padding: 12px 14px !important;
+    border: 1px solid #e2e8f0 !important;
+    background: #ffffff !important;
+    font-size: 14px !important;
+    transition: all 0.15s ease;
+    cursor: pointer;
+}
+#tool-library-list label:hover {
+    border-color: #3b82f6 !important;
+    background: #f0f9ff !important;
+}
+#tool-library-list label.selected {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
+    color: white !important;
+    border-color: #1d4ed8 !important;
+}
 """

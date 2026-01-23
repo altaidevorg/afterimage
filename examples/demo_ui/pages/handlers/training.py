@@ -201,6 +201,41 @@ def update_action_buttons(selected: List[str] | None):
     )
 
 
+def update_action_buttons_inline(selected: List[str] | None):
+    """Enable/disable buttons and show inline rename for single selection."""
+    count = len(selected) if selected else 0
+    
+    if count == 1:
+        # Single selection: show rename input with current name
+        path = _choice_to_path(selected[0])
+        current_name = os.path.basename(path)
+        return (
+            gr.update(interactive=True),   # delete_btn
+            gr.update(interactive=False),  # merge_btn (need 2+)
+            gr.update(visible=True),       # rename_row
+            gr.update(value=current_name), # rename_input
+            path,                          # rename_target_path
+        )
+    elif count >= 2:
+        # Multiple selection: hide rename, enable merge
+        return (
+            gr.update(interactive=False),  # delete_btn (need 1)
+            gr.update(interactive=True),   # merge_btn
+            gr.update(visible=False),      # rename_row
+            gr.update(value=""),           # rename_input
+            None,                          # rename_target_path
+        )
+    else:
+        # No selection
+        return (
+            gr.update(interactive=False),  # delete_btn
+            gr.update(interactive=False),  # merge_btn
+            gr.update(visible=False),      # rename_row
+            gr.update(value=""),           # rename_input
+            None,                          # rename_target_path
+        )
+
+
 def open_delete_confirm(selected: List[str] | None):
     """Open delete confirmation for a single selected dataset."""
     if not selected or len(selected) != 1:
@@ -291,6 +326,52 @@ def confirm_rename(old_path: str, new_name: str):
     
     gr.Info(f"Renamed to {new_name}")
     return gr.update(visible=False), None
+
+
+def inline_rename(old_path: str, new_name: str):
+    """Inline rename - simpler version without dialog state management."""
+    if not old_path or not os.path.exists(old_path):
+        raise gr.Error("Dataset file not found.")
+    if not new_name or not new_name.strip():
+        raise gr.Error("Please enter a new name.")
+    
+    # Sanitize the new name to prevent path traversal
+    new_name = os.path.basename(new_name.strip())
+    if not new_name:
+        raise gr.Error("Please enter a valid file name.")
+    if not new_name.endswith(".jsonl"):
+        new_name = f"{new_name}.jsonl"
+    
+    datasets_dir = get_datasets_dir()
+    new_path = os.path.join(datasets_dir, new_name)
+    
+    # No change needed
+    if new_path == old_path:
+        return
+    
+    if os.path.exists(new_path):
+        raise gr.Error("A dataset with this name already exists.")
+    
+    # Rename main file and metadata atomically with rollback
+    try:
+        os.rename(old_path, new_path)
+        
+        # Rename metadata if exists
+        old_meta = old_path.replace(".jsonl", ".meta.json")
+        if os.path.exists(old_meta):
+            new_meta = new_path.replace(".jsonl", ".meta.json")
+            try:
+                os.rename(old_meta, new_meta)
+            except Exception as e:
+                # Roll back the primary file rename for consistency
+                os.rename(new_path, old_path)
+                raise gr.Error(f"Metadata rename failed, operation rolled back: {e}")
+    except gr.Error:
+        raise
+    except Exception as e:
+        raise gr.Error(f"Failed to rename dataset: {e}")
+    
+    gr.Info(f"Renamed to {new_name}")
 
 
 def merge_datasets(selected: List[str] | None, new_name: str):
