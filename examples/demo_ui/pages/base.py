@@ -150,7 +150,172 @@ def create_theme():
         spacing_size="lg",
         radius_size="lg",
     ).set(
-        body_background_fill="*neutral_50",
-        block_border_width="1px",
         block_shadow="*shadow_drop_lg",
     )
+
+
+CUSTOM_CSS = """
+/* Toast notifications */
+.toast-wrap.info {
+    border-color: #22c55e !important;
+    background: #f0fdf4 !important;
+    color: #15803d !important;
+}
+.toast-wrap.info svg {
+    color: #15803d !important; 
+    fill: #15803d !important;
+}
+.toast-wrap.error {
+    border-color: #ef4444 !important;
+    background: #fef2f2 !important;
+    color: #b91c1c !important;
+}
+
+/* Dataset List - Scrollable */
+#dataset-list-scroll {
+    max-height: 350px !important;
+    overflow-y: auto !important;
+}
+#dataset-list-scroll .wrap {
+    gap: 6px !important;
+    flex-direction: column !important;
+}
+#dataset-list-scroll label.selected {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
+    color: white !important;
+    font-weight: 600 !important;
+}
+#dataset-list-scroll label {
+    border-radius: 8px !important;
+    padding: 12px 14px !important;
+    border: 1px solid #e2e8f0 !important;
+    background: #ffffff !important;
+    transition: all 0.15s ease !important;
+    font-size: 13px !important;
+}
+#dataset-list-scroll label:hover {
+    border-color: #3b82f6 !important;
+    background: #f0f9ff !important;
+}
+
+/* Tool Sliders - Scrollable container */
+#tool-sliders-scroll {
+    max-height: 350px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding-right: 8px !important;
+}
+
+/* Tool Distribution Panel */
+.tool-dist-panel {
+    background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%) !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 12px !important;
+    padding: 20px !important;
+}
+.tool-dist-panel .block {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Compact Sliders */
+.compact-slider {
+    padding: 8px 0 !important;
+}
+.compact-slider .wrap {
+    gap: 4px !important;
+}
+.compact-slider input[type="range"] {
+    height: 6px !important;
+}
+.compact-slider .label-wrap {
+    margin-bottom: 2px !important;
+}
+.compact-slider label span {
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    color: #334155 !important;
+}
+.compact-slider .info {
+    font-size: 11px !important;
+    color: #64748b !important;
+}
+
+/* Summary Cards */
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.summary-card {
+    background: white;
+    padding: 16px;
+    border-radius: 12px;
+    text-align: center;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.summary-card-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 4px;
+}
+.summary-card-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+/* Action Buttons Row */
+.action-btn-row button {
+    flex: 1 !important;
+}
+
+/* Wizard Steps */
+.wizard-stepper {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+    position: relative;
+}
+.wizard-stepper::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #e5e7eb;
+    z-index: 0;
+    transform: translateY(-50%);
+}
+.wizard-step {
+    background: white;
+    z-index: 1;
+    padding: 0 1rem;
+    text-align: center;
+    color: #6b7280;
+    font-weight: 500;
+}
+.wizard-step.active {
+    color: #2563eb;
+    font-weight: 700;
+}
+.wizard-step.completed {
+    color: #059669;
+}
+
+/* Panel Headers */
+.panel-header {
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    color: #1e293b !important;
+    margin-bottom: 12px !important;
+    padding-bottom: 8px !important;
+    border-bottom: 2px solid #e2e8f0 !important;
+}
+"""

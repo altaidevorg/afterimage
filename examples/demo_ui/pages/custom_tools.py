@@ -10,13 +10,22 @@ import gradio as gr
 import pandas as pd
 
 from core.function_parser import (
-    FunctionDefinition,
     ParsedFunction,
-    FunctionParseError,
-    parse_function,
-    validate_function_code,
 )
-from core.tools_db import get_tools_db
+
+from .handlers.custom_tools import (
+    EXAMPLE_PARAMS,
+    get_tool_names,
+    parse_code,
+    save_from_code,
+    clear_code_editor,
+    validate_manual,
+    save_manual,
+    load_tool_for_edit,
+    update_tool,
+    delete_tool_edit,
+    refresh_edit_dropdown
+)
 
 
 # Example function code for the editor
@@ -26,11 +35,7 @@ EXAMPLE_FUNCTION = '''def send_email(to: str, subject: str, body: str, cc: str =
 '''
 
 # Example parameters JSON
-EXAMPLE_PARAMS = {
-    "recipient": {"type": "string", "description": "Email address of the recipient"},
-    "message": {"type": "string", "description": "Content of the message"},
-    "priority": {"type": "integer", "description": "Priority level (1-5)", "default": 3}
-}
+
 
 
 def create_custom_tools_page():
@@ -59,11 +64,10 @@ def create_custom_tools_page():
                             lines=12,
                         )
                         
+
                         with gr.Row():
                             parse_btn = gr.Button("Parse & Preview", variant="secondary")
                             clear_code_btn = gr.Button("Clear", variant="secondary")
-                        
-                        parse_status = gr.Markdown("")
                     
                     with gr.Column(scale=1):
                         gr.Markdown("### Preview & Save")
@@ -74,7 +78,6 @@ def create_custom_tools_page():
                         preview_required = gr.JSON(label="Required Parameters")
                         
                         save_code_btn = gr.Button("Save Tool", variant="primary", interactive=False)
-                        save_code_status = gr.Markdown("")
             
             # --- TAB 2: Manual Entry ---
             with gr.Tab("Manual Entry"):
@@ -111,8 +114,6 @@ def create_custom_tools_page():
                 with gr.Row():
                     validate_manual_btn = gr.Button("Validate", variant="secondary")
                     save_manual_btn = gr.Button("Save Tool", variant="primary")
-                
-                manual_status = gr.Markdown("")
             
             # --- TAB 3: Edit Existing ---
             with gr.Tab("Edit Tool"):
@@ -145,8 +146,6 @@ def create_custom_tools_page():
                 with gr.Row():
                     update_btn = gr.Button("Update Tool", variant="primary")
                     delete_edit_btn = gr.Button("Delete Tool", variant="stop")
-                
-                edit_status = gr.Markdown("")
         
         gr.Markdown("---")
         
@@ -154,213 +153,7 @@ def create_custom_tools_page():
         
         # --- Event Handlers ---
         
-        def get_tool_names():
-            """Get list of tool names for dropdown."""
-            db = get_tools_db()
-            return db.get_tool_names()
-        
-        # --- From Code Handlers ---
-        
-        def parse_code(code: str):
-            """Parse the function code and return preview data."""
-            if not code or not code.strip():
-                return (
-                    None, "", "", None, None,
-                    "### Please enter some code",
-                    gr.update(interactive=False),
-                )
-            
-            is_valid, error = validate_function_code(code)
-            if not is_valid:
-                return (
-                    None, "", "", None, None,
-                    f"### Error: {error}",
-                    gr.update(interactive=False),
-                )
-            
-            try:
-                parsed = parse_function(code)
-            except FunctionParseError as e:
-                return (
-                    None, "", "", None, None,
-                    f"### Parse Error: {str(e)}",
-                    gr.update(interactive=False),
-                )
-            except Exception as e:
-                return (
-                    None, "", "", None, None,
-                    f"### Unexpected Error: {str(e)}",
-                    gr.update(interactive=False),
-                )
-            
-            return (
-                parsed,
-                parsed.definition.name,
-                parsed.definition.description or "(No description)",
-                parsed.definition.parameters,
-                parsed.definition.required,
-                "### Parsed successfully!",
-                gr.update(interactive=True),
-            )
-        
-        def save_from_code(parsed: ParsedFunction):
-            """Save the parsed tool to database."""
-            if parsed is None:
-                return (
-                    "### Error: No tool to save. Parse a function first.",
-                    gr.update(), gr.update(), gr.update(), gr.update(),
-                    gr.update(), gr.update(), gr.update()
-                )
-            
-            db = get_tools_db()
-            exists = db.tool_exists(parsed.definition.name)
-            db.save_tool(parsed)
-            
-            if exists:
-                msg = f"### Updated tool '{parsed.definition.name}'"
-            else:
-                msg = f"### Saved new tool '{parsed.definition.name}'"
-            
-            return (
-                msg,
-                "", None,  # Clear code inputs
-                "", "", None, None, # Clear preview
-                gr.update(interactive=False) # Disable save btn
-            )
-        
-        def clear_code_editor():
-            """Clear the code editor and preview."""
-            return (
-                "", None, "", "", None, None, "",
-                gr.update(interactive=False),
-            )
-        
-        # --- Manual Entry Handlers ---
-        
-        def validate_manual(name: str, desc: str, params_json: str, required_str: str):
-            """Validate manual entry fields."""
-            if not name or not name.strip():
-                return "### Error: Function name is required"
-            
-            if not name.replace("_", "").isalnum():
-                return "### Error: Function name must be alphanumeric with underscores only"
-            
-            try:
-                params = json.loads(params_json) if params_json.strip() else {}
-            except json.JSONDecodeError as e:
-                return f"### Error: Invalid JSON in parameters: {e}"
-            
-            if not isinstance(params, dict):
-                return "### Error: Parameters must be a JSON object"
-            
-            return "### Validation passed!"
-        
-        def save_manual(name: str, desc: str, params_json: str, required_str: str):
-            """Save manually entered tool definition."""
-            if not name or not name.strip():
-                return (
-                    "### Error: Function name is required",
-                    gr.update(), gr.update(), gr.update(), gr.update()
-                )
-            
-            try:
-                params = json.loads(params_json) if params_json.strip() else {}
-            except json.JSONDecodeError as e:
-                return (
-                    f"### Error: Invalid JSON: {e}",
-                    gr.update(), gr.update(), gr.update(), gr.update()
-                )
-            
-            required = [r.strip() for r in required_str.split(",") if r.strip()] if required_str else []
-            
-            func_def = FunctionDefinition(
-                name=name.strip(),
-                description=desc.strip() if desc else "",
-                parameters=params,
-                required=required,
-            )
-            
-            parsed = ParsedFunction(definition=func_def, source_code="")
-            
-            db = get_tools_db()
-            exists = db.tool_exists(name.strip())
-            db.save_tool(parsed)
-            
-            if exists:
-                msg = f"### Updated tool '{name.strip()}'"
-            else:
-                msg = f"### Saved new tool '{name.strip()}'"
-            
-            return (
-                msg,
-                "", "", # Name, Desc
-                json.dumps(EXAMPLE_PARAMS, indent=2), # Reset params to example
-                "" # Required
-            )
-        
-        # --- Edit Handlers ---
-        
-        def load_tool_for_edit(name: str):
-            """Load a tool for editing."""
-            if not name:
-                return "", "", "", "", "### Select a tool first"
-            
-            db = get_tools_db()
-            parsed = db.get_tool(name)
-            
-            if not parsed:
-                return "", "", "", "", f"### Tool '{name}' not found"
-            
-            required_str = ", ".join(parsed.definition.required) if parsed.definition.required else ""
-            params_json = json.dumps(parsed.definition.parameters, indent=2)
-            
-            return (
-                parsed.definition.name,
-                parsed.definition.description,
-                params_json,
-                required_str,
-                f"### Loaded '{name}'"
-            )
-        
-        def update_tool(name: str, desc: str, params_json: str, required_str: str):
-            """Update an existing tool."""
-            if not name:
-                return "### Error: No tool loaded"
-            
-            try:
-                params = json.loads(params_json) if params_json.strip() else {}
-            except json.JSONDecodeError as e:
-                return f"### Error: Invalid JSON: {e}"
-            
-            required = [r.strip() for r in required_str.split(",") if r.strip()] if required_str else []
-            
-            func_def = FunctionDefinition(
-                name=name,
-                description=desc.strip() if desc else "",
-                parameters=params,
-                required=required,
-            )
-            
-            parsed = ParsedFunction(definition=func_def, source_code="")
-            
-            db = get_tools_db()
-            db.save_tool(parsed)
-            
-            return f"### Updated tool '{name}'"
-        
-        def delete_tool_edit(name: str):
-            """Delete the currently loaded tool."""
-            if not name:
-                return "### Error: No tool selected"
-            
-            db = get_tools_db()
-            if db.delete_tool(name):
-                return f"### Deleted tool '{name}'"
-            return f"### Tool '{name}' not found"
-        
-        def refresh_edit_dropdown():
-            """Refresh the edit dropdown choices."""
-            return gr.update(choices=get_tool_names())
+        # All handlers are imported from custom_tools_handlers.py
         
         # --- Wire up events ---
         
@@ -370,7 +163,7 @@ def create_custom_tools_page():
             inputs=[code_input],
             outputs=[
                 current_parsed, preview_name, preview_desc,
-                preview_params, preview_required, parse_status, save_code_btn,
+                preview_params, preview_required, save_code_btn,
             ],
         )
         
@@ -378,7 +171,6 @@ def create_custom_tools_page():
             fn=save_from_code,
             inputs=[current_parsed],
             outputs=[
-                save_code_status,
                 code_input, current_parsed, 
                 preview_name, preview_desc, preview_params, preview_required,
                 save_code_btn
@@ -392,7 +184,7 @@ def create_custom_tools_page():
             fn=clear_code_editor,
             outputs=[
                 code_input, current_parsed, preview_name, preview_desc,
-                preview_params, preview_required, parse_status, save_code_btn,
+                preview_params, preview_required, save_code_btn,
             ],
         )
         
@@ -400,13 +192,13 @@ def create_custom_tools_page():
         validate_manual_btn.click(
             fn=validate_manual,
             inputs=[manual_name, manual_desc, manual_params, manual_required],
-            outputs=[manual_status],
+            outputs=None, # Pure sidebar effect
         )
         
         save_manual_btn.click(
             fn=save_manual,
             inputs=[manual_name, manual_desc, manual_params, manual_required],
-            outputs=[manual_status, manual_name, manual_desc, manual_params, manual_required],
+            outputs=[manual_name, manual_desc, manual_params, manual_required],
         ).then(
             fn=refresh_edit_dropdown,
             outputs=[edit_select],
@@ -416,19 +208,19 @@ def create_custom_tools_page():
         load_edit_btn.click(
             fn=load_tool_for_edit,
             inputs=[edit_select],
-            outputs=[edit_name, edit_desc, edit_params, edit_required, edit_status],
+            outputs=[edit_name, edit_desc, edit_params, edit_required],
         )
         
         update_btn.click(
             fn=update_tool,
             inputs=[edit_name, edit_desc, edit_params, edit_required],
-            outputs=[edit_status],
+            outputs=None,
         )
         
         delete_edit_btn.click(
             fn=delete_tool_edit,
             inputs=[edit_name],
-            outputs=[edit_status],
+            outputs=None,
         ).then(
             fn=refresh_edit_dropdown,
             outputs=[edit_select],
