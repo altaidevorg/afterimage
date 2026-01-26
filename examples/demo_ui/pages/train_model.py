@@ -36,7 +36,6 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
         tool_dist_state = gr.State({})
         filter_config_state = gr.State({})
         tool_names_state = gr.State([])  # List of tool names in order
-        total_samples_state = gr.State(0)  # Total samples from metadata
 
         # STEP 1
         with gr.Group(visible=True) as step_1_group:
@@ -110,15 +109,18 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
                         gr.Markdown("#### Filter by Tool (samples to include)")
                         samples_summary = gr.Markdown("**0 / 0 samples selected**")
                         
-                        # Static slider slots
+                        # Static slider slots with containers for proper hiding
                         tool_sliders = []
+                        tool_containers = []
                         for i in range(MAX_TOOL_SLIDERS):
-                            s = gr.Slider(
-                                minimum=0, maximum=100, value=100, step=1,
-                                label=f"Tool {i}", visible=False,
-                                elem_id=f"tool-slider-{i}"
-                            )
+                            with gr.Group(visible=False) as container:
+                                s = gr.Slider(
+                                    minimum=0, maximum=1, value=0, step=1,
+                                    label=f"Tool {i}",
+                                    elem_id=f"tool-slider-{i}"
+                                )
                             tool_sliders.append(s)
+                            tool_containers.append(container)
                     
                     # Rename panel
                     with gr.Group(visible=False) as rename_panel:
@@ -220,7 +222,8 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
             
             # Base outputs for no selection
             if not all_selected:
-                slider_updates = [gr.update(visible=False) for _ in range(MAX_TOOL_SLIDERS)]
+                slider_updates = [gr.update(minimum=0, maximum=1, value=0) for _ in range(MAX_TOOL_SLIDERS)]
+                container_updates = [gr.update(visible=False) for _ in range(MAX_TOOL_SLIDERS)]
                 return [
                     "*No datasets selected*",
                     None,
@@ -230,11 +233,10 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
                     {},  # tool_dist_state
                     {},  # filter_config_state
                     [],  # tool_names_state
-                    0,   # total_samples_state
                     gr.update(interactive=False),
                     gr.update(visible=False),  # actions_row
                     "**0 / 0 samples selected**",  # samples_summary
-                ] + slider_updates
+                ] + slider_updates + container_updates
             
             paths, overview, dist, config, _, _, total_samples = on_dataset_select(all_selected)
             can_next = paths is not None and len(paths) > 0
@@ -244,24 +246,26 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
             sorted_tools = sorted(dist.items(), key=lambda x: x[1], reverse=True) if dist else []
             tool_names = [t[0] for t in sorted_tools]
             
-            # Calculate initial selected (all sliders at max = sum of distribution)
-            initial_selected = sum(dist.values()) if dist else 0
+            # Use distribution sum for both values (consistent)
+            total_from_dist = sum(dist.values()) if dist else 0
             
             slider_updates = []
+            container_updates = []
             for i in range(MAX_TOOL_SLIDERS):
                 if i < len(sorted_tools):
                     tool_name, tool_count = sorted_tools[i]
                     slider_updates.append(gr.update(
-                        visible=True,
                         label=f"{tool_name} ({tool_count} samples)",
                         minimum=0,
-                        maximum=tool_count,
+                        maximum=max(1, tool_count),
                         value=tool_count
                     ))
+                    container_updates.append(gr.update(visible=True))
                 else:
-                    slider_updates.append(gr.update(visible=False))
+                    slider_updates.append(gr.update(minimum=0, maximum=1, value=0))
+                    container_updates.append(gr.update(visible=False))
             
-            samples_text = f"**{initial_selected} / {total_samples} samples selected**"
+            samples_text = f"**{total_from_dist} / {total_from_dist} samples selected**"
             
             return [
                 summary,
@@ -272,17 +276,16 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
                 dist,
                 config,
                 tool_names,
-                total_samples,
                 gr.update(interactive=can_next),
                 gr.update(visible=True),   # actions_row
                 samples_text,  # samples_summary
-            ] + slider_updates
+            ] + slider_updates + container_updates
         
         change_outputs = [
             selection_summary, selected_dataset_path, empty_panel, overview_panel,
             dataset_overview, tool_dist_state, filter_config_state, tool_names_state,
-            total_samples_state, next_btn_1, actions_row, samples_summary
-        ] + tool_sliders
+            next_btn_1, actions_row, samples_summary
+        ] + tool_sliders + tool_containers
         
         # Wire all checkbox changes
         cb0.change(on_selection_change, inputs=all_cbs, outputs=change_outputs)
@@ -292,11 +295,59 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
         cb4.change(on_selection_change, inputs=all_cbs, outputs=change_outputs)
         
         # Category checkbox -> select/deselect all in that category
-        cat0_select.change(lambda c: cat0_ds if c else [], inputs=[cat0_select], outputs=[cb0])
-        cat1_select.change(lambda c: cat1_ds if c else [], inputs=[cat1_select], outputs=[cb1])
-        cat2_select.change(lambda c: cat2_ds if c else [], inputs=[cat2_select], outputs=[cb2])
-        cat3_select.change(lambda c: cat3_ds if c else [], inputs=[cat3_select], outputs=[cb3])
-        cat4_select.change(lambda c: cat4_ds if c else [], inputs=[cat4_select], outputs=[cb4])
+        # Smart toggle: only deselect all if ALL were selected (prevents sync loop)
+        def toggle_cat0(checked, current):
+            current = current or []
+            if checked:
+                return cat0_ds  # User wants to select all
+            else:
+                # Only clear if all were selected (user clicked to deselect)
+                # If partial selection, this is from sync - keep current
+                if len(current) == len(cat0_ds):
+                    return []
+                return current
+        
+        def toggle_cat1(checked, current):
+            current = current or []
+            if checked:
+                return cat1_ds
+            else:
+                if len(current) == len(cat1_ds):
+                    return []
+                return current
+        
+        def toggle_cat2(checked, current):
+            current = current or []
+            if checked:
+                return cat2_ds
+            else:
+                if len(current) == len(cat2_ds):
+                    return []
+                return current
+        
+        def toggle_cat3(checked, current):
+            current = current or []
+            if checked:
+                return cat3_ds
+            else:
+                if len(current) == len(cat3_ds):
+                    return []
+                return current
+        
+        def toggle_cat4(checked, current):
+            current = current or []
+            if checked:
+                return cat4_ds
+            else:
+                if len(current) == len(cat4_ds):
+                    return []
+                return current
+        
+        cat0_select.change(toggle_cat0, inputs=[cat0_select, cb0], outputs=[cb0])
+        cat1_select.change(toggle_cat1, inputs=[cat1_select, cb1], outputs=[cb1])
+        cat2_select.change(toggle_cat2, inputs=[cat2_select, cb2], outputs=[cb2])
+        cat3_select.change(toggle_cat3, inputs=[cat3_select, cb3], outputs=[cb3])
+        cat4_select.change(toggle_cat4, inputs=[cat4_select, cb4], outputs=[cb4])
         
         # Sync category checkbox when individual items change
         cb0.change(lambda s: len(s) == len(cat0_ds) and len(cat0_ds) > 0, inputs=[cb0], outputs=[cat0_select])
@@ -311,30 +362,31 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
         
         def update_config_and_summary(*args):
             """Update config and recalculate total samples."""
-            # args = [slider0, slider1, ..., sliderN, config, names, total_samples]
+            # args = [slider0, slider1, ..., sliderN, config, names, dist]
             slider_values = args[:MAX_TOOL_SLIDERS]
             config = args[MAX_TOOL_SLIDERS]
             names = args[MAX_TOOL_SLIDERS + 1]
-            total_samples = args[MAX_TOOL_SLIDERS + 2]
+            dist = args[MAX_TOOL_SLIDERS + 2]
             
             new_config = dict(config) if config else {}
             
             # Update config with current slider values
             for i, val in enumerate(slider_values):
-                if names and i < len(names):
-                    new_config[names[i]] = val
+                if names and i < len(names) and val is not None:
+                    new_config[names[i]] = int(val)
             
-            # Calculate selected total from sliders
+            # Calculate totals from distribution (consistent source)
+            total_max = sum(dist.values()) if dist else 0
             total_selected = 0
             for i, val in enumerate(slider_values):
                 if names and i < len(names) and val is not None:
-                    total_selected += val
+                    total_selected += int(val)
             
-            summary_text = f"**{total_selected} / {total_samples} samples selected**"
+            summary_text = f"**{total_selected} / {total_max} samples selected**"
             
             return new_config, summary_text
         
-        slider_inputs = tool_sliders + [filter_config_state, tool_names_state, total_samples_state]
+        slider_inputs = tool_sliders + [filter_config_state, tool_names_state, tool_dist_state]
         
         for slider in tool_sliders:
             slider.change(
