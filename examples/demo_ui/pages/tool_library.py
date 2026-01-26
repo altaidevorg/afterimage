@@ -45,6 +45,21 @@ def create_tool_library_page():
         tools_by_category_state = gr.State({})  # Dict of category -> list of tools
         selected_tool_state = gr.State(None)  # Currently selected tool name
         
+        # Pre-load tools for static structure
+        MAX_CATEGORIES = 5
+        db = get_tools_db()
+        initial_grouped = db.get_tools_by_category()
+        initial_cats = list(initial_grouped.keys())
+        builtin_names = get_builtin_tool_names()
+        
+        def get_tool_choices(tools):
+            choices = []
+            for t in tools:
+                name = t.definition.name
+                label = f"[built-in] {name}" if name in builtin_names else name
+                choices.append((label, name))
+            return choices
+        
         with gr.Row():
             # ========== LEFT: Tool List (Grouped by Category) ==========
             with gr.Column(scale=1):
@@ -53,47 +68,24 @@ def create_tool_library_page():
                         gr.Markdown("### Tools")
                         refresh_btn = gr.Button("Refresh", size="sm", variant="secondary", scale=0, min_width=60)
                     
-                    # Grouped tool list rendered dynamically
-                    @gr.render(inputs=[tools_by_category_state, selected_tool_state])
-                    def render_grouped_tools(grouped, selected):
-                        builtin_names = get_builtin_tool_names()
-                        
-                        if not grouped:
-                            gr.HTML("""
-                            <div style="text-align: center; padding: 40px; color: #94a3b8;">
-                                No tools found. Click "+ New Tool" to create one.
-                            </div>
-                            """)
-                            return
-                        
-                        for category, tools in grouped.items():
-                            with gr.Accordion(f"{category} ({len(tools)})", open=True):
-                                for tool in tools:
-                                    name = tool.definition.name
-                                    is_builtin = name in builtin_names
-                                    
-                                    # Style for selected item
-                                    is_selected = selected == name
-                                    btn_variant = "primary" if is_selected else "secondary"
-                                    
-                                    label = f"[built-in] {name}" if is_builtin else name
-                                    
-                                    tool_btn = gr.Button(
-                                        label,
-                                        variant=btn_variant,
-                                        size="sm",
-                                        elem_classes=["tool-list-item", "selected" if is_selected else ""],
-                                    )
-                                    
-                                    def make_select_handler(tool_name):
-                                        def handler():
-                                            return tool_name
-                                        return handler
-                                    
-                                    tool_btn.click(
-                                        fn=make_select_handler(name),
-                                        outputs=[selected_tool_state],
-                                    )
+                    # Static category slots with Radio buttons
+                    cat_accordions = []
+                    cat_radios = []
+                    
+                    for i in range(MAX_CATEGORIES):
+                        if i < len(initial_cats):
+                            cat = initial_cats[i]
+                            tools = initial_grouped[cat]
+                            choices = get_tool_choices(tools)
+                            with gr.Accordion(f"{cat} ({len(tools)})", open=True) as acc:
+                                radio = gr.Radio(choices=choices, value=None, label=None, show_label=False)
+                            cat_accordions.append(acc)
+                            cat_radios.append(radio)
+                        else:
+                            with gr.Accordion("Empty", open=False, visible=False) as acc:
+                                radio = gr.Radio(choices=[], value=None, visible=False)
+                            cat_accordions.append(acc)
+                            cat_radios.append(radio)
                     
                     new_tool_btn = gr.Button("+ New Tool", variant="primary")
             
@@ -112,6 +104,18 @@ def create_tool_library_page():
                 with gr.Group(visible=False) as preview_panel:
                     preview_title = gr.Markdown("### Tool Details")
                     preview_html = gr.HTML()
+                    
+                    # Quick category change
+                    with gr.Row():
+                        preview_category_dropdown = gr.Dropdown(
+                            label="Change Category",
+                            choices=["Uncategorized"],
+                            value="Uncategorized",
+                            allow_custom_value=True,
+                            scale=2,
+                        )
+                        change_category_btn = gr.Button("Save Category", variant="primary", scale=1)
+                    
                     with gr.Row():
                         edit_tool_btn = gr.Button("Edit", variant="secondary")
                         delete_tool_btn = gr.Button("Delete", variant="stop")
@@ -235,20 +239,37 @@ def create_tool_library_page():
             return choice
         
         def load_page():
-            """Load page: update grouped tools and category dropdown."""
+            """Load page: update accordions, radios, and category dropdown."""
             grouped = load_tools_grouped()
+            cats = list(grouped.keys())
             categories = get_category_choices()
-            return grouped, gr.update(choices=categories)
+            
+            results = []
+            for i in range(MAX_CATEGORIES):
+                if i < len(cats):
+                    cat = cats[i]
+                    tools = grouped[cat]
+                    choices = get_tool_choices(tools)
+                    results.append(gr.update(label=f"{cat} ({len(tools)})", visible=True, open=True))
+                    results.append(gr.update(choices=choices, value=None, visible=True))
+                else:
+                    results.append(gr.update(visible=False))
+                    results.append(gr.update(choices=[], value=None, visible=False))
+            
+            results.append(gr.update(choices=categories))  # category_dropdown
+            return results
         
         def show_tool_preview(tool_name):
             """Show tool details preview."""
+            categories = get_category_choices()
+            
             if not tool_name:
                 return (
                     gr.update(visible=True),
                     gr.update(visible=False),
                     gr.update(visible=False),
                     "", "",
-                    load_tools_grouped(),  # Refresh list to update selection
+                    gr.update(choices=categories, value="Uncategorized"),
                 )
             
             db = get_tools_db()
@@ -259,7 +280,7 @@ def create_tool_library_page():
                     gr.update(visible=False),
                     gr.update(visible=False),
                     "", "",
-                    load_tools_grouped(),
+                    gr.update(choices=categories, value="Uncategorized"),
                 )
             
             builtin_names = get_builtin_tool_names()
@@ -314,7 +335,7 @@ def create_tool_library_page():
                 gr.update(visible=False),
                 f"### {tool_name}",
                 html,
-                load_tools_grouped(),  # Refresh to update selection highlighting
+                gr.update(choices=categories, value=category),
             )
         
         def show_create_panel():
@@ -435,18 +456,34 @@ def create_tool_library_page():
             gr.Info(f"Saved tool '{name}' in category '{category}'")
         
         def after_save():
-            """After save, refresh and show empty."""
+            """After save, refresh accordions/radios and show empty."""
             grouped = load_tools_grouped()
+            cats = list(grouped.keys())
             categories = get_category_choices()
-            return (
-                grouped,  # tools_by_category_state
+            
+            results = []
+            # Update accordions and radios
+            for i in range(MAX_CATEGORIES):
+                if i < len(cats):
+                    cat = cats[i]
+                    tools = grouped[cat]
+                    choices = get_tool_choices(tools)
+                    results.append(gr.update(label=f"{cat} ({len(tools)})", visible=True, open=True))
+                    results.append(gr.update(choices=choices, value=None, visible=True))
+                else:
+                    results.append(gr.update(visible=False))
+                    results.append(gr.update(choices=[], value=None, visible=False))
+            
+            # Panel visibility and other outputs
+            results.extend([
                 None,  # selected_tool_state
-                gr.update(visible=True),
-                gr.update(visible=False),
-                gr.update(visible=False),
-                "", "",
+                gr.update(visible=True),   # empty_panel
+                gr.update(visible=False),  # preview_panel
+                gr.update(visible=False),  # create_panel
+                "", "",  # preview_title, preview_html
                 gr.update(choices=categories),  # category_dropdown
-            )
+            ])
+            return results
         
         def cancel_and_back(tool_name):
             """Cancel and go back."""
@@ -465,17 +502,19 @@ def create_tool_library_page():
             tool_name = extract_name(tool_name)
             if tool_name:
                 delete_tool_edit(tool_name)
-            grouped = load_tools_grouped()
-            categories = get_category_choices()
-            return (
-                grouped,
-                None,  # Clear selection
-                gr.update(visible=True),
-                gr.update(visible=False),
-                gr.update(visible=False),
-                "", "",
-                gr.update(choices=categories),
-            )
+            # Same as after_save
+            return after_save()
+        
+        def change_tool_category(tool_name, new_category):
+            """Change tool's category."""
+            if not tool_name:
+                raise gr.Error("No tool selected")
+            
+            new_category = new_category.strip() if new_category else "Uncategorized"
+            db = get_tools_db()
+            db.update_tool_category(tool_name, new_category)
+            gr.Info(f"Moved '{tool_name}' to '{new_category}'")
+            return after_save()
         
         def do_parse_code(code):
             """Parse Python code and show preview."""
@@ -515,23 +554,48 @@ def create_tool_library_page():
         # EVENTS
         # ============================================================
         
+        # Build output lists
+        load_outputs = []
+        for i in range(MAX_CATEGORIES):
+            load_outputs.append(cat_accordions[i])
+            load_outputs.append(cat_radios[i])
+        load_outputs.append(category_dropdown)
+        
+        after_save_outputs = []
+        for i in range(MAX_CATEGORIES):
+            after_save_outputs.append(cat_accordions[i])
+            after_save_outputs.append(cat_radios[i])
+        after_save_outputs.extend([
+            selected_tool_state, empty_panel, preview_panel, create_panel,
+            preview_title, preview_html, category_dropdown
+        ])
+        
         # Page load
-        page.load(
-            fn=load_page, 
-            outputs=[tools_by_category_state, category_dropdown]
-        )
+        page.load(fn=load_page, outputs=load_outputs)
         
         # Refresh button
-        refresh_btn.click(
-            fn=load_page, 
-            outputs=[tools_by_category_state, category_dropdown]
-        )
+        refresh_btn.click(fn=load_page, outputs=load_outputs)
+        
+        # Radio selection → update selected_tool_state
+        for radio in cat_radios:
+            radio.change(
+                fn=lambda x: x,
+                inputs=[radio],
+                outputs=[selected_tool_state],
+            )
         
         # Tool selection → show preview (triggered by selected_tool_state change)
         selected_tool_state.change(
             fn=show_tool_preview,
             inputs=[selected_tool_state],
-            outputs=[empty_panel, preview_panel, create_panel, preview_title, preview_html, tools_by_category_state],
+            outputs=[empty_panel, preview_panel, create_panel, preview_title, preview_html, preview_category_dropdown],
+        )
+        
+        # Change category button
+        change_category_btn.click(
+            fn=change_tool_category,
+            inputs=[selected_tool_state, preview_category_dropdown],
+            outputs=after_save_outputs,
         )
         
         # New Tool button
@@ -551,7 +615,7 @@ def create_tool_library_page():
         delete_tool_btn.click(
             fn=do_delete,
             inputs=[selected_tool_state],
-            outputs=[tools_by_category_state, selected_tool_state, empty_panel, preview_panel, create_panel, preview_title, preview_html, category_dropdown],
+            outputs=after_save_outputs,
         )
         
         # Add parameter
@@ -567,7 +631,7 @@ def create_tool_library_page():
             inputs=[tool_name_input, tool_desc_input, params_state, editing_tool_name, category_dropdown],
         ).then(
             fn=after_save,
-            outputs=[tools_by_category_state, selected_tool_state, empty_panel, preview_panel, create_panel, preview_title, preview_html, category_dropdown],
+            outputs=after_save_outputs,
         )
         
         # Cancel
@@ -590,7 +654,7 @@ def create_tool_library_page():
             inputs=[code_input, category_dropdown],
         ).then(
             fn=after_save,
-            outputs=[tools_by_category_state, selected_tool_state, empty_panel, preview_panel, create_panel, preview_title, preview_html, category_dropdown],
+            outputs=after_save_outputs,
         )
     
     return page
