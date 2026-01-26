@@ -168,7 +168,8 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
             gr.Markdown("## Step 3/3: Evaluate Model")
             eval_btn = gr.Button("Run Evaluation", variant="primary", size="lg")
             eval_status = gr.Markdown("Status: Ready")
-            eval_output = gr.Code(language="shell", lines=20)
+            with gr.Column(elem_id="eval-output-scroll"):
+                eval_output = gr.Code(language="shell", lines=25)
             with gr.Row():
                 back_btn_3 = gr.Button("Back", variant="secondary")
                 next_btn_3 = gr.Button("Next: Chat", variant="primary", interactive=False)

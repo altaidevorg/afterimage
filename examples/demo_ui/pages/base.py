@@ -486,4 +486,22 @@ CUSTOM_CSS = """
     background: #dcfce7;
     color: #166534;
 }
+
+/* Evaluation Output - Scrollable */
+#eval-output-scroll {
+    max-height: 500px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+}
+#eval-output-scroll > div {
+    max-height: none !important;
+    overflow: visible !important;
+}
+#eval-output-scroll textarea,
+#eval-output-scroll pre {
+    max-height: 480px !important;
+    overflow-y: auto !important;
+}
 """

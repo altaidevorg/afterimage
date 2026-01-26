@@ -71,14 +71,92 @@ def generate_tool_calls(model, tokenizer, messages, tools):
         import re
         tool_calls = []
         
-        # Try Function Gemma format first
-        if "<function=" in response:
-            pattern = r'<function=(\w+)>(.*?)</function>'
-            matches = re.findall(pattern, response, re.DOTALL)
+        def extract_balanced_braces(text, start_idx):
+            """Extract content between balanced braces starting at start_idx."""
+            if start_idx >= len(text) or text[start_idx] != '{':
+                return None, start_idx
             
-            for tool_name, args_str in matches:
-                try:
-                    arguments = json.loads(args_str.strip())
+            depth = 0
+            i = start_idx
+            while i < len(text):
+                if text[i] == '{':
+                    depth += 1
+                elif text[i] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        return text[start_idx:i+1], i + 1
+                i += 1
+            return None, start_idx
+        
+        def try_parse_args(args_str):
+            """Try multiple methods to parse arguments."""
+            args_str = args_str.strip()
+            
+            # Method 1: Direct JSON parse
+            try:
+                return json.loads(args_str)
+            except json.JSONDecodeError:
+                pass
+            
+            # Method 2: Handle <escape> tags (both opening and closing use <escape>)
+            # Format: {key:<escape>value<escape>,key2:None}
+            cleaned = args_str
+            # Replace <escape>...<escape> with "..."
+            import re as regex
+            cleaned = regex.sub(r'<escape>([^<]*)<escape>', r'"\1"', cleaned)
+            # Also handle </escape> variant just in case
+            cleaned = cleaned.replace('</escape>', '"').replace('<escape>', '"')
+            
+            # Method 3: Convert Python None to JSON null and add quotes to keys
+            # Pattern: {key:value} -> {"key":value}
+            def pythonify(s):
+                # Add quotes around unquoted keys
+                s = regex.sub(r'(\{|,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', s)
+                # Replace Python None with null
+                s = regex.sub(r':None([,}])', r':null\1', s)
+                # Replace Python True/False with true/false
+                s = regex.sub(r':True([,}])', r':true\1', s)
+                s = regex.sub(r':False([,}])', r':false\1', s)
+                return s
+            
+            json_str = pythonify(cleaned)
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                pass
+            
+            # Method 4: Try ast.literal_eval (handles Python dict syntax)
+            try:
+                return ast.literal_eval(cleaned)
+            except:
+                pass
+            
+            # Method 5: Fix common issues (single quotes -> double quotes)
+            try:
+                fixed = cleaned.replace("'", '"')
+                return json.loads(pythonify(fixed))
+            except:
+                pass
+            
+            return None
+        
+        # Try Function Gemma format first: <function=name>args</function>
+        if "<function=" in response:
+            pattern = r'<function=(\w+)>'
+            for match in re.finditer(pattern, response):
+                tool_name = match.group(1)
+                content_start = match.end()
+                
+                # Find the closing </function> tag
+                end_tag = "</function>"
+                end_idx = response.find(end_tag, content_start)
+                if end_idx == -1:
+                    continue
+                
+                args_str = response[content_start:end_idx].strip()
+                arguments = try_parse_args(args_str)
+                
+                if arguments is not None:
                     tool_calls.append({
                         "type": "function",
                         "function": {
@@ -86,39 +164,47 @@ def generate_tool_calls(model, tokenizer, messages, tools):
                             "arguments": json.dumps(arguments)
                         }
                     })
-                except json.JSONDecodeError:
-                    pass
+                else:
+                    print(f"  [WARNING] Failed to parse args for {tool_name}: {args_str[:100]}")
         
         # Try alternative format: <start_function_call>call:name{...}<end_function_call>
         elif "<start_function_call>" in response:
-            pattern = r'<start_function_call>call:(\w+)\{([^}]+)\}<end_function_call>'
-            matches = re.findall(pattern, response, re.DOTALL)
-            
-            for tool_name, args_str in matches:
-                try:
-                    # Convert Python-like dict to valid Python dict format
-                    # Remove <escape> tags
-                    args_str = args_str.replace('<escape>', '"').replace('</escape>', '"')
+            pattern = r'<start_function_call>call:(\w+)'
+            for match in re.finditer(pattern, response):
+                tool_name = match.group(1)
+                brace_start = match.end()
+                
+                # Find opening brace
+                while brace_start < len(response) and response[brace_start] != '{':
+                    brace_start += 1
+                
+                # Extract balanced braces content
+                args_str, _ = extract_balanced_braces(response, brace_start)
+                
+                if args_str:
+                    arguments = try_parse_args(args_str)
                     
-                    # Wrap the dict string to make it parseable
-                    # Ensure it's in {key: value} format
-                    if not args_str.startswith('{'):
-                        args_str = '{' + args_str + '}'
-                    
-                    # Use ast.literal_eval for safe parsing
-                    # This handles commas in strings correctly
-                    args_dict = ast.literal_eval(args_str)
-                    
-                    tool_calls.append({
-                        "type": "function",
-                        "function": {
-                            "name": tool_name,
-                            "arguments": json.dumps(args_dict)
-                        }
-                    })
-                except Exception as e:
-                    print(f"  [WARNING] Failed to parse alternative format: {e}")
-                    pass
+                    if arguments is not None:
+                        tool_calls.append({
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "arguments": json.dumps(arguments)
+                            }
+                        })
+                    else:
+                        print(f"  [WARNING] Failed to parse args for {tool_name}: {args_str[:100]}")
+        
+        # Try plain JSON array format (some models output this)
+        elif response.strip().startswith('['):
+            try:
+                parsed = json.loads(response.strip())
+                if isinstance(parsed, list):
+                    for item in parsed:
+                        if isinstance(item, dict) and "function" in item:
+                            tool_calls.append(item)
+            except:
+                pass
         
         return tool_calls
     except Exception as e:
