@@ -46,7 +46,7 @@ def create_tool_library_page():
         selected_tool_state = gr.State(None)  # Currently selected tool name
         
         # Pre-load tools for static structure
-        MAX_CATEGORIES = 5
+        MAX_CATEGORIES = 10
         db = get_tools_db()
         initial_grouped = db.get_tools_by_category()
         initial_cats = list(initial_grouped.keys())
@@ -487,15 +487,17 @@ def create_tool_library_page():
         
         def cancel_and_back(tool_name):
             """Cancel and go back."""
+            categories = get_category_choices()
             if tool_name:
                 result = show_tool_preview(tool_name)
-                # Unpack and return matching outputs
-                return (result[0], result[1], result[2], result[3], result[4])
+                # Unpack all 6 values
+                return (result[0], result[1], result[2], result[3], result[4], result[5])
             return (
                 gr.update(visible=True),
                 gr.update(visible=False),
                 gr.update(visible=False),
                 "", "",
+                gr.update(choices=categories, value="Uncategorized"),
             )
         
         def do_delete(tool_name):
@@ -638,7 +640,7 @@ def create_tool_library_page():
         cancel_create_btn.click(
             fn=cancel_and_back,
             inputs=[selected_tool_state],
-            outputs=[empty_panel, preview_panel, create_panel, preview_title, preview_html],
+            outputs=[empty_panel, preview_panel, create_panel, preview_title, preview_html, preview_category_dropdown],
         )
         
         # From Code: Parse

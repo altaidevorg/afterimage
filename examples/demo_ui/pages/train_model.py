@@ -8,7 +8,8 @@ from .handlers.training import (
     inline_rename, merge_datasets, confirm_delete,
 )
 
-MAX_TOOL_SLIDERS = 10
+MAX_TOOL_SLIDERS = 15
+MAX_CATEGORIES = 10
 
 
 def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn=None):
@@ -23,11 +24,8 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
             return name, initial_grouped[name]
         return None, []
     
-    cat0_name, cat0_ds = get_cat_data(0)
-    cat1_name, cat1_ds = get_cat_data(1)
-    cat2_name, cat2_ds = get_cat_data(2)
-    cat3_name, cat3_ds = get_cat_data(3)
-    cat4_name, cat4_ds = get_cat_data(4)
+    # Pre-compute category data for all slots
+    cat_data = [get_cat_data(i) for i in range(MAX_CATEGORIES)]
     
     with gr.Blocks() as page:
         gr.Markdown("# Model Training Wizard")
@@ -49,49 +47,25 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
                         gr.Markdown("### Dataset Library")
                         refresh_datasets_btn = gr.Button("↻", size="sm", scale=0, min_width=40)
                     
-                    with gr.Column(elem_id="dataset-list-scroll"):
-                        # Category 0
-                        if cat0_name:
-                            cat0_select = gr.Checkbox(label=f"{cat0_name} ({len(cat0_ds)})", value=False)
-                            cb0 = gr.CheckboxGroup(choices=cat0_ds, value=[], label=None, show_label=False)
-                        else:
-                            cat0_select = gr.Checkbox(visible=False, value=False)
-                            cb0 = gr.CheckboxGroup(choices=[], value=[], visible=False)
-                        
-                        # Category 1
-                        if cat1_name:
-                            cat1_select = gr.Checkbox(label=f"{cat1_name} ({len(cat1_ds)})", value=False)
-                            cb1 = gr.CheckboxGroup(choices=cat1_ds, value=[], label=None, show_label=False)
-                        else:
-                            cat1_select = gr.Checkbox(visible=False, value=False)
-                            cb1 = gr.CheckboxGroup(choices=[], value=[], visible=False)
-                        
-                        # Category 2
-                        if cat2_name:
-                            cat2_select = gr.Checkbox(label=f"{cat2_name} ({len(cat2_ds)})", value=False)
-                            cb2 = gr.CheckboxGroup(choices=cat2_ds, value=[], label=None, show_label=False)
-                        else:
-                            cat2_select = gr.Checkbox(visible=False, value=False)
-                            cb2 = gr.CheckboxGroup(choices=[], value=[], visible=False)
-                        
-                        # Category 3
-                        if cat3_name:
-                            cat3_select = gr.Checkbox(label=f"{cat3_name} ({len(cat3_ds)})", value=False)
-                            cb3 = gr.CheckboxGroup(choices=cat3_ds, value=[], label=None, show_label=False)
-                        else:
-                            cat3_select = gr.Checkbox(visible=False, value=False)
-                            cb3 = gr.CheckboxGroup(choices=[], value=[], visible=False)
-                        
-                        # Category 4
-                        if cat4_name:
-                            cat4_select = gr.Checkbox(label=f"{cat4_name} ({len(cat4_ds)})", value=False)
-                            cb4 = gr.CheckboxGroup(choices=cat4_ds, value=[], label=None, show_label=False)
-                        else:
-                            cat4_select = gr.Checkbox(visible=False, value=False)
-                            cb4 = gr.CheckboxGroup(choices=[], value=[], visible=False)
+                    # Create category slots dynamically
+                    all_cat_selects = []
+                    all_cbs = []
+                    all_cat_datasets = []
                     
-                    all_cbs = [cb0, cb1, cb2, cb3, cb4]
-                    all_cat_selects = [cat0_select, cat1_select, cat2_select, cat3_select, cat4_select]
+                    with gr.Column(elem_id="dataset-list-scroll"):
+                        for i in range(MAX_CATEGORIES):
+                            cat_name, cat_ds = cat_data[i]
+                            all_cat_datasets.append(cat_ds)
+                            
+                            if cat_name:
+                                cat_select = gr.Checkbox(label=f"{cat_name} ({len(cat_ds)})", value=False)
+                                cb = gr.CheckboxGroup(choices=cat_ds, value=[], label=None, show_label=False)
+                            else:
+                                cat_select = gr.Checkbox(visible=False, value=False)
+                                cb = gr.CheckboxGroup(choices=[], value=[], visible=False)
+                            
+                            all_cat_selects.append(cat_select)
+                            all_cbs.append(cb)
                     
                     gr.Markdown("---")
                     selection_summary = gr.Markdown("*No datasets selected*")
@@ -228,9 +202,11 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
         # Selection Handlers
         # ============================================================
         
-        def on_selection_change(v0, v1, v2, v3, v4):
+        def on_selection_change(*args):
             """When any checkbox changes, update summary, overview, and sliders."""
-            all_selected = (v0 or []) + (v1 or []) + (v2 or []) + (v3 or []) + (v4 or [])
+            all_selected = []
+            for v in args:
+                all_selected.extend(v or [])
             
             # Base outputs for no selection
             if not all_selected:
@@ -303,73 +279,38 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
         ] + tool_sliders + tool_containers
         
         # Wire all checkbox changes
-        cb0.change(on_selection_change, inputs=all_cbs, outputs=change_outputs)
-        cb1.change(on_selection_change, inputs=all_cbs, outputs=change_outputs)
-        cb2.change(on_selection_change, inputs=all_cbs, outputs=change_outputs)
-        cb3.change(on_selection_change, inputs=all_cbs, outputs=change_outputs)
-        cb4.change(on_selection_change, inputs=all_cbs, outputs=change_outputs)
+        for cb in all_cbs:
+            cb.change(on_selection_change, inputs=all_cbs, outputs=change_outputs)
         
         # Category checkbox -> select/deselect all in that category
         # Smart toggle: only deselect all if ALL were selected (prevents sync loop)
-        def toggle_cat0(checked, current):
-            current = current or []
-            if checked:
-                return cat0_ds  # User wants to select all
-            else:
-                # Only clear if all were selected (user clicked to deselect)
-                # If partial selection, this is from sync - keep current
-                if len(current) == len(cat0_ds):
-                    return []
-                return current
+        def make_category_toggle(category_datasets):
+            """Create a toggle handler for a category checkbox."""
+            def toggle(checked, current_selection):
+                current_selection = current_selection or []
+                if checked:
+                    return category_datasets  # Select all
+                else:
+                    # Only clear if all were selected (user explicitly deselected)
+                    # If partial selection, this is from sync - keep current
+                    if len(current_selection) == len(category_datasets):
+                        return []
+                    return current_selection
+            return toggle
         
-        def toggle_cat1(checked, current):
-            current = current or []
-            if checked:
-                return cat1_ds
-            else:
-                if len(current) == len(cat1_ds):
-                    return []
-                return current
-        
-        def toggle_cat2(checked, current):
-            current = current or []
-            if checked:
-                return cat2_ds
-            else:
-                if len(current) == len(cat2_ds):
-                    return []
-                return current
-        
-        def toggle_cat3(checked, current):
-            current = current or []
-            if checked:
-                return cat3_ds
-            else:
-                if len(current) == len(cat3_ds):
-                    return []
-                return current
-        
-        def toggle_cat4(checked, current):
-            current = current or []
-            if checked:
-                return cat4_ds
-            else:
-                if len(current) == len(cat4_ds):
-                    return []
-                return current
-        
-        cat0_select.change(toggle_cat0, inputs=[cat0_select, cb0], outputs=[cb0])
-        cat1_select.change(toggle_cat1, inputs=[cat1_select, cb1], outputs=[cb1])
-        cat2_select.change(toggle_cat2, inputs=[cat2_select, cb2], outputs=[cb2])
-        cat3_select.change(toggle_cat3, inputs=[cat3_select, cb3], outputs=[cb3])
-        cat4_select.change(toggle_cat4, inputs=[cat4_select, cb4], outputs=[cb4])
+        # Wire category toggles using helper function
+        for i, (cat_select, cb, cat_ds) in enumerate(zip(all_cat_selects, all_cbs, all_cat_datasets)):
+            cat_select.change(make_category_toggle(cat_ds), inputs=[cat_select, cb], outputs=[cb])
         
         # Sync category checkbox when individual items change
-        cb0.change(lambda s: len(s) == len(cat0_ds) and len(cat0_ds) > 0, inputs=[cb0], outputs=[cat0_select])
-        cb1.change(lambda s: len(s) == len(cat1_ds) and len(cat1_ds) > 0, inputs=[cb1], outputs=[cat1_select])
-        cb2.change(lambda s: len(s) == len(cat2_ds) and len(cat2_ds) > 0, inputs=[cb2], outputs=[cat2_select])
-        cb3.change(lambda s: len(s) == len(cat3_ds) and len(cat3_ds) > 0, inputs=[cb3], outputs=[cat3_select])
-        cb4.change(lambda s: len(s) == len(cat4_ds) and len(cat4_ds) > 0, inputs=[cb4], outputs=[cat4_select])
+        def make_sync_handler(cat_ds):
+            """Create a sync handler that checks if all items are selected."""
+            def sync(selected):
+                return len(selected) == len(cat_ds) and len(cat_ds) > 0
+            return sync
+        
+        for cb, cat_select, cat_ds in zip(all_cbs, all_cat_selects, all_cat_datasets):
+            cb.change(make_sync_handler(cat_ds), inputs=[cb], outputs=[cat_select])
         
         # ============================================================
         # Slider change handlers - update filter_config_state and samples_summary
@@ -411,8 +352,10 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
         # Edit Handlers (rename + category)
         # ============================================================
         
-        def show_edit(v0, v1, v2, v3, v4):
-            all_selected = (v0 or []) + (v1 or []) + (v2 or []) + (v3 or []) + (v4 or [])
+        def show_edit(*args):
+            all_selected = []
+            for v in args:
+                all_selected.extend(v or [])
             if len(all_selected) != 1:
                 gr.Warning("Select exactly one dataset to edit")
                 return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None
@@ -481,7 +424,7 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
             new_cats = list(new_grouped.keys())
             
             results = []
-            for i in range(5):
+            for i in range(MAX_CATEGORIES):
                 if i < len(new_cats):
                     cat = new_cats[i]
                     ds = new_grouped[cat]
@@ -503,6 +446,13 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
             
             return results
         
+        # Build refresh outputs list dynamically
+        refresh_outputs = []
+        for cat_select, cb in zip(all_cat_selects, all_cbs):
+            refresh_outputs.append(cat_select)
+            refresh_outputs.append(cb)
+        refresh_outputs.extend([empty_panel, overview_panel, edit_panel, merge_panel, delete_panel, actions_row, selection_summary])
+        
         edit_btn.click(
             show_edit, inputs=all_cbs,
             outputs=[empty_panel, overview_panel, edit_panel, merge_panel, edit_name_input, edit_category_dropdown, edit_target]
@@ -510,10 +460,7 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
         
         edit_save_btn.click(do_edit, inputs=[edit_target, edit_name_input, edit_category_dropdown]).then(
             refresh_after_action,
-            outputs=[
-                cat0_select, cb0, cat1_select, cb1, cat2_select, cb2, cat3_select, cb3, cat4_select, cb4,
-                empty_panel, overview_panel, edit_panel, merge_panel, delete_panel, actions_row, selection_summary
-            ]
+            outputs=refresh_outputs
         )
         
         edit_cancel_btn.click(cancel_edit, outputs=[edit_panel, overview_panel])
@@ -522,8 +469,10 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
         # Merge Handlers
         # ============================================================
         
-        def show_merge(v0, v1, v2, v3, v4):
-            all_selected = (v0 or []) + (v1 or []) + (v2 or []) + (v3 or []) + (v4 or [])
+        def show_merge(*args):
+            all_selected = []
+            for v in args:
+                all_selected.extend(v or [])
             if len(all_selected) < 2:
                 gr.Warning("Select at least 2 datasets to merge")
                 return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
@@ -538,8 +487,12 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
                 info
             )
         
-        def do_merge(v0, v1, v2, v3, v4, new_name):
-            all_selected = (v0 or []) + (v1 or []) + (v2 or []) + (v3 or []) + (v4 or [])
+        def do_merge(*args):
+            # Last arg is new_name, rest are checkbox values
+            new_name = args[-1]
+            all_selected = []
+            for v in args[:-1]:
+                all_selected.extend(v or [])
             merge_datasets(all_selected, new_name)
             gr.Info(f"Created merged dataset: {new_name}")
         
@@ -553,10 +506,7 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
         
         merge_save_btn.click(do_merge, inputs=[*all_cbs, merge_name_input]).then(
             refresh_after_action,
-            outputs=[
-                cat0_select, cb0, cat1_select, cb1, cat2_select, cb2, cat3_select, cb3, cat4_select, cb4,
-                empty_panel, overview_panel, edit_panel, merge_panel, delete_panel, actions_row, selection_summary
-            ]
+            outputs=refresh_outputs
         )
         
         merge_cancel_btn.click(cancel_merge, outputs=[merge_panel, overview_panel])
@@ -565,8 +515,10 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
         # Delete Handlers
         # ============================================================
         
-        def show_delete(v0, v1, v2, v3, v4):
-            all_selected = (v0 or []) + (v1 or []) + (v2 or []) + (v3 or []) + (v4 or [])
+        def show_delete(*args):
+            all_selected = []
+            for v in args:
+                all_selected.extend(v or [])
             if not all_selected:
                 gr.Warning("Select at least one dataset to delete")
                 return gr.update(), gr.update(), gr.update(), None
@@ -599,10 +551,7 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
         
         delete_confirm_btn.click(do_delete, inputs=[delete_target]).then(
             refresh_after_action,
-            outputs=[
-                cat0_select, cb0, cat1_select, cb1, cat2_select, cb2, cat3_select, cb3, cat4_select, cb4,
-                empty_panel, overview_panel, edit_panel, merge_panel, delete_panel, actions_row, selection_summary
-            ]
+            outputs=refresh_outputs
         )
         
         delete_cancel_btn.click(cancel_delete_fn, outputs=[delete_panel, overview_panel])
@@ -610,10 +559,7 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
         # Refresh datasets button
         refresh_datasets_btn.click(
             refresh_after_action,
-            outputs=[
-                cat0_select, cb0, cat1_select, cb1, cat2_select, cb2, cat3_select, cb3, cat4_select, cb4,
-                empty_panel, overview_panel, edit_panel, merge_panel, delete_panel, actions_row, selection_summary
-            ]
+            outputs=refresh_outputs
         )
 
         # ============================================================

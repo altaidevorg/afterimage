@@ -88,7 +88,7 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
                 next_btn_2 = gr.Button("Next", variant="primary")
 
         # --- STEP 3: TOOL SELECTION (Static category-based) ---
-        MAX_CATEGORIES = 5
+        MAX_CATEGORIES = 10
         
         with gr.Group(visible=False) as step_3_group:
             gr.Markdown("### 3. Select Tools")
