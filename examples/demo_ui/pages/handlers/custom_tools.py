@@ -297,5 +297,5 @@ def save_tool_from_code(code: str, category: str = "Uncategorized"):
     parsed.category = category or "Uncategorized"
     
     db = get_tools_db()
-    db.save_tool(parsed, category=category or "Uncategorized")
-    gr.Info(f"Saved tool '{parsed.definition.name}' in category '{category}'")
+    db.save_tool(parsed)
+    gr.Info(f"Saved tool '{parsed.definition.name}' in category '{parsed.category}'")

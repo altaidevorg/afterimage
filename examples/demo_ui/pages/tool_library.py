@@ -452,7 +452,7 @@ def create_tool_library_page():
             
             parsed = ParsedFunction(definition=func_def, source_code="", category=category)
             
-            db.save_tool(parsed, category=category)
+            db.save_tool(parsed)
             gr.Info(f"Saved tool '{name}' in category '{category}'")
         
         def after_save():

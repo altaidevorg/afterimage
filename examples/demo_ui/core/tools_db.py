@@ -147,25 +147,25 @@ class ToolsDatabase:
                         ),
                         source_code=source_code,
                         category=category
-                    ),
-                    category=category
+                    )
                 )
                 
             except Exception as e:
                 print(f"Failed to seed tool {tool_cls}: {e}")
 
-    def save_tool(self, parsed: ParsedFunction, category: str = "Uncategorized") -> bool:
+    def save_tool(self, parsed: ParsedFunction) -> bool:
         """
         Save a parsed function to the database.
+        Uses parsed.category for category assignment.
         
         Args:
-            parsed: ParsedFunction containing FunctionDefinition and source code
-            category: Category name for grouping tools
+            parsed: ParsedFunction containing FunctionDefinition, source code, and category
             
         Returns:
             True if saved successfully, False if error occurred
         """
         try:
+            category = parsed.category or "Uncategorized"
             with self._get_connection() as conn:
                 conn.execute(
                     """
@@ -179,7 +179,7 @@ class ToolsDatabase:
                         json.dumps(parsed.definition.parameters),
                         json.dumps(parsed.definition.required),
                         parsed.source_code,
-                        category or "Uncategorized",
+                        category,
                         datetime.now().isoformat(),
                     ),
                 )
