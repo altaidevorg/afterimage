@@ -60,6 +60,104 @@ def _list_datasets():
     return choices, table_rows
 
 
+def _get_dataset_category(path: str) -> str:
+    """Get category from dataset metadata file."""
+    meta_path = path.replace(".jsonl", ".meta.json")
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            return meta.get("category", "Uncategorized")
+        except (json.JSONDecodeError, FileNotFoundError):
+            pass
+    return "Uncategorized"
+
+
+def get_datasets_by_category() -> dict[str, List[str]]:
+    """
+    Get all datasets grouped by category.
+    
+    Returns:
+        Dictionary mapping category names to lists of dataset choice labels
+    """
+    datasets_dir = get_datasets_dir()
+    jsonl_files = glob(os.path.join(datasets_dir, "*.jsonl"))
+    jsonl_files.sort(key=os.path.getmtime, reverse=True)
+    
+    grouped: dict[str, List[str]] = {}
+    
+    for path in jsonl_files:
+        basename = os.path.basename(path)
+        size_kb = os.path.getsize(path) / 1024
+        choice_label = f"{basename} ({size_kb:.1f} KB)"
+        
+        category = _get_dataset_category(path)
+        if category not in grouped:
+            grouped[category] = []
+        grouped[category].append(choice_label)
+    
+    # Sort categories with "Uncategorized" at the end
+    sorted_grouped = {}
+    for cat in sorted(grouped.keys()):
+        if cat != "Uncategorized":
+            sorted_grouped[cat] = grouped[cat]
+    if "Uncategorized" in grouped:
+        sorted_grouped["Uncategorized"] = grouped["Uncategorized"]
+    
+    return sorted_grouped
+
+
+def get_dataset_categories() -> List[str]:
+    """Get list of all unique dataset categories."""
+    datasets_dir = get_datasets_dir()
+    jsonl_files = glob(os.path.join(datasets_dir, "*.jsonl"))
+    
+    categories = set()
+    for path in jsonl_files:
+        categories.add(_get_dataset_category(path))
+    
+    # Sort with "Uncategorized" at the end
+    result = sorted(c for c in categories if c != "Uncategorized")
+    if "Uncategorized" in categories:
+        result.append("Uncategorized")
+    
+    return result
+
+
+def update_dataset_category(path: str, category: str) -> bool:
+    """
+    Update the category of a dataset in its metadata file.
+    
+    Args:
+        path: Path to the .jsonl file
+        category: New category name
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    meta_path = path.replace(".jsonl", ".meta.json")
+    
+    try:
+        # Load existing metadata or create new
+        if os.path.exists(meta_path):
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+        else:
+            meta = {}
+        
+        # Update category
+        meta["category"] = category or "Uncategorized"
+        
+        # Save back
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2, ensure_ascii=False)
+        
+        return True
+    except Exception as e:
+        print(f"Failed to update dataset category: {e}")
+        return False
+
+
 def _choice_to_path(choice: str) -> str:
     """Convert a dataset choice label to a full file path."""
     filename = choice.split(" (")[0]
@@ -100,6 +198,7 @@ def on_dataset_select(selected_names: List[str] | None):
             {},  # filter_config_state
             gr.update(interactive=False),  # train_btn
             gr.update(interactive=False),  # train_dev_btn
+            0,  # total_samples
         )
     
     datasets_dir = get_datasets_dir()
@@ -152,7 +251,10 @@ def on_dataset_select(selected_names: List[str] | None):
             gr.update(interactive=False),
         )
 
-    # Build overview HTML dashboard - 3 Stat Cards
+    # Build tool distribution dict
+    dist_dict = dict(tools_counter) if tools_counter else {}
+    
+    # Build overview HTML dashboard - 3 Stat Cards (use metadata total_samples)
     overview = f"""
     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px;">
         <div style="background: #f1f5f9; padding: 16px; border-radius: 8px; text-align: center;">
@@ -170,9 +272,6 @@ def on_dataset_select(selected_names: List[str] | None):
     </div>
     """
     
-    # Build tool distribution dict
-    dist_dict = dict(tools_counter) if tools_counter else {}
-    
     # Add warning if metadata is missing
     if not has_meta:
         overview += """
@@ -188,6 +287,7 @@ def on_dataset_select(selected_names: List[str] | None):
         dist_dict,  # filter_config_state (initially same as max)
         gr.update(interactive=True),
         gr.update(interactive=True),
+        total_samples,  # total samples from metadata
     )
 
 
@@ -442,6 +542,7 @@ def merge_datasets(selected: List[str] | None, new_name: str):
     # Create merged metadata file
     merged_meta = {
         "total_samples": total_samples,
+        "category": "Uncategorized",  # Merged datasets default to Uncategorized
         "tool_distribution": dict(merged_tool_dist),
         "tools_used": sorted(merged_tools_used),
         "source_datasets": [os.path.basename(p) for p in source_files],

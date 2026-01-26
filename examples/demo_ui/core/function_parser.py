@@ -160,6 +160,7 @@ class ParsedFunction:
     """Container for parsed function with source code."""
     definition: FunctionDefinition
     source_code: str
+    category: str = "Uncategorized"
 
 
 def function_to_openai_schema(func_def: FunctionDefinition) -> dict:

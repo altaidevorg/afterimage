@@ -53,17 +53,39 @@ class ToolsDatabase:
                     parameters TEXT,
                     required TEXT,
                     source_code TEXT,
+                    category TEXT DEFAULT 'Uncategorized',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             conn.commit()
+            
+            # Migration: Add category column if it doesn't exist (for existing databases)
+            self._migrate_add_category(conn)
     
+    def _migrate_add_category(self, conn: sqlite3.Connection):
+        """Add category column to existing databases that don't have it."""
+        cursor = conn.execute("PRAGMA table_info(custom_tools)")
+        columns = [row[1] for row in cursor.fetchall()]
+        
+        if "category" not in columns:
+            conn.execute("ALTER TABLE custom_tools ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
+            conn.commit()
     
     def seed_builtin_tools(self):
         """Seed the database with built-in tools from schemas.py."""
         # Import here to avoid circular dependencies
         from schemas import AVAILABLE_TOOLS
         import inspect
+        
+        # Built-in tool category mapping
+        BUILTIN_CATEGORIES = {
+            "turn_on_light": "Smart Home",
+            "turn_off_light": "Smart Home",
+            "set_thermostat": "Smart Home",
+            "play_music": "Smart Home",
+            "lock_door": "Smart Home",
+            "check_weather": "Smart Home",
+        }
         
         print("Seeding built-in tools...")
         for tool_cls in AVAILABLE_TOOLS:
@@ -110,27 +132,35 @@ class ToolsDatabase:
                 except (OSError, TypeError):
                     source_code = f"# Source code not available for {name}"
 
-                # Save to DB
-                print(f"Adding new built-in tool: {name}")
-                self.save_tool(ParsedFunction(
-                    definition=FunctionDefinition(
-                        name=name,
-                        description=description,
-                        parameters=clean_params,
-                        required=required
+                # Determine category for built-in tool
+                category = BUILTIN_CATEGORIES.get(name, "Uncategorized")
+
+                # Save to DB with category
+                print(f"Adding new built-in tool: {name} (category: {category})")
+                self.save_tool(
+                    ParsedFunction(
+                        definition=FunctionDefinition(
+                            name=name,
+                            description=description,
+                            parameters=clean_params,
+                            required=required
+                        ),
+                        source_code=source_code,
+                        category=category
                     ),
-                    source_code=source_code
-                ))
+                    category=category
+                )
                 
             except Exception as e:
                 print(f"Failed to seed tool {tool_cls}: {e}")
 
-    def save_tool(self, parsed: ParsedFunction) -> bool:
+    def save_tool(self, parsed: ParsedFunction, category: str = "Uncategorized") -> bool:
         """
         Save a parsed function to the database.
         
         Args:
             parsed: ParsedFunction containing FunctionDefinition and source code
+            category: Category name for grouping tools
             
         Returns:
             True if saved successfully, False if error occurred
@@ -140,8 +170,8 @@ class ToolsDatabase:
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO custom_tools 
-                    (name, description, parameters, required, source_code, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (name, description, parameters, required, source_code, category, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         parsed.definition.name,
@@ -149,6 +179,7 @@ class ToolsDatabase:
                         json.dumps(parsed.definition.parameters),
                         json.dumps(parsed.definition.required),
                         parsed.source_code,
+                        category or "Uncategorized",
                         datetime.now().isoformat(),
                     ),
                 )
@@ -163,11 +194,11 @@ class ToolsDatabase:
         Get all tool definitions from the database.
         
         Returns:
-            List of ParsedFunction objects
+            List of ParsedFunction objects with category info
         """
         with self._get_connection() as conn:
             cursor = conn.execute(
-                "SELECT name, description, parameters, required, source_code FROM custom_tools ORDER BY name"
+                "SELECT name, description, parameters, required, source_code, category FROM custom_tools ORDER BY category, name"
             )
             rows = cursor.fetchall()
         
@@ -182,6 +213,7 @@ class ToolsDatabase:
             results.append(ParsedFunction(
                 definition=func_def,
                 source_code=row["source_code"] or "",
+                category=row["category"] or "Uncategorized",
             ))
         return results
     
@@ -197,7 +229,7 @@ class ToolsDatabase:
         """
         with self._get_connection() as conn:
             cursor = conn.execute(
-                "SELECT name, description, parameters, required, source_code FROM custom_tools WHERE name = ?",
+                "SELECT name, description, parameters, required, source_code, category FROM custom_tools WHERE name = ?",
                 (name,),
             )
             row = cursor.fetchone()
@@ -214,6 +246,7 @@ class ToolsDatabase:
         return ParsedFunction(
             definition=func_def,
             source_code=row["source_code"] or "",
+            category=row["category"] or "Uncategorized",
         )
     
     def delete_tool(self, name: str) -> bool:
@@ -261,6 +294,68 @@ class ToolsDatabase:
         with self._get_connection() as conn:
             cursor = conn.execute("SELECT name FROM custom_tools ORDER BY name")
             return [row["name"] for row in cursor.fetchall()]
+    
+    def get_categories(self) -> List[str]:
+        """
+        Get list of all unique categories.
+        
+        Returns:
+            List of category names, sorted alphabetically
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT DISTINCT category FROM custom_tools WHERE category IS NOT NULL ORDER BY category"
+            )
+            return [row["category"] for row in cursor.fetchall()]
+    
+    def get_tools_by_category(self) -> dict[str, List[ParsedFunction]]:
+        """
+        Get all tools grouped by category.
+        
+        Returns:
+            Dictionary mapping category names to lists of ParsedFunction objects
+        """
+        tools = self.get_all_tools()
+        grouped: dict[str, List[ParsedFunction]] = {}
+        
+        for tool in tools:
+            category = tool.category or "Uncategorized"
+            if category not in grouped:
+                grouped[category] = []
+            grouped[category].append(tool)
+        
+        # Sort categories with "Uncategorized" at the end
+        sorted_grouped = {}
+        for cat in sorted(grouped.keys()):
+            if cat != "Uncategorized":
+                sorted_grouped[cat] = grouped[cat]
+        if "Uncategorized" in grouped:
+            sorted_grouped["Uncategorized"] = grouped["Uncategorized"]
+        
+        return sorted_grouped
+    
+    def update_tool_category(self, name: str, category: str) -> bool:
+        """
+        Update the category of an existing tool.
+        
+        Args:
+            name: Tool name
+            category: New category name
+            
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    "UPDATE custom_tools SET category = ? WHERE name = ?",
+                    (category or "Uncategorized", name),
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            print(f"Database error: {e}")
+            return False
     
     def clear_all(self) -> int:
         """
