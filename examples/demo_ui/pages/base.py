@@ -173,8 +173,17 @@ CUSTOM_CSS = """
 
 /* Dataset List - Scrollable */
 #dataset-list-scroll {
-    max-height: 350px !important;
-    overflow-y: auto !important;
+    max-height: 450px !important;
+    overflow-y: scroll !important;
+    overflow-x: hidden !important;
+    padding-right: 8px !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 8px !important;
+    padding: 12px !important;
+}
+#dataset-list-scroll > div {
+    max-height: none !important;
+    overflow: visible !important;
 }
 #dataset-list-scroll .wrap {
     gap: 6px !important;

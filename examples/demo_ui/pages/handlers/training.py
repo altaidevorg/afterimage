@@ -254,7 +254,7 @@ def on_dataset_select(selected_names: List[str] | None):
     # Build tool distribution dict
     dist_dict = dict(tools_counter) if tools_counter else {}
     
-    # Build overview HTML dashboard - 3 Stat Cards (use metadata total_samples)
+    # Build overview HTML dashboard - 3 Stat Cards (total_samples from metadata)
     overview = f"""
     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px;">
         <div style="background: #f1f5f9; padding: 16px; border-radius: 8px; text-align: center;">
