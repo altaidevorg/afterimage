@@ -45,7 +45,9 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
             
             with gr.Row():
                 with gr.Column(scale=1, elem_id="dataset-library-col"):
-                    gr.Markdown("### Dataset Library")
+                    with gr.Row():
+                        gr.Markdown("### Dataset Library")
+                        refresh_datasets_btn = gr.Button("↻", size="sm", scale=0, min_width=40)
                     
                     with gr.Column(elem_id="dataset-list-scroll"):
                         # Category 0
@@ -604,6 +606,15 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
         )
         
         delete_cancel_btn.click(cancel_delete_fn, outputs=[delete_panel, overview_panel])
+        
+        # Refresh datasets button
+        refresh_datasets_btn.click(
+            refresh_after_action,
+            outputs=[
+                cat0_select, cb0, cat1_select, cb1, cat2_select, cb2, cat3_select, cb3, cat4_select, cb4,
+                empty_panel, overview_panel, edit_panel, merge_panel, delete_panel, actions_row, selection_summary
+            ]
+        )
 
         # ============================================================
         # Training

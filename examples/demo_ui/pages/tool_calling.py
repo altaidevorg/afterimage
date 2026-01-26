@@ -63,113 +63,59 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
                 value=TOOL_CALLING_RESPONDENT_PROMPT,
                 lines=6,
             )
-            num_samples = gr.Slider(
-                minimum=1,
-                maximum=50,
-                value=5,
-                step=1,
-                label="Number of Samples",
-            )
+            with gr.Row():
+                num_samples = gr.Slider(
+                    minimum=1,
+                    maximum=50,
+                    value=5,
+                    step=1,
+                    label="Number of Samples",
+                )
+                # Get existing categories for dropdown
+                from pages.handlers.training import get_dataset_categories
+                existing_cats = get_dataset_categories()
+                if "Uncategorized" not in existing_cats:
+                    existing_cats.append("Uncategorized")
+                dataset_category = gr.Dropdown(
+                    label="Dataset Category",
+                    choices=existing_cats,
+                    value="Uncategorized",
+                    allow_custom_value=True,
+                    info="Select or type new category"
+                )
             with gr.Row():
                 back_btn_2 = gr.Button("Back", variant="secondary")
                 next_btn_2 = gr.Button("Next", variant="primary")
 
-        # --- STEP 3: TOOL SELECTION (Category-based) ---
+        # --- STEP 3: TOOL SELECTION (Static category-based) ---
+        MAX_CATEGORIES = 5
+        
         with gr.Group(visible=False) as step_3_group:
             gr.Markdown("### 3. Select Tools")
             gr.Markdown("Select tools to include in generation. Click category headers to select/deselect all tools in that category.")
             
-            # Dynamic category-based tool selection
-            @gr.render(inputs=[tools_by_category_state, selected_tools_state])
-            def render_tool_selection(grouped, selected):
-                if not grouped:
-                    gr.HTML("""
-                    <div style="text-align: center; padding: 40px; color: #94a3b8;">
-                        No tools found. Add tools in the Tool Library first.
-                    </div>
-                    """)
-                    return
-                
-                selected_set = set(selected) if selected else set()
-                
-                for category, tools in grouped.items():
-                    tool_names = [t.definition.name for t in tools]
-                    selected_in_category = [t for t in tool_names if t in selected_set]
-                    total_in_category = len(tool_names)
-                    selected_count = len(selected_in_category)
-                    
-                    # Determine checkbox state
-                    all_selected = selected_count == total_in_category
-                    partial = 0 < selected_count < total_in_category
-                    
-                    # Label with count
-                    if partial:
-                        label = f"{category} ({selected_count}/{total_in_category} selected)"
-                        elem_classes = ["category-header", "category-partial"]
-                    elif all_selected:
-                        label = f"{category} ({total_in_category}/{total_in_category}) ✓"
-                        elem_classes = ["category-header", "category-all"]
+            # Pre-load categories
+            db = get_tools_db()
+            initial_grouped = db.get_tools_by_category()
+            cat_names = list(initial_grouped.keys())
+            
+            # Static category slots
+            cat_checkboxes = []
+            tool_cbgroups = []
+            
+            with gr.Column(elem_id="tool-selection-scroll"):
+                for i in range(MAX_CATEGORIES):
+                    if i < len(cat_names):
+                        cat = cat_names[i]
+                        tools = initial_grouped[cat]
+                        tool_names = [t.definition.name for t in tools]
+                        cat_cb = gr.Checkbox(label=f"{cat} ({len(tools)})", value=True)
+                        tool_cbg = gr.CheckboxGroup(choices=tool_names, value=tool_names, label=None, show_label=False)
                     else:
-                        label = f"{category} (0/{total_in_category})"
-                        elem_classes = ["category-header"]
-                    
-                    with gr.Group():
-                        # Category header with select all checkbox
-                        cat_checkbox = gr.Checkbox(
-                            label=label,
-                            value=all_selected,
-                            elem_classes=elem_classes,
-                        )
-                        
-                        # Individual tool checkboxes
-                        with gr.Column(elem_classes=["category-tools"]):
-                            for tool in tools:
-                                name = tool.definition.name
-                                is_selected = name in selected_set
-                                
-                                tool_cb = gr.Checkbox(
-                                    label=name,
-                                    value=is_selected,
-                                    elem_classes=["tool-checkbox"],
-                                )
-                                
-                                # Handler for individual tool selection
-                                def make_tool_handler(tool_name):
-                                    def handler(checked, current_selected):
-                                        new_selected = list(current_selected) if current_selected else []
-                                        if checked and tool_name not in new_selected:
-                                            new_selected.append(tool_name)
-                                        elif not checked and tool_name in new_selected:
-                                            new_selected.remove(tool_name)
-                                        return new_selected
-                                    return handler
-                                
-                                tool_cb.change(
-                                    fn=make_tool_handler(name),
-                                    inputs=[tool_cb, selected_tools_state],
-                                    outputs=[selected_tools_state],
-                                )
-                        
-                        # Handler for category select all
-                        def make_category_handler(cat_tool_names):
-                            def handler(checked, current_selected):
-                                new_selected = list(current_selected) if current_selected else []
-                                if checked:
-                                    # Add all tools from this category
-                                    for t in cat_tool_names:
-                                        if t not in new_selected:
-                                            new_selected.append(t)
-                                else:
-                                    # Remove all tools from this category
-                                    new_selected = [t for t in new_selected if t not in cat_tool_names]
-                                return new_selected
-                            return handler
-                        
-                        cat_checkbox.change(
-                            fn=make_category_handler(tool_names),
-                            inputs=[cat_checkbox, selected_tools_state],
-                            outputs=[selected_tools_state],
-                        )
+                        cat_cb = gr.Checkbox(visible=False, value=False)
+                        tool_cbg = gr.CheckboxGroup(choices=[], value=[], visible=False)
+                    cat_checkboxes.append(cat_cb)
+                    tool_cbgroups.append(tool_cbg)
             
             with gr.Row():
                 refresh_tools_btn = gr.Button("Refresh Library", variant="secondary", size="sm")
@@ -287,22 +233,64 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
             """Load tools from database grouped by category."""
             db = get_tools_db()
             grouped = db.get_tools_by_category()
-            # Also return all tool names as initial selection
+            cats = list(grouped.keys())
+            
+            results = []
             all_tools = []
-            for tools in grouped.values():
-                all_tools.extend([t.definition.name for t in tools])
-            return grouped, all_tools
+            
+            for i in range(MAX_CATEGORIES):
+                if i < len(cats):
+                    cat = cats[i]
+                    tools = grouped[cat]
+                    tool_names = [t.definition.name for t in tools]
+                    all_tools.extend(tool_names)
+                    results.append(gr.update(label=f"{cat} ({len(tools)})", value=True, visible=True))
+                    results.append(gr.update(choices=tool_names, value=tool_names, visible=True))
+                else:
+                    results.append(gr.update(visible=False, value=False))
+                    results.append(gr.update(choices=[], value=[], visible=False))
+            
+            results.append(grouped)  # tools_by_category_state
+            results.append(all_tools)  # selected_tools_state
+            return results
         
         def select_all_tools(grouped):
             """Select all tools."""
+            cats = list(grouped.keys()) if grouped else []
+            results = []
             all_tools = []
-            for tools in grouped.values():
-                all_tools.extend([t.definition.name for t in tools])
-            return all_tools
+            
+            for i in range(MAX_CATEGORIES):
+                if i < len(cats):
+                    cat = cats[i]
+                    tools = grouped[cat]
+                    tool_names = [t.definition.name for t in tools]
+                    all_tools.extend(tool_names)
+                    results.append(True)  # cat checkbox
+                    results.append(tool_names)  # tool cbgroup value
+                else:
+                    results.append(gr.update())
+                    results.append(gr.update())
+            
+            results.append(all_tools)  # selected_tools_state
+            return results
         
         def deselect_all_tools():
             """Deselect all tools."""
-            return []
+            results = []
+            for i in range(MAX_CATEGORIES):
+                results.append(False)  # cat checkbox
+                results.append([])  # tool cbgroup value
+            results.append([])  # selected_tools_state
+            return results
+        
+        def update_selected_tools(*args):
+            """Collect all selected tools from all cbgroups."""
+            all_selected = []
+            for val in args:
+                if val:
+                    all_selected.extend(val)
+            return all_selected
         
         def on_generate_complete(status_text, train_enabled):
             if train_enabled and status_text and "Complete" in status_text:
@@ -341,26 +329,63 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
             
             return gr.update(value="Training complete. Click to download.", visible=True), gr.update(visible=True, value=None, label=label, interactive=True)
         
-        # Wire Tool Loading
-        refresh_tools_btn.click(
-            fn=load_tools_grouped, 
-            outputs=[tools_by_category_state, selected_tools_state]
-        )
-        page.load(
-            fn=load_tools_grouped, 
-            outputs=[tools_by_category_state, selected_tools_state]
-        )
+        # Flatten lists for outputs
+        refresh_outputs = []
+        for i in range(MAX_CATEGORIES):
+            refresh_outputs.append(cat_checkboxes[i])
+            refresh_outputs.append(tool_cbgroups[i])
+        refresh_outputs.extend([tools_by_category_state, selected_tools_state])
         
-        # Select/Deselect All
+        # Wire Tool Loading
+        refresh_tools_btn.click(fn=load_tools_grouped, outputs=refresh_outputs)
+        page.load(fn=load_tools_grouped, outputs=refresh_outputs)
+        
+        # Select/Deselect All outputs
+        select_deselect_outputs = []
+        for i in range(MAX_CATEGORIES):
+            select_deselect_outputs.append(cat_checkboxes[i])
+            select_deselect_outputs.append(tool_cbgroups[i])
+        select_deselect_outputs.append(selected_tools_state)
+        
         select_all_btn.click(
             fn=select_all_tools,
             inputs=[tools_by_category_state],
-            outputs=[selected_tools_state],
+            outputs=select_deselect_outputs,
         )
         deselect_all_btn.click(
             fn=deselect_all_tools,
-            outputs=[selected_tools_state],
+            outputs=select_deselect_outputs,
         )
+        
+        # Wire individual tool selection changes to update selected_tools_state
+        for cbg in tool_cbgroups:
+            cbg.change(
+                fn=update_selected_tools,
+                inputs=tool_cbgroups,
+                outputs=[selected_tools_state],
+            )
+        
+        # Wire category checkboxes to select/deselect all tools in category
+        def make_cat_toggle(idx):
+            def toggle(checked, grouped):
+                cats = list(grouped.keys()) if grouped else []
+                if idx >= len(cats):
+                    return gr.update()
+                cat = cats[idx]
+                tools = grouped[cat]
+                tool_names = [t.definition.name for t in tools]
+                if checked:
+                    return tool_names
+                else:
+                    return []
+            return toggle
+        
+        for i, cat_cb in enumerate(cat_checkboxes):
+            cat_cb.change(
+                fn=make_cat_toggle(i),
+                inputs=[cat_cb, tools_by_category_state],
+                outputs=[tool_cbgroups[i]],
+            )
         
         # Wire Generation (uses selected_tools_state instead of tools_checkbox)
         generate_output = generate_btn.click(
@@ -373,6 +398,7 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
                 context_ui["file"],
                 context_ui["key"],
                 selected_tools_state,  # Use state instead of checkbox
+                dataset_category,  # Category for saving dataset
             ],
             outputs=[results_output, status_output, download_output],
         )
