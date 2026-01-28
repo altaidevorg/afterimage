@@ -277,7 +277,7 @@ def parse_function_code(code: str):
     }
 
 
-def save_tool_from_code(code: str):
+def save_tool_from_code(code: str, category: str = "Uncategorized"):
     """Parse and save tool from Python code (used by tool library)."""
     if not code or not code.strip():
         raise gr.Error("Please enter some code to parse.")
@@ -293,6 +293,9 @@ def save_tool_from_code(code: str):
     except Exception as e:
         raise gr.Error(f"Unexpected Error: {str(e)}")
     
+    # Set category on parsed function
+    parsed.category = category or "Uncategorized"
+    
     db = get_tools_db()
     db.save_tool(parsed)
-    gr.Info(f"Saved tool '{parsed.definition.name}'")
+    gr.Info(f"Saved tool '{parsed.definition.name}' in category '{parsed.category}'")

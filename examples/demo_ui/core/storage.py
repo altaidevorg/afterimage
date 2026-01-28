@@ -22,11 +22,17 @@ from afterimage.types import (
 class CaptureStorage(BaseStorage):
     """Storage that captures items in-memory for UI and writes to datasets folder."""
 
-    def __init__(self, dataset_name: str | None = None, tools_used: List[str] | None = None):
+    def __init__(
+        self, 
+        dataset_name: str | None = None, 
+        tools_used: List[str] | None = None,
+        category: str | None = None
+    ):
         from .config import get_datasets_dir
         
         self.captured_items: list[StructuredGenerationRow] = []
         self.tools_used = tools_used or []
+        self.category = category or "Uncategorized"
         
         # Generate filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -80,6 +86,7 @@ class CaptureStorage(BaseStorage):
         
         metadata = {
             "name": self.dataset_name,
+            "category": self.category,
             "created_at": datetime.now().isoformat(),
             "total_samples": len(self.captured_items),
             "tools_used": self.tools_used,

@@ -173,8 +173,17 @@ CUSTOM_CSS = """
 
 /* Dataset List - Scrollable */
 #dataset-list-scroll {
-    max-height: 350px !important;
-    overflow-y: auto !important;
+    max-height: 450px !important;
+    overflow-y: scroll !important;
+    overflow-x: hidden !important;
+    padding-right: 8px !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 8px !important;
+    padding: 12px !important;
+}
+#dataset-list-scroll > div {
+    max-height: none !important;
+    overflow: visible !important;
 }
 #dataset-list-scroll .wrap {
     gap: 6px !important;
@@ -346,5 +355,153 @@ CUSTOM_CSS = """
     background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
     color: white !important;
     border-color: #1d4ed8 !important;
+}
+
+/* ============================================
+   Category-based Selection Styles
+   ============================================ */
+
+/* Category Header Checkbox */
+.category-header {
+    font-weight: 600 !important;
+    font-size: 14px !important;
+    padding: 10px 12px !important;
+    background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%) !important;
+    border-radius: 8px !important;
+    margin-bottom: 4px !important;
+    border: 1px solid #cbd5e1 !important;
+}
+.category-header label {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+.category-header:hover {
+    background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%) !important;
+}
+
+/* Category Partial Selection (Indeterminate) State */
+.category-partial {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%) !important;
+    border-color: #f59e0b !important;
+}
+.category-partial label span {
+    font-style: italic !important;
+    color: #92400e !important;
+}
+.category-partial input[type="checkbox"] {
+    opacity: 0.7 !important;
+    background: linear-gradient(90deg, #f59e0b 50%, transparent 50%) !important;
+}
+
+/* Category All Selected State */
+.category-all {
+    background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%) !important;
+    border-color: #22c55e !important;
+}
+.category-all label span {
+    color: #166534 !important;
+}
+
+/* Tool/Dataset Checkboxes within Categories */
+.category-tools,
+.category-items {
+    padding-left: 16px !important;
+    margin-left: 8px !important;
+    border-left: 2px solid #e2e8f0 !important;
+    margin-bottom: 8px !important;
+}
+.tool-checkbox,
+.dataset-checkbox {
+    padding: 6px 10px !important;
+    margin: 2px 0 !important;
+    border-radius: 6px !important;
+    transition: background 0.15s ease !important;
+}
+.tool-checkbox:hover,
+.dataset-checkbox:hover {
+    background: #f8fafc !important;
+}
+.tool-checkbox label,
+.dataset-checkbox label {
+    font-size: 13px !important;
+    color: #334155 !important;
+}
+
+/* Tool List Item Buttons */
+.tool-list-item {
+    width: 100% !important;
+    text-align: left !important;
+    justify-content: flex-start !important;
+    padding: 10px 14px !important;
+    font-size: 13px !important;
+    border-radius: 6px !important;
+    margin: 2px 0 !important;
+}
+.tool-list-item.selected {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
+    color: white !important;
+}
+
+/* Accordion styling for categories */
+.gradio-accordion {
+    margin-bottom: 8px !important;
+    border-radius: 10px !important;
+    border: 1px solid #e2e8f0 !important;
+    overflow: hidden !important;
+}
+.gradio-accordion > .label-wrap {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
+    padding: 12px 16px !important;
+    font-weight: 600 !important;
+    font-size: 14px !important;
+    color: #1e293b !important;
+}
+.gradio-accordion > .label-wrap:hover {
+    background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%) !important;
+}
+.gradio-accordion > .content {
+    padding: 8px 12px !important;
+    background: #ffffff !important;
+}
+
+/* Selection Counter Badge */
+.selection-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: #dbeafe;
+    color: #1e40af;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 8px;
+}
+.selection-badge.partial {
+    background: #fef3c7;
+    color: #92400e;
+}
+.selection-badge.all {
+    background: #dcfce7;
+    color: #166534;
+}
+
+/* Evaluation Output - Scrollable */
+.gradio-container #eval-output-scroll {
+    max-height: 500px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+}
+.gradio-container #eval-output-scroll > div {
+    max-height: none;
+    overflow: visible;
+}
+.gradio-container #eval-output-scroll textarea,
+.gradio-container #eval-output-scroll pre {
+    max-height: 480px;
+    overflow-y: auto;
 }
 """

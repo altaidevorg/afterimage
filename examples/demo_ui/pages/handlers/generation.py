@@ -60,6 +60,7 @@ async def run_generation_task(
     context_key: str = "text",
     generation_mode: GenerationMode = "Structured Generation",
     selected_tools: list | None = None,
+    dataset_category: str = "Uncategorized",
 ):
     """Main generation task that orchestrates the entire generation process."""
     api_key = get_api_key()
@@ -76,7 +77,7 @@ async def run_generation_task(
         return
 
     docs = InMemoryDocumentProvider(all_texts)
-    storage = CaptureStorage()
+    storage = CaptureStorage(category=dataset_category)
 
     try:
         # Generate personas
@@ -142,6 +143,7 @@ async def start_tool_gen(
     context_file: str | None,
     context_key: str,
     tool_names: list[str],
+    dataset_category: str = "Uncategorized",
 ):
     """Start tool calling generation with selected tools."""
     # Get the actual tool objects from selected names
@@ -150,6 +152,9 @@ async def start_tool_gen(
     if not selected_tools:
         yield pd.DataFrame(), "### Error: Please select at least one tool", None
         return
+    
+    # Default category if empty
+    category = dataset_category.strip() if dataset_category else "Uncategorized"
     
     async for update in run_generation_task(
         context_text,
@@ -160,6 +165,7 @@ async def start_tool_gen(
         context_key,
         generation_mode="Tool Calling Generation",
         selected_tools=selected_tools,
+        dataset_category=category,
     ):
         yield update
 
