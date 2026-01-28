@@ -7,7 +7,7 @@ from typing import List, Any, Tuple
 
 import gradio as gr
 
-from core.config import get_datasets_dir, MAX_CATEGORIES, MAX_TOOL_SLIDERS
+from core.config import get_datasets_dir, MAX_CATEGORIES, MAX_TOOL_SLIDERS, DEFAULT_CATEGORY
 from .handlers.training import (
     on_train_complete, generate_model_zip, on_dataset_select, set_download_loading,
     get_datasets_by_category, get_dataset_categories, update_dataset_category,
@@ -20,7 +20,7 @@ from .handlers.training import (
 # Constants
 # =============================================================================
 
-DEFAULT_CATEGORY = "Uncategorized"
+# NO_SELECTION_TEXT is kept here as it is page-specific
 NO_SELECTION_TEXT = "*No datasets selected*"
 MAX_SPLIT_TOOLS = 15  # Maximum number of tools to show in split UI
 

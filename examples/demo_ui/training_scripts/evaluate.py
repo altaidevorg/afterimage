@@ -14,6 +14,10 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_dataset
 
+# Add parent directory to path to import from core package
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from core.parsing_utils import try_parse_args, extract_balanced_braces
+
 import training_config as config
 from utils import load_tools_schema
 
@@ -45,6 +49,9 @@ def load_test_data():
     return test_data
 
 
+
+
+
 def generate_tool_calls(model, tokenizer, messages, tools):
     """Model inference - generate tool calls"""
     # Convert to Function Gemma format
@@ -70,74 +77,6 @@ def generate_tool_calls(model, tokenizer, messages, tools):
     # Parse tool calls from response
     try:
         tool_calls = []
-        
-        def extract_balanced_braces(text, start_idx):
-            """Extract content between balanced braces starting at start_idx."""
-            if start_idx >= len(text) or text[start_idx] != '{':
-                return None, start_idx
-            
-            depth = 0
-            i = start_idx
-            while i < len(text):
-                if text[i] == '{':
-                    depth += 1
-                elif text[i] == '}':
-                    depth -= 1
-                    if depth == 0:
-                        return text[start_idx:i+1], i + 1
-                i += 1
-            return None, start_idx
-        
-        def try_parse_args(args_str):
-            """Try multiple methods to parse arguments."""
-            args_str = args_str.strip()
-            
-            # Method 1: Direct JSON parse
-            try:
-                return json.loads(args_str)
-            except json.JSONDecodeError:
-                pass
-            
-            # Method 2: Handle <escape> tags (both opening and closing use <escape>)
-            # Format: {key:<escape>value<escape>,key2:None}
-            cleaned = args_str
-            # Replace <escape>...<escape> with "..."
-            cleaned = re.sub(r'<escape>([^<]*)<escape>', r'"\1"', cleaned)
-            # Also handle </escape> variant just in case
-            cleaned = cleaned.replace('</escape>', '"').replace('<escape>', '"')
-            
-            # Method 3: Convert Python None to JSON null and add quotes to keys
-            # Pattern: {key:value} -> {"key":value}
-            def pythonify(s):
-                # Add quotes around unquoted keys
-                s = re.sub(r'(\{|,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', s)
-                # Replace Python None with null
-                s = re.sub(r':None([,}])', r':null\1', s)
-                # Replace Python True/False with true/false
-                s = re.sub(r':True([,}])', r':true\1', s)
-                s = re.sub(r':False([,}])', r':false\1', s)
-                return s
-            
-            json_str = pythonify(cleaned)
-            try:
-                return json.loads(json_str)
-            except json.JSONDecodeError:
-                pass
-            
-            # Method 4: Try ast.literal_eval (handles Python dict syntax)
-            try:
-                return ast.literal_eval(cleaned)
-            except (ValueError, SyntaxError):
-                pass
-            
-            # Method 5: Fix common issues (single quotes -> double quotes)
-            try:
-                fixed = cleaned.replace("'", '"')
-                return json.loads(pythonify(fixed))
-            except json.JSONDecodeError:
-                pass
-            
-            return None
         
         # Try Function Gemma format first: <function=name>args</function>
         if "<function=" in response:
@@ -178,7 +117,7 @@ def generate_tool_calls(model, tokenizer, messages, tools):
                     brace_start += 1
                 
                 # Extract balanced braces content
-                args_str, _ = extract_balanced_braces(response, brace_start)
+                args_str = extract_balanced_braces(response, brace_start)
                 
                 if args_str:
                     arguments = try_parse_args(args_str)

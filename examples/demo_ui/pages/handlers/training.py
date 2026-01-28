@@ -30,12 +30,14 @@ def get_meta_path(jsonl_path: str) -> str:
 
 def extract_filename_from_label(label: str) -> str:
     """Extract filename from choice label like 'filename.jsonl (123 KB)'."""
-    return label.split(" (")[0] if " (" in label else label
+    filename = label.split(" (")[0] if " (" in label else label
+    return os.path.basename(filename)
 
 
 def get_dataset_path(filename: str) -> str:
     """Get full path to a dataset file."""
-    return os.path.join(get_datasets_dir(), filename)
+    # Sanitize filename to prevent path traversal
+    return os.path.join(get_datasets_dir(), os.path.basename(filename))
 
 
 # =============================================================================
@@ -90,10 +92,10 @@ def _get_dataset_category(path: str) -> str:
         try:
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
-            return meta.get("category", "Uncategorized")
+            return meta.get("category", DEFAULT_CATEGORY)
         except (json.JSONDecodeError, FileNotFoundError):
             pass
-    return "Uncategorized"
+    return DEFAULT_CATEGORY
 
 
 def get_datasets_by_category() -> dict[str, List[str]]:
@@ -119,13 +121,13 @@ def get_datasets_by_category() -> dict[str, List[str]]:
             grouped[category] = []
         grouped[category].append(choice_label)
     
-    # Sort categories with "Uncategorized" at the end
+    # Sort categories with DEFAULT_CATEGORY at the end
     sorted_grouped = {}
     for cat in sorted(grouped.keys()):
-        if cat != "Uncategorized":
+        if cat != DEFAULT_CATEGORY:
             sorted_grouped[cat] = grouped[cat]
-    if "Uncategorized" in grouped:
-        sorted_grouped["Uncategorized"] = grouped["Uncategorized"]
+    if DEFAULT_CATEGORY in grouped:
+        sorted_grouped[DEFAULT_CATEGORY] = grouped[DEFAULT_CATEGORY]
     
     return sorted_grouped
 
@@ -139,10 +141,10 @@ def get_dataset_categories() -> List[str]:
     for path in jsonl_files:
         categories.add(_get_dataset_category(path))
     
-    # Sort with "Uncategorized" at the end
-    result = sorted(c for c in categories if c != "Uncategorized")
-    if "Uncategorized" in categories:
-        result.append("Uncategorized")
+    # Sort with DEFAULT_CATEGORY at the end
+    result = sorted(c for c in categories if c != DEFAULT_CATEGORY)
+    if DEFAULT_CATEGORY in categories:
+        result.append(DEFAULT_CATEGORY)
     
     return result
 
@@ -169,7 +171,7 @@ def update_dataset_category(path: str, category: str) -> bool:
             meta = {}
         
         # Update category
-        meta["category"] = category or "Uncategorized"
+        meta["category"] = category or DEFAULT_CATEGORY
         
         # Save back
         with open(meta_path, "w", encoding="utf-8") as f:
@@ -566,7 +568,7 @@ def merge_datasets(selected: List[str] | None, new_name: str):
     # Create merged metadata file
     merged_meta = {
         "total_samples": total_samples,
-        "category": "Uncategorized",  # Merged datasets default to Uncategorized
+        "category": DEFAULT_CATEGORY,  # Merged datasets default to DEFAULT_CATEGORY
         "tool_distribution": dict(merged_tool_dist),
         "tools_used": sorted(merged_tools_used),
         "source_datasets": [os.path.basename(p) for p in source_files],
@@ -760,8 +762,7 @@ def split_dataset(
     return created_files
 
 
-# Import for split_dataset
-DEFAULT_CATEGORY = "Uncategorized"
+# Removed local DEFAULT_CATEGORY definition
 
 
 def create_analyze_handler(analyze_fn):

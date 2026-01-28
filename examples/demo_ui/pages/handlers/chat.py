@@ -7,61 +7,7 @@ import json
 import gradio as gr
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from core.config import get_training_dir
-
-
-def extract_balanced_braces(text: str, start_pos: int) -> str:
-    """Extract content within balanced braces starting at start_pos."""
-    if start_pos >= len(text) or text[start_pos] != '{':
-        return ""
-    
-    depth = 0
-    end_pos = start_pos
-    
-    for i in range(start_pos, len(text)):
-        if text[i] == '{':
-            depth += 1
-        elif text[i] == '}':
-            depth -= 1
-            if depth == 0:
-                end_pos = i
-                break
-    
-    return text[start_pos + 1:end_pos]
-
-
-def parse_tool_args(args_str: str) -> dict:
-    """Parse tool arguments from string, handling various formats."""
-    args_str = args_str.strip()
-    if not args_str:
-        return {}
-    
-    # Clean up escape tags
-    args_str = re.sub(r'<escape>([^<]*)</escape>', r'"\1"', args_str)
-    
-    # Convert Python None/True/False to JSON
-    args_str = re.sub(r'\bNone\b', 'null', args_str)
-    args_str = re.sub(r'\bTrue\b', 'true', args_str)
-    args_str = re.sub(r'\bFalse\b', 'false', args_str)
-    
-    # Quote unquoted keys (only after { or ,)
-    args_str = re.sub(r'([\{,])\s*(\w+)\s*:', r'\1"\2":', args_str)
-    
-    # Try JSON parse
-    try:
-        return json.loads("{" + args_str + "}")
-    except json.JSONDecodeError:
-        pass
-    
-    # Fallback: manual parsing
-    result = {}
-    pattern = r'"?(\w+)"?\s*:\s*(?:"([^"]*)"|(\w+))'
-    for match in re.finditer(pattern, args_str):
-        key = match.group(1)
-        value = match.group(2) if match.group(2) is not None else match.group(3)
-        if value and value.lower() not in ('null', 'none'):
-            result[key] = value
-    
-    return result
+from core.parsing_utils import extract_balanced_braces, try_parse_args
 
 
 def format_tool_calls(raw_response: str) -> str:
@@ -86,7 +32,7 @@ def format_tool_calls(raw_response: str) -> str:
         args_str = extract_balanced_braces(raw_response, brace_start)
         
         # Parse arguments
-        args = parse_tool_args(args_str)
+        args = try_parse_args(args_str)
         
         # Format non-None arguments
         formatted_args = []

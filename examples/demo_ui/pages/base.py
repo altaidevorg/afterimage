@@ -488,20 +488,20 @@ CUSTOM_CSS = """
 }
 
 /* Evaluation Output - Scrollable */
-#eval-output-scroll {
-    max-height: 500px !important;
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 8px !important;
+.gradio-container #eval-output-scroll {
+    max-height: 500px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
 }
-#eval-output-scroll > div {
-    max-height: none !important;
-    overflow: visible !important;
+.gradio-container #eval-output-scroll > div {
+    max-height: none;
+    overflow: visible;
 }
-#eval-output-scroll textarea,
-#eval-output-scroll pre {
-    max-height: 480px !important;
-    overflow-y: auto !important;
+.gradio-container #eval-output-scroll textarea,
+.gradio-container #eval-output-scroll pre {
+    max-height: 480px;
+    overflow-y: auto;
 }
 """
