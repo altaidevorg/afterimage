@@ -9,6 +9,62 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from core.config import get_training_dir
 
 
+def extract_balanced_braces(text: str, start_pos: int) -> str:
+    """Extract content within balanced braces starting at start_pos."""
+    if start_pos >= len(text) or text[start_pos] != '{':
+        return ""
+    
+    depth = 0
+    end_pos = start_pos
+    
+    for i in range(start_pos, len(text)):
+        if text[i] == '{':
+            depth += 1
+        elif text[i] == '}':
+            depth -= 1
+            if depth == 0:
+                end_pos = i
+                break
+    
+    return text[start_pos + 1:end_pos]
+
+
+def parse_tool_args(args_str: str) -> dict:
+    """Parse tool arguments from string, handling various formats."""
+    args_str = args_str.strip()
+    if not args_str:
+        return {}
+    
+    # Clean up escape tags
+    args_str = re.sub(r'<escape>([^<]*)</escape>', r'"\1"', args_str)
+    args_str = re.sub(r'<escape>([^<]*)<escape>', r'"\1"', args_str)
+    
+    # Convert Python None/True/False to JSON
+    args_str = re.sub(r'\bNone\b', 'null', args_str)
+    args_str = re.sub(r'\bTrue\b', 'true', args_str)
+    args_str = re.sub(r'\bFalse\b', 'false', args_str)
+    
+    # Quote unquoted keys
+    args_str = re.sub(r'(\w+):', r'"\1":', args_str)
+    
+    # Try JSON parse
+    try:
+        return json.loads("{" + args_str + "}")
+    except json.JSONDecodeError:
+        pass
+    
+    # Fallback: manual parsing
+    result = {}
+    pattern = r'"?(\w+)"?\s*:\s*(?:"([^"]*)"|(\w+))'
+    for match in re.finditer(pattern, args_str):
+        key = match.group(1)
+        value = match.group(2) if match.group(2) is not None else match.group(3)
+        if value and value.lower() not in ('null', 'none'):
+            result[key] = value
+    
+    return result
+
+
 def format_tool_calls(raw_response: str) -> str:
     """
     Parse raw model response and format it nicely.
@@ -21,40 +77,32 @@ def format_tool_calls(raw_response: str) -> str:
     if "<start_function_call>" in raw_response:
         text_part = raw_response.split("<start_function_call>")[0].strip()
     
-    # Extract all function calls
-    pattern = r'<start_function_call>call:(\w+)\{([^}]*)\}<end_function_call>'
-    matches = re.findall(pattern, raw_response)
-    
-    if not matches:
-        # No tool calls, return as-is
-        return raw_response
-    
-    # Parse and format each function call
+    # Find all function calls using balanced brace extraction
     formatted_calls = []
-    for func_name, args_str in matches:
+    pattern = r'<start_function_call>call:(\w+)\{'
+    
+    for match in re.finditer(pattern, raw_response):
+        func_name = match.group(1)
+        brace_start = match.end() - 1  # Position of '{'
+        args_str = extract_balanced_braces(raw_response, brace_start)
+        
         # Parse arguments
-        args_str = args_str.strip()
+        args = parse_tool_args(args_str)
         
-        # Extract non-None arguments
-        non_none_args = []
-        # Pattern: key:<escape>value<escape> or key:value
-        arg_pattern = r'([a-zA-Z_][a-zA-Z0-9_]*):(?:<escape>([^<]*)<escape>|([^,}]+))'
-        arg_matches = re.findall(arg_pattern, args_str)
+        # Format non-None arguments
+        formatted_args = []
+        for key, value in args.items():
+            if value is not None:
+                if isinstance(value, str):
+                    formatted_args.append(f"{key}='{value}'")
+                else:
+                    formatted_args.append(f"{key}={value}")
         
-        for key, escaped_val, plain_val in arg_matches:
-            value = escaped_val if escaped_val else plain_val
-            # Skip None values
-            if value and value.strip().lower() != 'none':
-                # Clean up the value
-                value = value.strip()
-                # Add quotes for string values
-                if not value.replace('.', '').replace('-', '').isdigit():
-                    value = f"'{value}'"
-                non_none_args.append(f"{key}={value}")
-        
-        # Format function call
-        args_str = ", ".join(non_none_args) if non_none_args else ""
-        formatted_calls.append(f"- `{func_name}({args_str})`")
+        args_display = ", ".join(formatted_args) if formatted_args else ""
+        formatted_calls.append(f"- `{func_name}({args_display})`")
+    
+    if not formatted_calls:
+        return raw_response
     
     # Build formatted response
     result = text_part
