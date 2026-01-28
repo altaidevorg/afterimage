@@ -660,7 +660,8 @@ def split_dataset(
     
     # Prepare output files
     source_name = os.path.basename(dataset_path).replace(".jsonl", "")
-    base = base_name.strip() if base_name else source_name
+    # Sanitize base_name to prevent path traversal
+    base = os.path.basename(base_name.strip()) if base_name else source_name
     
     datasets_dir = get_datasets_dir()
     output_files = {}
@@ -691,7 +692,6 @@ def split_dataset(
             output_handles[group_name] = open(filepath, "w", encoding="utf-8")
         
         # Read and split
-        unmatched_count = 0
         with open(dataset_path, "r", encoding="utf-8") as src:
             for line in src:
                 line = line.strip()
@@ -707,9 +707,7 @@ def split_dataset(
                         output_handles[group].write(line + "\n")
                         group_counts[group] += 1
                         group_tool_dist[group][tool_name] += 1
-                    else:
-                        # Unmatched rows go to first group (or skip)
-                        unmatched_count += 1
+                    # Unmatched rows are skipped
                 except json.JSONDecodeError:
                     continue
         

@@ -37,15 +37,14 @@ def parse_tool_args(args_str: str) -> dict:
     
     # Clean up escape tags
     args_str = re.sub(r'<escape>([^<]*)</escape>', r'"\1"', args_str)
-    args_str = re.sub(r'<escape>([^<]*)<escape>', r'"\1"', args_str)
     
     # Convert Python None/True/False to JSON
     args_str = re.sub(r'\bNone\b', 'null', args_str)
     args_str = re.sub(r'\bTrue\b', 'true', args_str)
     args_str = re.sub(r'\bFalse\b', 'false', args_str)
     
-    # Quote unquoted keys
-    args_str = re.sub(r'(\w+):', r'"\1":', args_str)
+    # Quote unquoted keys (only after { or ,)
+    args_str = re.sub(r'([\{,])\s*(\w+)\s*:', r'\1"\2":', args_str)
     
     # Try JSON parse
     try:

@@ -476,7 +476,7 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
                     with open(meta_path, "r") as f:
                         meta = json.load(f)
                     current_category = meta.get("category", DEFAULT_CATEGORY)
-                except (json.JSONDecodeError, IOError, OSError):
+                except (json.JSONDecodeError, FileNotFoundError):
                     pass
             
             # Get all available categories for dropdown

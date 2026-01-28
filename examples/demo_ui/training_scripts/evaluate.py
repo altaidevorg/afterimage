@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import ast
+import re
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_dataset
@@ -68,7 +69,6 @@ def generate_tool_calls(model, tokenizer, messages, tools):
     
     # Parse tool calls from response
     try:
-        import re
         tool_calls = []
         
         def extract_balanced_braces(text, start_idx):
@@ -102,8 +102,7 @@ def generate_tool_calls(model, tokenizer, messages, tools):
             # Format: {key:<escape>value<escape>,key2:None}
             cleaned = args_str
             # Replace <escape>...<escape> with "..."
-            import re as regex
-            cleaned = regex.sub(r'<escape>([^<]*)<escape>', r'"\1"', cleaned)
+            cleaned = re.sub(r'<escape>([^<]*)<escape>', r'"\1"', cleaned)
             # Also handle </escape> variant just in case
             cleaned = cleaned.replace('</escape>', '"').replace('<escape>', '"')
             
@@ -111,12 +110,12 @@ def generate_tool_calls(model, tokenizer, messages, tools):
             # Pattern: {key:value} -> {"key":value}
             def pythonify(s):
                 # Add quotes around unquoted keys
-                s = regex.sub(r'(\{|,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', s)
+                s = re.sub(r'(\{|,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', s)
                 # Replace Python None with null
-                s = regex.sub(r':None([,}])', r':null\1', s)
+                s = re.sub(r':None([,}])', r':null\1', s)
                 # Replace Python True/False with true/false
-                s = regex.sub(r':True([,}])', r':true\1', s)
-                s = regex.sub(r':False([,}])', r':false\1', s)
+                s = re.sub(r':True([,}])', r':true\1', s)
+                s = re.sub(r':False([,}])', r':false\1', s)
                 return s
             
             json_str = pythonify(cleaned)
@@ -128,14 +127,14 @@ def generate_tool_calls(model, tokenizer, messages, tools):
             # Method 4: Try ast.literal_eval (handles Python dict syntax)
             try:
                 return ast.literal_eval(cleaned)
-            except:
+            except (ValueError, SyntaxError):
                 pass
             
             # Method 5: Fix common issues (single quotes -> double quotes)
             try:
                 fixed = cleaned.replace("'", '"')
                 return json.loads(pythonify(fixed))
-            except:
+            except json.JSONDecodeError:
                 pass
             
             return None
@@ -203,7 +202,7 @@ def generate_tool_calls(model, tokenizer, messages, tools):
                     for item in parsed:
                         if isinstance(item, dict) and "function" in item:
                             tool_calls.append(item)
-            except:
+            except json.JSONDecodeError:
                 pass
         
         return tool_calls
