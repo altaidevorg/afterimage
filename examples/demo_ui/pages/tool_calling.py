@@ -13,7 +13,7 @@ from pages.handlers.training import (
     get_model_download_label,
 )
 
-from core.config import get_training_dir
+from core.config import get_training_dir, MAX_CATEGORIES
 from core.tools_db import get_tools_db
 from schemas import AVAILABLE_TOOLS
 
@@ -88,8 +88,6 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
                 next_btn_2 = gr.Button("Next", variant="primary")
 
         # --- STEP 3: TOOL SELECTION (Static category-based) ---
-        MAX_CATEGORIES = 10
-        
         with gr.Group(visible=False) as step_3_group:
             gr.Markdown("### 3. Select Tools")
             gr.Markdown("Select tools to include in generation. Click category headers to select/deselect all tools in that category.")
