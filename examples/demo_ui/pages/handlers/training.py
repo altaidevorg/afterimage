@@ -19,6 +19,31 @@ import pandas as pd
 from core.config import get_training_dir, get_datasets_dir
 
 
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+def get_meta_path(jsonl_path: str) -> str:
+    """Convert .jsonl path to .meta.json path."""
+    return jsonl_path.replace(".jsonl", ".meta.json")
+
+
+def extract_filename_from_label(label: str) -> str:
+    """Extract filename from choice label like 'filename.jsonl (123 KB)'."""
+    filename = label.split(" (")[0] if " (" in label else label
+    return os.path.basename(filename)
+
+
+def get_dataset_path(filename: str) -> str:
+    """Get full path to a dataset file."""
+    # Sanitize filename to prevent path traversal
+    return os.path.join(get_datasets_dir(), os.path.basename(filename))
+
+
+# =============================================================================
+# Model Download Functions  
+# =============================================================================
+
 def get_model_download_label(model_dir: str) -> str:
     """Calculate model directory size and return formatted label."""
     try:
@@ -62,15 +87,15 @@ def _list_datasets():
 
 def _get_dataset_category(path: str) -> str:
     """Get category from dataset metadata file."""
-    meta_path = path.replace(".jsonl", ".meta.json")
+    meta_path = get_meta_path(path)
     if os.path.exists(meta_path):
         try:
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
-            return meta.get("category", "Uncategorized")
+            return meta.get("category", DEFAULT_CATEGORY)
         except (json.JSONDecodeError, FileNotFoundError):
             pass
-    return "Uncategorized"
+    return DEFAULT_CATEGORY
 
 
 def get_datasets_by_category() -> dict[str, List[str]]:
@@ -96,13 +121,13 @@ def get_datasets_by_category() -> dict[str, List[str]]:
             grouped[category] = []
         grouped[category].append(choice_label)
     
-    # Sort categories with "Uncategorized" at the end
+    # Sort categories with DEFAULT_CATEGORY at the end
     sorted_grouped = {}
     for cat in sorted(grouped.keys()):
-        if cat != "Uncategorized":
+        if cat != DEFAULT_CATEGORY:
             sorted_grouped[cat] = grouped[cat]
-    if "Uncategorized" in grouped:
-        sorted_grouped["Uncategorized"] = grouped["Uncategorized"]
+    if DEFAULT_CATEGORY in grouped:
+        sorted_grouped[DEFAULT_CATEGORY] = grouped[DEFAULT_CATEGORY]
     
     return sorted_grouped
 
@@ -116,10 +141,10 @@ def get_dataset_categories() -> List[str]:
     for path in jsonl_files:
         categories.add(_get_dataset_category(path))
     
-    # Sort with "Uncategorized" at the end
-    result = sorted(c for c in categories if c != "Uncategorized")
-    if "Uncategorized" in categories:
-        result.append("Uncategorized")
+    # Sort with DEFAULT_CATEGORY at the end
+    result = sorted(c for c in categories if c != DEFAULT_CATEGORY)
+    if DEFAULT_CATEGORY in categories:
+        result.append(DEFAULT_CATEGORY)
     
     return result
 
@@ -135,7 +160,7 @@ def update_dataset_category(path: str, category: str) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    meta_path = path.replace(".jsonl", ".meta.json")
+    meta_path = get_meta_path(path)
     
     try:
         # Load existing metadata or create new
@@ -146,7 +171,7 @@ def update_dataset_category(path: str, category: str) -> bool:
             meta = {}
         
         # Update category
-        meta["category"] = category or "Uncategorized"
+        meta["category"] = category or DEFAULT_CATEGORY
         
         # Save back
         with open(meta_path, "w", encoding="utf-8") as f:
@@ -160,8 +185,8 @@ def update_dataset_category(path: str, category: str) -> bool:
 
 def _choice_to_path(choice: str) -> str:
     """Convert a dataset choice label to a full file path."""
-    filename = choice.split(" (")[0]
-    return os.path.join(get_datasets_dir(), filename)
+    filename = extract_filename_from_label(choice)
+    return get_dataset_path(filename)
 
 
 def _parse_samples_from_meta(meta: dict) -> int:
@@ -211,7 +236,7 @@ def on_dataset_select(selected_names: List[str] | None):
     has_meta = False
     
     for name in selected_names:
-        filename = name.split(" (")[0]
+        filename = extract_filename_from_label(name)
         full_path = os.path.join(datasets_dir, filename)
         
         if os.path.exists(full_path):
@@ -219,7 +244,7 @@ def on_dataset_select(selected_names: List[str] | None):
             total_size_kb += os.path.getsize(full_path) / 1024
             
             # Try to load metadata
-            meta_path = full_path.replace(".jsonl", ".meta.json")
+            meta_path = get_meta_path(full_path)
             if os.path.exists(meta_path):
                 try:
                     with open(meta_path, "r", encoding="utf-8") as f:
@@ -249,6 +274,7 @@ def on_dataset_select(selected_names: List[str] | None):
             {},
             gr.update(interactive=False),
             gr.update(interactive=False),
+            0,  # total_samples
         )
 
     # Build tool distribution dict
@@ -356,7 +382,7 @@ def confirm_delete(path: str):
 
     try:
         os.remove(path)
-        meta_path = path.replace(".jsonl", ".meta.json")
+        meta_path = get_meta_path(path)
         lock_path = path + ".lock"
         if os.path.exists(meta_path):
             os.remove(meta_path)
@@ -410,9 +436,9 @@ def confirm_rename(old_path: str, new_name: str):
         os.rename(old_path, new_path)
         
         # Rename metadata if exists
-        old_meta = old_path.replace(".jsonl", ".meta.json")
+        old_meta = get_meta_path(old_path)
         if os.path.exists(old_meta):
-            new_meta = new_path.replace(".jsonl", ".meta.json")
+            new_meta = get_meta_path(new_path)
             try:
                 os.rename(old_meta, new_meta)
             except Exception as e:
@@ -457,9 +483,9 @@ def inline_rename(old_path: str, new_name: str):
         os.rename(old_path, new_path)
         
         # Rename metadata if exists
-        old_meta = old_path.replace(".jsonl", ".meta.json")
+        old_meta = get_meta_path(old_path)
         if os.path.exists(old_meta):
-            new_meta = new_path.replace(".jsonl", ".meta.json")
+            new_meta = get_meta_path(new_path)
             try:
                 os.rename(old_meta, new_meta)
             except Exception as e:
@@ -506,7 +532,7 @@ def merge_datasets(selected: List[str] | None, new_name: str):
         source_files.append(path)
 
         # Read source metadata if available
-        meta_path = path.replace(".jsonl", ".meta.json")
+        meta_path = get_meta_path(path)
         if os.path.exists(meta_path):
             try:
                 with open(meta_path, "r", encoding="utf-8") as f:
@@ -542,18 +568,201 @@ def merge_datasets(selected: List[str] | None, new_name: str):
     # Create merged metadata file
     merged_meta = {
         "total_samples": total_samples,
-        "category": "Uncategorized",  # Merged datasets default to Uncategorized
+        "category": DEFAULT_CATEGORY,  # Merged datasets default to DEFAULT_CATEGORY
         "tool_distribution": dict(merged_tool_dist),
         "tools_used": sorted(merged_tools_used),
         "source_datasets": [os.path.basename(p) for p in source_files],
         "merged_at": datetime.now().isoformat(),
     }
 
-    meta_output_path = output_path.replace(".jsonl", ".meta.json")
+    meta_output_path = get_meta_path(output_path)
     with open(meta_output_path, "w", encoding="utf-8") as f:
         json.dump(merged_meta, f, indent=2, ensure_ascii=False)
 
     return gr.Info(f"Merged {len(selected)} datasets into {filename} ({total_samples} samples)")
+
+
+def get_dataset_tool_distribution(dataset_path: str) -> dict:
+    """
+    Get tool distribution for a dataset from its metadata.
+    
+    Returns: dict mapping tool_name -> count
+    """
+    meta_path = get_meta_path(dataset_path)
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            return meta.get("tool_distribution", {})
+        except (json.JSONDecodeError, IOError):
+            pass
+    return {}
+
+
+def _extract_tool_from_row(row_data: dict) -> str | None:
+    """Extract the primary tool name from a dataset row."""
+    tool_calls = None
+    
+    # Format 1: output.tool_calls (our storage format)
+    output = row_data.get("output", {})
+    if isinstance(output, dict):
+        tool_calls = output.get("tool_calls", [])
+    
+    # Format 2: messages array with assistant tool_calls (OpenAI format)
+    if not tool_calls:
+        messages = row_data.get("messages", [])
+        for msg in messages:
+            if msg.get("role") == "assistant":
+                tool_calls = msg.get("tool_calls", [])
+                if tool_calls:
+                    break
+    
+    # Format 3: direct tool_calls field
+    if not tool_calls:
+        tool_calls = row_data.get("tool_calls", [])
+    
+    # Extract tool name from first tool_call
+    if tool_calls and len(tool_calls) > 0:
+        tc = tool_calls[0]
+        if isinstance(tc, dict):
+            func = tc.get("function", {})
+            if isinstance(func, dict):
+                return func.get("name")
+    
+    return None
+
+
+def split_dataset(
+    dataset_path: str,
+    tool_groups: dict[str, list[str]],
+    base_name: str | None = None
+) -> List[str]:
+    """
+    Split a dataset by tool groups into multiple datasets.
+    
+    Args:
+        dataset_path: Path to source dataset
+        tool_groups: Dict mapping group_name -> list of tool names
+                    e.g. {"smart_home": ["light_control", "thermostat"], "other": ["calendar"]}
+        base_name: Base name for output files (default: source name)
+    
+    Returns:
+        List of created dataset filenames
+    """
+    if not os.path.exists(dataset_path):
+        raise gr.Error(f"Dataset not found: {dataset_path}")
+    
+    if not tool_groups or len(tool_groups) < 2:
+        raise gr.Error("Need at least 2 groups to split")
+    
+    # Validate no empty groups
+    for group_name, tools in tool_groups.items():
+        if not tools:
+            raise gr.Error(f"Group '{group_name}' has no tools assigned")
+    
+    # Prepare output files
+    source_name = os.path.basename(dataset_path).replace(".jsonl", "")
+    # Sanitize base_name to prevent path traversal
+    base = os.path.basename(base_name.strip()) if base_name else source_name
+    
+    datasets_dir = get_datasets_dir()
+    output_files = {}
+    output_handles = {}
+    group_counts = {name: 0 for name in tool_groups}
+    group_tool_dist = {name: Counter() for name in tool_groups}
+    
+    # Create tool -> group mapping
+    tool_to_group = {}
+    for group_name, tools in tool_groups.items():
+        for tool in tools:
+            tool_to_group[tool] = group_name
+    
+    try:
+        # Open output files
+        for group_name in tool_groups:
+            filename = f"{base}_{group_name}.jsonl"
+            filepath = os.path.join(datasets_dir, filename)
+            
+            # Auto-increment if file exists
+            counter = 1
+            while os.path.exists(filepath):
+                filename = f"{base}_{group_name}_{counter}.jsonl"
+                filepath = os.path.join(datasets_dir, filename)
+                counter += 1
+            
+            output_files[group_name] = filepath
+            output_handles[group_name] = open(filepath, "w", encoding="utf-8")
+        
+        # Read and split
+        with open(dataset_path, "r", encoding="utf-8") as src:
+            for line in src:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                try:
+                    row = json.loads(line)
+                    tool_name = _extract_tool_from_row(row)
+                    
+                    if tool_name and tool_name in tool_to_group:
+                        group = tool_to_group[tool_name]
+                        output_handles[group].write(line + "\n")
+                        group_counts[group] += 1
+                        group_tool_dist[group][tool_name] += 1
+                    # Unmatched rows are skipped
+                except json.JSONDecodeError:
+                    continue
+        
+    finally:
+        # Close all handles
+        for handle in output_handles.values():
+            handle.close()
+    
+    # Create metadata for each output file
+    created_files = []
+    source_meta_path = get_meta_path(dataset_path)
+    source_category = DEFAULT_CATEGORY
+    
+    if os.path.exists(source_meta_path):
+        try:
+            with open(source_meta_path, "r", encoding="utf-8") as f:
+                source_meta = json.load(f)
+            source_category = source_meta.get("category", DEFAULT_CATEGORY)
+        except (json.JSONDecodeError, IOError):
+            pass
+    
+    for group_name, filepath in output_files.items():
+        count = group_counts[group_name]
+        
+        # Remove empty files
+        if count == 0:
+            os.remove(filepath)
+            continue
+        
+        # Create metadata
+        meta = {
+            "name": os.path.basename(filepath).replace(".jsonl", ""),
+            "category": source_category,
+            "created_at": datetime.now().isoformat(),
+            "total_samples": count,
+            "tools_used": list(tool_groups[group_name]),
+            "tool_distribution": dict(group_tool_dist[group_name]),
+            "split_from": os.path.basename(dataset_path),
+        }
+        
+        meta_path = get_meta_path(filepath)
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2, ensure_ascii=False)
+        
+        created_files.append(os.path.basename(filepath))
+    
+    if not created_files:
+        raise gr.Error("No data matched any tool group")
+    
+    return created_files
+
+
+# Removed local DEFAULT_CATEGORY definition
 
 
 def create_analyze_handler(analyze_fn):
@@ -652,9 +861,9 @@ def on_train_complete(status, logs):
     """Enable evaluation button and trigger download preparation when training completes."""
     if not status:
         return (
-            gr.update(), gr.update(),  # eval
-            gr.update(), gr.update(), gr.update(),  # normal mode download
-            gr.update(), gr.update(), gr.update(),  # dev mode download
+            gr.update(), gr.update(),  # eval_btn, eval_status
+            gr.update(), gr.update(),  # download_status, download_model_btn
+            gr.update(), gr.update(),  # download_status_dev, download_model_dev_btn
         )
     
     if "Complete" in status:

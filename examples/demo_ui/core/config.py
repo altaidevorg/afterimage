@@ -51,3 +51,10 @@ def setup_environment():
 SPINNERS = ["◐", "◓", "◑", "◒"]
 PROGRESS_BAR_LENGTH = 40
 ANIMATION_FPS = 0.15  # seconds per frame
+
+
+# --- UI Configuration ---
+
+MAX_CATEGORIES = 10  # Maximum number of category slots in UI
+MAX_TOOL_SLIDERS = 15  # Maximum number of tool filter sliders
+DEFAULT_CATEGORY = "Uncategorized"

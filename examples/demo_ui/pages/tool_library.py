@@ -6,6 +6,7 @@ Supports category-based grouping with accordion view.
 import json
 import gradio as gr
 
+from core.config import MAX_CATEGORIES
 from core.tools_db import get_tools_db
 from core.function_parser import FunctionDefinition, ParsedFunction
 
@@ -46,7 +47,6 @@ def create_tool_library_page():
         selected_tool_state = gr.State(None)  # Currently selected tool name
         
         # Pre-load tools for static structure
-        MAX_CATEGORIES = 10
         db = get_tools_db()
         initial_grouped = db.get_tools_by_category()
         initial_cats = list(initial_grouped.keys())

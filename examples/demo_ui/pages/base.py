@@ -486,4 +486,22 @@ CUSTOM_CSS = """
     background: #dcfce7;
     color: #166534;
 }
+
+/* Evaluation Output - Scrollable */
+.gradio-container #eval-output-scroll {
+    max-height: 500px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+}
+.gradio-container #eval-output-scroll > div {
+    max-height: none;
+    overflow: visible;
+}
+.gradio-container #eval-output-scroll textarea,
+.gradio-container #eval-output-scroll pre {
+    max-height: 480px;
+    overflow-y: auto;
+}
 """
