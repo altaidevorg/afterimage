@@ -691,8 +691,12 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
                         value="Group 1"
                     ))
                 else:
+                    # Hidden dropdowns: reset with safe default choices and value
                     row_outputs.append(gr.update(visible=False))
-                    dropdown_outputs.append(gr.update())
+                    dropdown_outputs.append(gr.update(
+                        choices=["Group 1"],  # Safe default
+                        value="Group 1"       # Prevent stale state
+                    ))
             
             return base_outputs + row_outputs + dropdown_outputs
         
@@ -704,15 +708,23 @@ def create_train_model_page(analyze_fn, train_fn, train_dev_fn, eval_fn, chat_fn
             num_groups = int(num_groups)
             choices = [f"Group {i+1}" for i in range(num_groups)]
             
-            # Auto-assign if group count matches tool count
-            if tools_list and num_groups == len(tools_list):
-                return [
-                    gr.update(choices=choices, value=f"Group {i+1}") 
-                    for i in range(len(split_tool_dropdowns))
-                ]
+            updates = []
             
-            # Otherwise default all to Group 1
-            return [gr.update(choices=choices, value=choices[0]) for _ in split_tool_dropdowns]
+            # Always return 15 updates (one for each dropdown)
+            for i in range(len(split_tool_dropdowns)):
+                if i < len(tools_list):
+                    # This tool is active
+                    if num_groups == len(tools_list):
+                        # Auto-assign: each tool to its own group
+                        updates.append(gr.update(choices=choices, value=f"Group {i+1}"))
+                    else:
+                        # Normal: all tools default to Group 1
+                        updates.append(gr.update(choices=choices, value=choices[0]))
+                else:
+                    # This dropdown is hidden, no change needed
+                    updates.append(gr.update())
+            
+            return updates
         
         def do_split(target_path, tools_list, base_name, num_groups, *dropdown_values):
             """Execute the split operation."""
