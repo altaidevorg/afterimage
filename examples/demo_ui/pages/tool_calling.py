@@ -143,6 +143,8 @@ def create_tool_calling_page(start_gen_fn, train_fn=None):
                 headers=["Persona", "Instruction", "Response", "Reasoning", "Tool Calls"],
                 label="Generated Tool Calls",
             )
+            # Hide the download output
+            download_output.visible = False
             
             # Training section (initially hidden)
             gr.Markdown("---")

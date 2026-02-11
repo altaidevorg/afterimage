@@ -79,6 +79,7 @@ with demo.route("Tool Library", "/tool-library"):
 
 if __name__ == "__main__":
     demo.launch(
+        share=True,
         footer_links=["ALTAI"],
         theme=create_theme(),
         css=CUSTOM_CSS,

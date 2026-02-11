@@ -3,6 +3,7 @@ Handlers for generation tasks (Structured, Generic, Tool Calling).
 """
 import asyncio
 import pandas as pd
+import gradio as gr
 from afterimage import InMemoryDocumentProvider, PersonaGenerator
 
 from core.config import get_api_key
@@ -156,7 +157,7 @@ async def start_tool_gen(
     # Default category if empty
     category = dataset_category.strip() if dataset_category else "Uncategorized"
     
-    async for update in run_generation_task(
+    async for data, status, path in run_generation_task(
         context_text,
         respondent_prompt,
         num_samples,
@@ -167,7 +168,11 @@ async def start_tool_gen(
         selected_tools=selected_tools,
         dataset_category=category,
     ):
-        yield update
+        if path:
+            # Keep the download component hidden but update its value so training can pick it up
+            yield data, status, gr.update(value=path, visible=False)
+        else:
+            yield data, status, None
 
 
 # --- Training Wrappers ---

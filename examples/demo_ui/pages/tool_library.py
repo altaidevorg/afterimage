@@ -15,6 +15,7 @@ from .handlers.custom_tools import (
     parse_function_code,
     save_tool_from_code,
 )
+from core.mcp_wrapper import MCPClient, RemoteMCPClient, MCPConfigClient, mcp_tool_to_function_def
 
 
 def get_builtin_tool_names():
@@ -136,31 +137,86 @@ def create_tool_library_page():
                         )
                     
                     with gr.Tabs() as create_tabs:
-                        # ===== TAB 1: From Code =====
-                        with gr.Tab("From Code"):
-                            gr.Markdown("Paste a Python function with type hints and docstring:")
-                            code_input = gr.Code(
-                                language="python",
-                                label="Python Function",
-                                value='''def send_email(recipient: str, subject: str, body: str, priority: int = 3):
-    """
-    Send an email to the specified recipient.
-    
-    Args:
-        recipient: Email address of the recipient
-        subject: Subject line of the email
-        body: Content of the email message
-        priority: Priority level from 1 (low) to 5 (high)
-    """
-    pass''',
-                                lines=15,
-                            )
-                            with gr.Row():
-                                parse_btn = gr.Button("Parse & Preview", variant="secondary")
-                                save_code_btn = gr.Button("Save Tool", variant="primary")
+                        # ===== TAB 1: Import from MCP =====
+                        with gr.Tab("Import from MCP"):
+                            gr.Markdown("Connect to an MCP server and fetch tool definitions.")
                             
-                            code_preview = gr.HTML(visible=False)
-                        
+                            connection_type = gr.Radio(
+                                choices=["Local (Command)", "Remote (URL)", "Config (JSON)"],
+                                value="Local (Command)",
+                                label="Connection Type"
+                            )
+                            
+                            # Local Inputs
+                            with gr.Group(visible=True) as local_group:
+                                with gr.Row():
+                                    mcp_command = gr.Textbox(
+                                        label="Server Command", 
+                                        placeholder="e.g., npx, uvx, python", 
+                                        scale=1,
+                                        value="npx"
+                                    )
+                                    mcp_args = gr.Textbox(
+                                        label="Arguments", 
+                                        placeholder="e.g., -y @modelcontextprotocol/server-filesystem /path/to/files", 
+                                        scale=3,
+                                        value="-y @modelcontextprotocol/server-filesystem ."
+                                    )
+                            
+                            # Remote Inputs
+                            with gr.Group(visible=False) as remote_group:
+                                mcp_url = gr.Textbox(
+                                    label="Server URL (SSE Endpoint)",
+                                    placeholder="e.g., http://localhost:8000/sse",
+                                    scale=1
+                                )
+
+                            # Config Inputs
+                            with gr.Group(visible=False) as config_group:
+                                mcp_config = gr.Code(
+                                    label="MCP Config (JSON)",
+                                    language="json",
+                                    lines=10,
+                                    value='''{
+  "mcpServers": {
+    "my-server": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    }
+  }
+}'''
+                                )
+                            
+                            connect_btn = gr.Button("Connect & Fetch Tools", variant="secondary")
+                            
+                            mcp_status = gr.Markdown(visible=False)
+                            found_tools_state = gr.State([])
+                            
+                            # Dynamic checklist for found tools
+                            mcp_tools_checkbox = gr.CheckboxGroup(
+                                label="Found Tools", 
+                                choices=[], 
+                                visible=False,
+                                info="Select tools to import"
+                            )
+                            
+                            import_btn = gr.Button("Import Selected Tools", variant="primary", visible=False)
+                            
+                            # Visibility Toggle Handler
+                            def toggle_mcp_inputs(conn_type):
+                                if conn_type == "Local (Command)":
+                                    return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)
+                                elif conn_type == "Remote (URL)":
+                                    return gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)
+                                else:
+                                    return gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)
+                            
+                            connection_type.change(
+                                fn=toggle_mcp_inputs,
+                                inputs=[connection_type],
+                                outputs=[local_group, remote_group, config_group]
+                            )
+
                         # ===== TAB 2: Manual Entry =====
                         with gr.Tab("Manual Entry"):
                             tool_name_input = gr.Textbox(label="Function Name", placeholder="e.g., send_notification")
@@ -211,6 +267,31 @@ def create_tool_library_page():
                             with gr.Row():
                                 save_tool_btn = gr.Button("Save Tool", variant="primary", size="lg")
                     
+                        # ===== TAB 3: From Code =====
+                        with gr.Tab("From Code"):
+                            gr.Markdown("Paste a Python function with type hints and docstring:")
+                            code_input = gr.Code(
+                                language="python",
+                                label="Python Function",
+                                value='''def send_email(recipient: str, subject: str, body: str, priority: int = 3):
+    """
+    Send an email to the specified recipient.
+    
+    Args:
+        recipient: Email address of the recipient
+        subject: Subject line of the email
+        body: Content of the email message
+        priority: Priority level from 1 (low) to 5 (high)
+    """
+    pass''',
+                                lines=15,
+                            )
+                            with gr.Row():
+                                parse_btn = gr.Button("Parse & Preview", variant="secondary")
+                                save_code_btn = gr.Button("Save Tool", variant="primary")
+                            
+                            code_preview = gr.HTML(visible=False)
+
                     # Cancel button outside tabs
                     cancel_create_btn = gr.Button("Cancel", variant="secondary")
 
@@ -552,6 +633,86 @@ def create_tool_library_page():
             """Save tool from Python code with category."""
             save_tool_from_code(code, category=category)
 
+        def fetch_mcp_tools(conn_type, cmd, args_str, url, config_str):
+            """Connect to MCP server (Local or Remote or Config) and fetch tools."""
+            try:
+                if conn_type == "Local (Command)":
+                    if not cmd:
+                        raise gr.Error("Command is required for local connection")
+                    args = args_str.split() if args_str else []
+                    client = MCPClient(cmd, args)
+                elif conn_type == "Remote (URL)":
+                    if not url:
+                        raise gr.Error("URL is required for remote connection")
+                    
+                    # Remote connection without custom headers in UI
+                    client = RemoteMCPClient(url)
+                else: # Config (JSON)
+                    if not config_str or not config_str.strip():
+                        raise gr.Error("Config JSON is required")
+                    try:
+                        config = json.loads(config_str)
+                    except json.JSONDecodeError as e:
+                        raise gr.Error(f"Invalid JSON: {str(e)}")
+                        
+                    client = MCPConfigClient(config)
+
+                tools = client.fetch_tools()
+                
+                if not tools:
+                    return (
+                        gr.update(visible=True, value="No tools found on this server."),
+                        [], 
+                        gr.update(choices=[], value=[], visible=False),
+                        gr.update(visible=False)
+                    )
+                
+                tool_names = [t["name"] for t in tools]
+                tool_defs = [mcp_tool_to_function_def(t) for t in tools]
+                
+                msg = f"Found {len(tools)} tools: {', '.join(tool_names)}"
+                
+                return (
+                    gr.update(visible=True, value=msg),
+                    tool_defs,
+                    gr.update(choices=tool_names, value=tool_names, visible=True),
+                    gr.update(visible=True)
+                )
+                
+            except Exception as e:
+                raise gr.Error(f"MCP Connection Failed: {str(e)}")
+
+        def save_mcp_tools(selected_names, all_tools, category):
+            """Save selected MCP tools to database."""
+            if not selected_names:
+                raise gr.Warning("No tools selected")
+            
+            count = 0
+            db = get_tools_db()
+            category = category or "Uncategorized"
+            
+            for tool_def in all_tools:
+                if tool_def["name"] in selected_names:
+                    # Create FunctionDefinition
+                    func_def = FunctionDefinition(
+                        name=tool_def["name"],
+                        description=tool_def["description"],
+                        parameters=tool_def["parameters"],
+                        required=tool_def["required"]
+                    )
+                    
+                    parsed = ParsedFunction(
+                        definition=func_def,
+                        source_code=f"# Imported from MCP Server\n# Tool: {tool_def['name']}",
+                        category=category
+                    )
+                    
+                    if db.save_tool(parsed):
+                        count += 1
+            
+            gr.Info(f"Successfully imported {count} tools to '{category}'")
+            return after_save()
+
         # ============================================================
         # EVENTS
         # ============================================================
@@ -654,6 +815,22 @@ def create_tool_library_page():
         save_code_btn.click(
             fn=do_save_from_code,
             inputs=[code_input, category_dropdown],
+        ).then(
+            fn=after_save,
+            outputs=after_save_outputs,
+        )
+
+        # MCP: Connect
+        connect_btn.click(
+            fn=fetch_mcp_tools,
+            inputs=[connection_type, mcp_command, mcp_args, mcp_url, mcp_config],
+            outputs=[mcp_status, found_tools_state, mcp_tools_checkbox, import_btn]
+        )
+        
+        # MCP: Import
+        import_btn.click(
+            fn=save_mcp_tools,
+            inputs=[mcp_tools_checkbox, found_tools_state, category_dropdown],
         ).then(
             fn=after_save,
             outputs=after_save_outputs,
