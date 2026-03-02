@@ -8,14 +8,14 @@ import os
 
 def get_api_key() -> str:
     """
-    Get the Gemini API key from environment.
-    
+    Get the DeepSeek API key from environment.
+
     Raises:
         ValueError: If the API key is not set.
     """
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable is not set")
+        raise ValueError("DEEPSEEK_API_KEY environment variable is not set")
     return api_key
 
 

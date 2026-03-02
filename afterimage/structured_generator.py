@@ -37,7 +37,7 @@ class AsyncStructuredGenerator(BaseGenerator):
         api_key: str | SmartKeyPool,
         model_name: str | None = None,
         safety_settings: List[Dict[str, str]] | None = None,
-        model_provider_name: Literal["gemini", "openai"] = "gemini",
+        model_provider_name: Literal["gemini", "openai", "deepseek"] = "gemini",
         storage: Optional[BaseStorage] = None,
         monitor: Optional[GenerationMonitor] = None,
         instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,

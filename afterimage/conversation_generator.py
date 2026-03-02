@@ -48,7 +48,7 @@ class ConversationGenerator(BaseGenerator):
         safety_settings: List[Dict[str, str]] | None = None,
         auto_improve: bool = True,
         evaluator_model_name: str | None = None,
-        model_provider_name: Literal["gemini", "openai"] = "gemini",
+        model_provider_name: Literal["gemini", "openai", "deepseek"] = "gemini",
         evaluator_method: Literal["simple", "hybrid"] = "simple",
         storage: Optional[BaseStorage] = None,
         monitor: Optional[GenerationMonitor] = None,

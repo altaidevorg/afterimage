@@ -20,7 +20,7 @@ class PersonaGenerator:
         api_key: str | SmartKeyPool,
         model_name: str | None = None,
         safety_settings: list[dict[str, str]] | None = None,
-        model_provider_name: Literal["gemini", "openai"] = "gemini",
+        model_provider_name: Literal["gemini", "openai", "deepseek"] = "gemini",
         storage: Optional[BaseStorage] = None,
         monitor: Optional[GenerationMonitor] = None,
         max_concurrency: int = 4,

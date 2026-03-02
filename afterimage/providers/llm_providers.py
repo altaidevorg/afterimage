@@ -1,8 +1,10 @@
+import json
 from dataclasses import dataclass
 from typing import Any, Dict, Generic, List, Optional, Protocol, Type, TypeVar
 
 from google import genai
 from openai import AsyncOpenAI, OpenAI
+from openai.types.chat import ChatCompletion
 from pydantic import BaseModel
 
 from ..common import default_safety_settings
@@ -595,7 +597,7 @@ class OpenAIProvider(LLMProvider):
         self.model_name = model_name
         self.base_url = base_url
         self.system_instruction = system_instruction
-        self.kwargs = kwargs
+        self.kwargs = {k: v for k, v in kwargs.items() if k != "safety_settings"}
 
     def _get_client(self) -> OpenAI:
         api_key = self.key_pool.get_next_key()
@@ -822,6 +824,103 @@ class OpenAIProvider(LLMProvider):
             raise
 
 
+class DeepSeekProvider(OpenAIProvider):
+    """DeepSeek implementation using OpenAI-compatible API."""
+
+    BASE_URL = "https://api.deepseek.com"
+
+    def __init__(
+        self,
+        api_key: str | SmartKeyPool,
+        model_name: str = "deepseek-chat",
+        system_instruction: Optional[str] = None,
+        **kwargs,
+    ):
+        super().__init__(
+            api_key=api_key,
+            model_name=model_name,
+            base_url=self.BASE_URL,
+            system_instruction=system_instruction,
+            **kwargs,
+        )
+
+    def _parse_structured_response(self, response: ChatCompletion, schema: Type[T]) -> StructuredLLMResponse[T]:
+        text = response.choices[0].message.content or ""
+        parsed = schema.model_validate_json(text)
+        return StructuredLLMResponse(
+            text=text,
+            parsed=parsed,
+            prompt_token_count=response.usage.prompt_tokens,
+            completion_token_count=response.usage.completion_tokens,
+            total_token_count=response.usage.total_tokens,
+            finish_reason=response.choices[0].finish_reason,
+            model_name=self.model_name,
+            raw_response=response,
+        )
+
+    def _build_structured_messages(self, prompt: str, schema: Type[T]) -> List[Dict[str, str]]:
+        schema_str = json.dumps(schema.model_json_schema(), indent=2)
+        system_content = (self.system_instruction or "") + f"\nRespond with a valid JSON object matching this schema:\n{schema_str}"
+        return [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": prompt},
+        ]
+
+    def generate_structured(
+        self,
+        prompt: str,
+        schema: Type[T],
+        temperature: float = 0.7,
+        **kwargs,
+    ) -> StructuredLLMResponse[T]:
+        client = self._get_client()
+        api_key = client.api_key
+
+        try:
+            messages = self._build_structured_messages(prompt, schema)
+            current_kwargs = {**self.kwargs, **kwargs}
+
+            response = client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=temperature,
+                **current_kwargs,
+            )
+
+            return self._parse_structured_response(response, schema)
+        except Exception:
+            self.key_pool.report_error(api_key)
+            raise
+
+    async def agenerate_structured(
+        self,
+        prompt: str,
+        schema: Type[T],
+        temperature: float = 0.7,
+        **kwargs,
+    ) -> StructuredLLMResponse[T]:
+        client = self._get_async_client()
+        api_key = client.api_key
+
+        try:
+            messages = self._build_structured_messages(prompt, schema)
+            current_kwargs = {**self.kwargs, **kwargs}
+
+            response = await client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=temperature,
+                **current_kwargs,
+            )
+
+            return self._parse_structured_response(response, schema)
+        except Exception:
+            await self.key_pool.areport_error(api_key)
+            raise
+
+
 class LLMFactory:
     """Factory for creating LLM providers."""
 
@@ -836,15 +935,14 @@ class LLMFactory:
         providers = {
             "gemini": GeminiProvider,
             "openai": OpenAIProvider,
+            "deepseek": DeepSeekProvider,
         }
 
         if provider not in providers:
             raise ValueError(f"Unknown provider: {provider}")
 
         provider_cls = providers[provider]
-        return provider_cls(
-            api_key=api_key,
-            model_name=model_name,
-            system_instruction=system_instruction,
-            **kwargs,
-        )
+        init_kwargs = {"api_key": api_key, "system_instruction": system_instruction, **kwargs}
+        if model_name is not None:
+            init_kwargs["model_name"] = model_name
+        return provider_cls(**init_kwargs)

@@ -54,7 +54,8 @@ def create_generator(
     docs: InMemoryDocumentProvider,
     storage: CaptureStorage,
     respondent_prompt: str,
-    model_name: str = "gemini-2.0-flash",
+    model_name: str = "deepseek-chat",
+    model_provider_name: str = "deepseek",
     selected_tools: Optional[List] = None,
 ):
     """
@@ -67,6 +68,7 @@ def create_generator(
         storage: Storage for capturing outputs
         respondent_prompt: System prompt for the respondent
         model_name: Name of the model to use
+        model_provider_name: Provider to use for LLM
         selected_tools: List of tools to use for Tool Calling mode
     
     Returns:
@@ -77,6 +79,8 @@ def create_generator(
         api_key=api_key,
         documents=docs,
         num_random_contexts=1,
+        model_name=model_name,
+        model_provider_name=model_provider_name,
     )
     
     if mode == "Structured Generation":
@@ -85,6 +89,7 @@ def create_generator(
             respondent_prompt=respondent_prompt,
             api_key=api_key,
             model_name=model_name,
+            model_provider_name=model_provider_name,
             instruction_generator_callback=instruction_callback,
             storage=storage,
         )
@@ -98,6 +103,8 @@ def create_generator(
             tools=tools_to_use,
             documents=docs,
             num_random_contexts=1,
+            model_name=model_name,
+            model_provider_name=model_provider_name,
         )
         
         # Create dynamic schema including custom tools
@@ -108,6 +115,7 @@ def create_generator(
             respondent_prompt=respondent_prompt,
             api_key=api_key,
             model_name=model_name,
+            model_provider_name=model_provider_name,
             instruction_generator_callback=tool_instruction_callback,
             storage=storage,
         )
@@ -117,6 +125,7 @@ def create_generator(
             respondent_prompt=respondent_prompt,
             api_key=api_key,
             model_name=model_name,
+            model_provider_name=model_provider_name,
             instruction_generator_callback=instruction_callback,
             respondent_prompt_modifier=WithContextRespondentPromptModifier(),
             storage=storage,
