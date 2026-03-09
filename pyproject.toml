@@ -34,6 +34,8 @@ dependencies = [
     "python-docx>=1.2.0",
     "striprtf>=0.0.29",
     "gradio>=6.3.0",
+    "fastmcp",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.urls]

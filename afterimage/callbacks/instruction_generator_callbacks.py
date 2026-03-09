@@ -275,8 +275,8 @@ Ask the questions in the same language as this context.
             )
             api_key = self.key_pool.get_next_key()
             model = LLMFactory.create(
-                "gemini",
-                "gemini-2.5-pro",
+                self.model_provider_name,
+                self.model_name,
                 api_key=api_key,
                 safety_settings=self.safety_settings,
             )
@@ -309,8 +309,8 @@ Ask the questions in the same language as this context.
             )
             api_key = await self.key_pool.aget_next_key()
             model = LLMFactory.create(
-                "gemini",
-                "gemini-2.5-pro",
+                self.model_provider_name,
+                self.model_name,
                 api_key=api_key,
                 safety_settings=self.safety_settings,
             )
