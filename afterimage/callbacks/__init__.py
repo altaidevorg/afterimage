@@ -8,6 +8,7 @@ from .respondent_prompt_modifiers import (
     WithRAGRespondentPromptModifier,  # noqa
 )
 from .stopping_callbacks import (
+    AndStoppingCallback,  # noqa
     BudgetStoppingCallback,  # noqa
     ContextCoverageStoppingCallback,  # noqa
     FixedNumberStoppingCallback,  # noqa

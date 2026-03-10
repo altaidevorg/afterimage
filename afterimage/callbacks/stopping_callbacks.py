@@ -86,30 +86,32 @@ class BudgetStoppingCallback(BaseStoppingCallback):
         ):
             return False
 
-        # We rely on internal _metrics of monitor
-        with state.monitor._lock:
-            if self.max_total_tokens is not None:
-                total_tokens = sum(
-                    m["value"] for m in state.monitor._metrics["total_token_count"]
-                )
-                if total_tokens >= self.max_total_tokens:
-                    return True
-
-            if self.max_completion_tokens is not None:
-                total_tokens = sum(
-                    m["value"] for m in state.monitor._metrics["completion_token_count"]
-                )
-                if total_tokens >= self.max_completion_tokens:
-                    return True
-
-            if self.max_prompt_tokens is not None:
-                total_tokens = sum(
-                    m["value"] for m in state.monitor._metrics["prompt_token_count"]
-                )
-                if total_tokens >= self.max_prompt_tokens:
-                    return True
-
+        report = state.monitor.get_total_token_usage()
+        if self.max_total_tokens is not None and report.total_tokens >= self.max_total_tokens:
+            return True
+        if self.max_completion_tokens is not None and report.total_completion_tokens >= self.max_completion_tokens:
+            return True
+        if self.max_prompt_tokens is not None and report.total_prompt_tokens >= self.max_prompt_tokens:
+            return True
         return False
+
+
+class AndStoppingCallback(BaseStoppingCallback):
+    """Stops only when all wrapped callbacks return True (AND logic).
+
+    Use this to combine multiple conditions that must all be satisfied before stopping.
+    Generators already stop on the first callback that returns True in a list, which is
+    effectively OR logic; this callback provides AND for when you need all conditions.
+    """
+
+    def __init__(self, callbacks: list[BaseStoppingCallback] | None = None):
+        self._callbacks = list(callbacks) if callbacks else []
+
+    async def should_stop(self, state: GenerationState) -> bool:
+        for callback in self._callbacks:
+            if not await callback.should_stop(state):
+                return False
+        return True
 
 
 class RateLimitStoppingCallback(BaseStoppingCallback):

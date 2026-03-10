@@ -6,6 +6,7 @@ from afterimage.callbacks import (
     WithContextRespondentPromptModifier,  # noqa
     WithRAGRespondentPromptModifier,  # noqa
     ToolCallingInstructionGeneratorCallback,  # noqa
+    AndStoppingCallback,  # noqa
     FixedNumberStoppingCallback,  # noqa
     ContextCoverageStoppingCallback,  # noqa
     PersonaUsageStoppingCallback,  # noqa
