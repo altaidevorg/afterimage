@@ -7,11 +7,15 @@ from tqdm import tqdm
 
 from .common import default_model_name, default_safety_settings
 from .key_management import SmartKeyPool
-from .providers import LLMFactory, DocumentProvider
+from .providers import LLMFactory, DocumentProvider, InMemoryDocumentProvider
 from .storage import BaseStorage, JSONLStorage
 from .types import PersonaEntry, Document
 from .monitoring import GenerationMonitor
-from .prompts import text_to_persona_generation_prompt_tmpl, parse_personas, persona_to_persona_generation_prompt_tmpl
+from .prompts import (
+    text_to_persona_generation_prompt_tmpl,
+    parse_personas,
+    persona_to_persona_generation_prompt_tmpl,
+)
 
 
 class PersonaGenerator:
@@ -154,7 +158,9 @@ class PersonaGenerator:
                 )
             raise
 
-    async def agenerate_from_persona(self, persona: str, generation: int = 1) -> list[str]:
+    async def agenerate_from_persona(
+        self, persona: str, generation: int = 1
+    ) -> list[str]:
         async with self.semaphore:
             api_key = await self.key_pool.aget_next_key()
             llm = LLMFactory.create(
@@ -165,7 +171,9 @@ class PersonaGenerator:
             )
             start_time = time.time()
             try:
-                prompt = persona_to_persona_generation_prompt_tmpl.format(personas=persona)
+                prompt = persona_to_persona_generation_prompt_tmpl.format(
+                    personas=persona
+                )
                 response = await llm.agenerate_content(prompt)
                 personas = parse_personas(response.text)
                 if self.monitor:
@@ -194,17 +202,22 @@ class PersonaGenerator:
                     )
                 raise
 
-    async def _agenerate_persona_chains(self, base_personas: list[str], depth: int) -> list[PersonaEntry]:
+    async def _agenerate_persona_chains(
+        self, base_personas: list[str], depth: int
+    ) -> list[PersonaEntry]:
         all_entries = []
         current_personas = base_personas
 
         for i in range(depth):
             new_personas = []
             # run persona→persona generation concurrently for current layer
-            results = await asyncio.gather(*[
-                self.agenerate_from_persona(p, generation=i + 1)
-                for p in current_personas
-            ], return_exceptions=True)
+            results = await asyncio.gather(
+                *[
+                    self.agenerate_from_persona(p, generation=i + 1)
+                    for p in current_personas
+                ],
+                return_exceptions=True,
+            )
 
             for r in results:
                 if isinstance(r, Exception):
@@ -231,9 +244,11 @@ class PersonaGenerator:
         n_iterations: int = 0,
     ):
         if isinstance(documents, list):
-            docs_to_process = [Document(text=text) for text in documents]
-        else:
+            documents = InMemoryDocumentProvider(documents)
+        if max_docs is not None and max_docs < len(documents):
             docs_to_process = documents.get_documents(n=max_docs)
+        else:
+            docs_to_process = documents.get_all()
 
         pbar = tqdm(total=len(docs_to_process), desc="Generating Personas...")
 
@@ -243,9 +258,15 @@ class PersonaGenerator:
                 pbar.update(1)
                 return
 
-            doc.personas.append(PersonaEntry(descriptions=base_personas, metadata={"generation_depth": 0}))
+            doc.personas.append(
+                PersonaEntry(
+                    descriptions=base_personas, metadata={"generation_depth": 0}
+                )
+            )
             if n_iterations > 0:
-                deeper_personas = await self._agenerate_persona_chains(base_personas, depth=n_iterations)
+                deeper_personas = await self._agenerate_persona_chains(
+                    base_personas, depth=n_iterations
+                )
                 doc.personas.extend(deeper_personas)
 
             if self.storage:

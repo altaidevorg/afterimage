@@ -5,7 +5,6 @@ import json
 from filelock import FileLock
 from datetime import datetime
 import asyncio
-import dataclasses
 
 from .types import (
     ConversationWithContext,
@@ -42,6 +41,14 @@ class BaseStorage(Protocol):
         limit: int | None = None,
         offset: int | None = None,
     ) -> List[ConversationWithContext]:
+        pass
+
+    @abstractmethod
+    def load_documents(
+        self,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> List[Document]:
         pass
 
     @abstractmethod
@@ -148,6 +155,42 @@ class JSONLStorage(BaseStorage):
                         break
 
             return conversations
+
+    def load_documents(
+        self,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> List[Document]:
+        """Load documents from JSONL file.
+
+        Args:
+            limit: Maximum number of documents to load
+            offset: Number of documents to skip
+
+        Returns:
+            List of documents
+        """
+        if not self.documents_path.exists():
+            return []
+
+        with FileLock(self.documents_lock_path, timeout=self.lock_timeout):
+            documents = []
+            current_idx = 0
+
+            with open(self.documents_path, "r", encoding=self.encoding) as f:
+                for line in f:
+                    if offset and current_idx < offset:
+                        current_idx += 1
+                        continue
+
+                    doc_data = json.loads(line.strip())
+                    documents.append(Document(**doc_data))
+
+                    current_idx += 1
+                    if limit and len(documents) >= limit:
+                        break
+
+            return documents
 
     def save_documents(self, documents: List[Document]) -> None:
         with FileLock(self.documents_lock_path, timeout=self.lock_timeout):
@@ -365,6 +408,58 @@ class SQLStorage(BaseStorage):
                     response_context=row.response_context,
                     metadata=row.metadata,
                     evaluation=row.evaluation,
+                )
+                for row in result
+            ]
+
+    def load_documents(
+        self,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        order_by: Optional[List[tuple]] = None,
+    ) -> List[Document]:
+        """Load documents from database with filtering and sorting.
+
+        Args:
+            limit: Maximum number of documents to load
+            offset: Number of documents to skip
+            filters: Dict of field-value pairs for filtering
+            order_by: List of (field, direction) tuples for sorting
+
+        Returns:
+            List of documents
+        """
+        query = self.documents_table.select()
+
+        if filters:
+            for field, value in filters.items():
+                if field.startswith("metadata."):
+                    # Handle metadata field filtering
+                    _, key = field.split(".", 1)
+                    query = query.where(self.documents_table.c.metadata[key] == value)
+                else:
+                    # Handle regular field filtering
+                    query = query.where(getattr(self.documents_table.c, field) == value)
+
+        if order_by:
+            for field, direction in order_by:
+                col = getattr(self.documents_table.c, field)
+                query = query.order_by(col.desc() if direction == -1 else col)
+
+        if offset:
+            query = query.offset(offset)
+        if limit:
+            query = query.limit(limit)
+
+        with self.engine.connect() as conn:
+            result = conn.execute(query)
+            return [
+                Document(
+                    id=row.id,
+                    text=row.text,
+                    personas=row.personas,
+                    metadata=row.metadata,
                 )
                 for row in result
             ]

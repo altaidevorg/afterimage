@@ -9,7 +9,7 @@ The library is designed around a few core concepts:
 - **ConversationGenerator & AsyncConversationGenerator**: The main entry points for generating conversations. `AsyncConversationGenerator` is the recommended high-performance engine for concurrent generation.
 - **PersonaGenerator**: Analyzes documents to generate diverse user personas, enhancing dataset variety.
 - **LLMProvider**: An abstraction over different language model providers (Gemini, OpenAI compatible).
-- **DatasetStorage**: An abstraction for storing the generated conversations. It supports JSONL and SQL backends.
+- **DatasetStorage**: An abstraction for storing and loading generated conversations and documents. It supports JSONL and SQL backends.
 - **Callbacks**: These allow for customization of the generation process.
     - **InstructionGeneratorCallback**: Generates the initial questions or instructions (e.g., `PersonaInstructionGeneratorCallback`).
     - **RespondentPromptModifier**: Modifies the prompt for the respondent based on context (e.g., `WithRAGRespondentPromptModifier`).
