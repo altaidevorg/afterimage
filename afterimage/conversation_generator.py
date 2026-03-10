@@ -216,12 +216,17 @@ class ConversationGenerator(BaseGenerator):
         """Generates a question from the correspondent based on the given answer."""
         start_time = time.time()
         try:
-            question = correspondent.send_message(answer).text
+            response = correspondent.send_message(answer)
+            question = response.text
 
             if self.monitor:
                 self.monitor.track_generation(
                     duration=time.time() - start_time,
                     success=True,
+                    prompt_token_count=response.prompt_token_count,
+                    completion_token_count=response.completion_token_count,
+                    total_token_count=response.total_token_count,
+                    model_name=response.model_name,
                     metadata={
                         "operation": "question_generation",
                         "answer_length": len(answer),
@@ -247,12 +252,17 @@ class ConversationGenerator(BaseGenerator):
         """Generates an answer from the respondent based on the given question."""
         start_time = time.time()
         try:
-            answer = respondent.send_message(question).text
+            response = respondent.send_message(question)
+            answer = response.text
 
             if self.monitor:
                 self.monitor.track_generation(
                     duration=time.time() - start_time,
                     success=True,
+                    prompt_token_count=response.prompt_token_count,
+                    completion_token_count=response.completion_token_count,
+                    total_token_count=response.total_token_count,
+                    model_name=response.model_name,
                     metadata={
                         "operation": "answer_generation",
                         "question_length": len(question),

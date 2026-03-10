@@ -269,6 +269,7 @@ Ask the questions in the same language as this context.
     def create_correspondent_prompt(self, respondent_prompt: str) -> str:
         """Create a correspondent prompt based on the respondent prompt."""
         api_key: str | None = None
+        start_time = time.time()
         try:
             prompt = get_correspondent_instruction_generation_prompt(
                 assistant_prompt=respondent_prompt
@@ -282,12 +283,23 @@ Ask the questions in the same language as this context.
             )
 
             response = model.generate_content(prompt=prompt, temperature=0.7)
-            return (
+            prompt_text = (
                 response.text.strip()
                 .lstrip("<user_system_prompt>")
                 .rstrip("</user_system_prompt>")
                 .strip()
             )
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    prompt_token_count=response.prompt_token_count,
+                    completion_token_count=response.completion_token_count,
+                    total_token_count=response.total_token_count,
+                    model_name=response.model_name,
+                    metadata={"operation": "correspondent_prompt_generation"},
+                )
+            return prompt_text
 
         except Exception as e:
             if self.monitor:
@@ -299,10 +311,20 @@ Ask the questions in the same language as this context.
                         "error_type": e.__class__.__name__,
                     },
                 )
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    error=str(e),
+                    metadata={
+                        "operation": "correspondent_prompt_generation",
+                        "error_type": e.__class__.__name__,
+                    },
+                )
 
     async def acreate_correspondent_prompt(self, respondent_prompt: str) -> str:
         """Create a correspondent prompt based on the respondent prompt asynchronously."""
         api_key: str | None = None
+        start_time = time.time()
         try:
             prompt = get_correspondent_instruction_generation_prompt(
                 assistant_prompt=respondent_prompt
@@ -322,13 +344,31 @@ Ask the questions in the same language as this context.
                 .rstrip("</user_system_prompt>")
                 .strip()
             )
-
+            if self.monitor:
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    prompt_token_count=response.prompt_token_count,
+                    completion_token_count=response.completion_token_count,
+                    total_token_count=response.total_token_count,
+                    model_name=response.model_name,
+                    metadata={"operation": "correspondent_prompt_generation"},
+                )
             return prompt_text
         except Exception as e:
             if self.monitor:
                 self.monitor.log_error(
                     message="Error while trying to crosspondent prompt in instruction generator callback",
                     error=e,
+                    metadata={
+                        "operation": "correspondent_prompt_generation",
+                        "error_type": e.__class__.__name__,
+                    },
+                )
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    error=str(e),
                     metadata={
                         "operation": "correspondent_prompt_generation",
                         "error_type": e.__class__.__name__,

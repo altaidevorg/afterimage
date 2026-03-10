@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Event, Lock, Thread
-from typing import Any, Callable, Dict, List, Literal, Optional, Protocol
+from typing import Any, Callable, Literal, Protocol
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -22,7 +22,7 @@ class MetricHandler(Protocol):
     """Protocol for custom metric handling."""
 
     def handle_metric(
-        self, metric_name: str, value: float, metadata: Dict[str, Any]
+        self, metric_name: str, value: float, metadata: dict[str, Any]
     ) -> None:
         """Handle a metric event."""
         pass
@@ -31,7 +31,7 @@ class MetricHandler(Protocol):
 class LogHandler(Protocol):
     """Protocol for custom log handling."""
 
-    def handle_log(self, message: Dict[str, Any]) -> None:
+    def handle_log(self, message: dict[str, Any]) -> None:
         """Handle a log message."""
         pass
 
@@ -44,7 +44,7 @@ class FileMetricHandler(MetricHandler):
         self.log_file = log_dir / "metrics.jsonl"
 
     def handle_metric(
-        self, metric_name: str, value: float, metadata: Dict[str, Any]
+        self, metric_name: str, value: float, metadata: dict[str, Any]
     ) -> None:
         with open(self.log_file, "a", encoding="utf-8") as f:
             # Use timestamp from metadata if available
@@ -67,7 +67,7 @@ class FileLogHandler(LogHandler):
         handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
         self.logger.addHandler(handler)
 
-    def handle_log(self, message: Dict[str, Any]) -> None:
+    def handle_log(self, message: dict[str, Any]) -> None:
         self.logger.error(json.dumps(message))
 
 
@@ -79,7 +79,27 @@ class Alert:
     message: str
     level: str
     timestamp: datetime
-    data: Dict[str, Any]
+    data: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ModelTokenUsage:
+    """Token usage for a single model."""
+
+    model_name: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+@dataclass
+class TokenUsageReport:
+    """Token usage report: per-model breakdown plus totals for cost calculation."""
+
+    by_model: list[ModelTokenUsage]
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    total_tokens: int = 0
 
 
 class GenerationMonitor:
@@ -87,12 +107,22 @@ class GenerationMonitor:
 
     def __init__(
         self,
-        log_dir: Optional[str | Path] = None,
-        metric_handlers: Optional[List[MetricHandler]] = None,
-        log_handlers: Optional[List[LogHandler]] = None,
-        alert_handlers: Optional[List[Callable[[Alert], None]]] = None,
+        log_dir: str | Path | None = None,
+        metric_handlers: list[MetricHandler]|None = None,
+        log_handlers: list[LogHandler] | None = None,
+        alert_handlers: list[Callable[[Alert], None]] | None = None,
         metrics_interval: int = 60,  # seconds
         shutdown_timeout: int = 5,
+        *,
+        alert_min_success_rate: float | None = None,
+        alert_max_generation_time_seconds: float | None = None,
+        alert_max_error_rate: float | None = None,
+        alert_max_prompt_token_mean: float | None = None,
+        alert_max_completion_token_mean: float | None = None,
+        alert_max_total_token_mean: float | None = None,
+        alert_max_conversation_length_mean: float | None = None,
+        token_usage_callback: Callable[[TokenUsageReport], None] | None = None,
+        token_usage_callback_interval_seconds: float = 60.0,
     ):
         """Initialize generation monitor.
 
@@ -103,6 +133,15 @@ class GenerationMonitor:
             alert_handlers: List of callables to handle alerts
             metrics_interval: How often to calculate metrics (seconds)
             shutdown_timeout: Timeout for graceful shutdown (seconds)
+            alert_min_success_rate: Alert if success_rate mean below this (default 0.8).
+            alert_max_generation_time_seconds: Alert if generation_time mean above this in seconds (default 30).
+            alert_max_error_rate: Alert if error_rate mean above this (default 0.2).
+            alert_max_prompt_token_mean: Alert if prompt_token_count mean above this (default 4096).
+            alert_max_completion_token_mean: Alert if completion_token_count mean above this (default 4096).
+            alert_max_total_token_mean: Alert if total_token_count mean above this (default 8192).
+            alert_max_conversation_length_mean: Alert if conversation_length mean above this (default 2).
+            token_usage_callback: If set, called periodically with current TokenUsageReport for easy tracking.
+            token_usage_callback_interval_seconds: How often to invoke token_usage_callback (default 60). Used only when token_usage_callback is set.
         """
         self.log_dir = (
             Path(log_dir)
@@ -119,6 +158,18 @@ class GenerationMonitor:
         self.metrics_interval = metrics_interval
         self.shutdown_timeout = shutdown_timeout
 
+        # Alert thresholds (None = use default)
+        self._alert_min_success_rate = 0.8 if alert_min_success_rate is None else alert_min_success_rate
+        self._alert_max_generation_time_seconds = 30.0 if alert_max_generation_time_seconds is None else alert_max_generation_time_seconds
+        self._alert_max_error_rate = 0.2 if alert_max_error_rate is None else alert_max_error_rate
+        self._alert_max_prompt_token_mean = 4096.0 if alert_max_prompt_token_mean is None else alert_max_prompt_token_mean
+        self._alert_max_completion_token_mean = 4096.0 if alert_max_completion_token_mean is None else alert_max_completion_token_mean
+        self._alert_max_total_token_mean = 8192.0 if alert_max_total_token_mean is None else alert_max_total_token_mean
+        self._alert_max_conversation_length_mean = 2.0 if alert_max_conversation_length_mean is None else alert_max_conversation_length_mean
+
+        self._token_usage_callback = token_usage_callback
+        self._token_usage_callback_interval = token_usage_callback_interval_seconds
+
         # Initialize metrics storage
         self._metrics = defaultdict(list)
         self._lock = Lock()
@@ -134,6 +185,8 @@ class GenerationMonitor:
             Thread(target=self._metric_worker, daemon=True),
             Thread(target=self._log_worker, daemon=True),
         ]
+        if self._token_usage_callback is not None:
+            self._workers.append(Thread(target=self._token_usage_worker, daemon=True))
         for worker in self._workers:
             worker.start()
 
@@ -184,6 +237,25 @@ class GenerationMonitor:
                     }
                 )
 
+    def _token_usage_worker(self):
+        """Periodically invoke token_usage_callback with current total token usage."""
+        while not self._shutdown.is_set():
+            if self._shutdown.wait(timeout=self._token_usage_callback_interval):
+                break
+            if self._token_usage_callback is None:
+                continue
+            try:
+                report = self.get_total_token_usage()
+                self._token_usage_callback(report)
+            except Exception as e:
+                self._enqueue_log(
+                    {
+                        "level": "ERROR",
+                        "message": f"Token usage callback failed: {str(e)}",
+                        "error": str(e),
+                    },
+                )
+
     def _log_worker(self):
         """Process logs from queue."""
         while not self._shutdown.is_set():
@@ -197,14 +269,14 @@ class GenerationMonitor:
             except queue.Empty:
                 continue
 
-    def _store_metric(self, metric_name: str, value: float, metadata: Dict[str, Any]):
+    def _store_metric(self, metric_name: str, value: float, metadata: dict[str, Any]):
         """Store metric in internal storage."""
         timestamp = datetime.now()
         self._metrics[metric_name].append(
             {"timestamp": timestamp, "value": value, **(metadata or {})}
         )
 
-    def _enqueue_log(self, message: Dict[str, Any], level: LogLevel = "info"):
+    def _enqueue_log(self, message: dict[str, Any], level: LogLevel = "info"):
         """Add log message to queue."""
         message["level"] = level
         self.log_queue.put(message)
@@ -226,21 +298,20 @@ class GenerationMonitor:
         self._enqueue_log({"message": message, **error_data, **data}, "error")
 
     def record_metric(
-        self, metric_name: str, value: float, metadata: Optional[Dict] = None
+        self, metric_name: str, value: float, metadata: dict[str, Any]|None = None
     ):
         """Record metric using queue."""
         timestamp = (
-            metadata.pop("timestamp", None) if metadata else None
-        ) or datetime.now()
+            (metadata.get("timestamp") if metadata else None) or datetime.now()
+        )
+        meta = dict(metadata) if metadata else {}
+        meta.setdefault("timestamp", timestamp)
 
         self.metric_queue.put(
             {
                 "metric_name": metric_name,
                 "value": value,
-                "metadata": {
-                    "timestamp": timestamp,
-                    **(metadata or {}),
-                },
+                "metadata": meta,
             }
         )
 
@@ -293,20 +364,22 @@ class GenerationMonitor:
                 {"timestamp": timestamp},
             )
 
-        # metrics to record individually
-        # add any metric name to this list and pass it as a kwarg to record it individually
+        # metrics to record individually (include model_name in metadata for token metrics so get_total_token_usage can group by model)
         metrics_to_record = [
             "prompt_token_count",
             "completion_token_count",
             "total_token_count",
             "conversation_length",
         ]
+        token_meta: dict[str, Any] = {"timestamp": timestamp}
+        if "model_name" in kwargs:
+            token_meta["model_name"] = kwargs["model_name"]
         for metric in metrics_to_record:
             if metric in kwargs:
                 self.record_metric(
                     metric,
                     kwargs[metric],
-                    {"timestamp": timestamp},
+                    token_meta if metric != "conversation_length" else {"timestamp": timestamp},
                 )
 
         # Log complete metrics
@@ -317,7 +390,7 @@ class GenerationMonitor:
         duration: float,
         success: bool,
         evaluator_type: str,
-        scores: Dict[str, float],
+        scores: dict[str, float],
         **kwargs,
     ) -> None:
         """Track evaluation metrics.
@@ -356,12 +429,12 @@ class GenerationMonitor:
         for score_name, score_value in scores.items():
             feedback = (
                 score_value.get("feedback", None)
-                if isinstance(score_value, Dict)
+                if isinstance(score_value, dict)
                 else None
             )
             value = (
                 score_value.get("score", 0)
-                if isinstance(score_value, Dict)
+                if isinstance(score_value, dict)
                 else score_value
             )
             self.record_metric(
@@ -384,6 +457,22 @@ class GenerationMonitor:
                 },
             )
 
+        # Record token usage for evaluation LLM calls (for cost calculation)
+        eval_token_meta: dict[str, Any] = {"timestamp": timestamp}
+        if "model_name" in kwargs:
+            eval_token_meta["model_name"] = kwargs["model_name"]
+        for token_metric in (
+            "prompt_token_count",
+            "completion_token_count",
+            "total_token_count",
+        ):
+            if token_metric in kwargs:
+                self.record_metric(
+                    token_metric,
+                    kwargs[token_metric],
+                    eval_token_meta,
+                )
+
         # Log complete metrics
         self._enqueue_log({"message": "Evaluation metrics", "data": metrics})
 
@@ -397,7 +486,7 @@ class GenerationMonitor:
         self,
         metric_name: str,
         window: timedelta = timedelta(minutes=5),
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Get aggregated metrics for a time window.
 
         Args:
@@ -407,10 +496,10 @@ class GenerationMonitor:
         Returns:
             Dict containing metric aggregates
         """
-        if metric_name not in self._metrics:
-            raise ValueError(f"Metric {metric_name} not found")
-
         with self._lock:
+            if metric_name not in self._metrics:
+                return {"mean": 0.0, "min": 0.0, "max": 0.0, "count": 0}
+
             now = datetime.now()
             window_start = now - window
 
@@ -431,13 +520,79 @@ class GenerationMonitor:
                 "count": len(values),
             }
 
-    def _check_alerts(self, metrics: Dict[str, Any]):
-        """Check metrics against alert conditions."""
-        # TODO: make thresholds configurable
+    def get_total_token_usage(
+        self, window: timedelta | None = None
+    ) -> TokenUsageReport:
+        """Get total token usage summed across all events, optionally within a time window.
+        Grouped by model name for cost calculation (one entry per model).
 
+        Args:
+            window: If set, only include events with timestamp >= (now - window).
+                    If None, include all events.
+
+        Returns:
+            TokenUsageReport with by_model (one entry per model) and total_* fields.
+        """
+        with self._lock:
+            now = datetime.now()
+            window_start = (now - window) if window else None
+
+            def in_window(m: dict[str, Any]) -> bool:
+                if window_start is None:
+                    return True
+                ts = m.get("timestamp")
+                return ts is not None and ts >= window_start
+
+            by_model: dict[str, dict[str, int]] = {}
+
+            for metric_key, key in [
+                ("prompt_token_count", "prompt_tokens"),
+                ("completion_token_count", "completion_tokens"),
+                ("total_token_count", "total_tokens"),
+            ]:
+                if metric_key not in self._metrics:
+                    continue
+                for entry in self._metrics[metric_key]:
+                    if not in_window(entry):
+                        continue
+                    model_name = entry.get("model_name") or "unknown"
+                    if model_name not in by_model:
+                        by_model[model_name] = {
+                            "prompt_tokens": 0,
+                            "completion_tokens": 0,
+                            "total_tokens": 0,
+                        }
+                    by_model[model_name][key] = (
+                        by_model[model_name][key] + int(entry["value"])
+                    )
+
+            total_prompt = total_completion = total_all = 0
+            model_usages: list[ModelTokenUsage] = []
+            for model_name, counts in sorted(by_model.items()):
+                model_usages.append(
+                    ModelTokenUsage(
+                        model_name=model_name,
+                        prompt_tokens=counts["prompt_tokens"],
+                        completion_tokens=counts["completion_tokens"],
+                        total_tokens=counts["total_tokens"],
+                    )
+                )
+                total_prompt += counts["prompt_tokens"]
+                total_completion += counts["completion_tokens"]
+                total_all += counts["total_tokens"]
+
+            return TokenUsageReport(
+                by_model=model_usages,
+                total_prompt_tokens=total_prompt,
+                total_completion_tokens=total_completion,
+                total_tokens=total_all,
+            )
+
+    def _check_alerts(self, metrics: dict[str, Any]):
+        """Check metrics against configurable alert thresholds."""
         # Check success rate
         recent_success = self.get_metrics("success_rate", timedelta(minutes=5))
-        if recent_success and recent_success["mean"] < 0.8:  # Below 80% success
+        if recent_success and recent_success["mean"] < self._alert_min_success_rate:
             self._send_alert(
                 Alert(
                     name="low_success_rate",
@@ -450,7 +605,7 @@ class GenerationMonitor:
 
         # Check generation time
         recent_time = self.get_metrics("generation_time", timedelta(minutes=5))
-        if recent_time and recent_time["mean"] > 30:  # Over 30s average
+        if recent_time and recent_time["mean"] > self._alert_max_generation_time_seconds:
             self._send_alert(
                 Alert(
                     name="high_generation_time",
@@ -463,7 +618,7 @@ class GenerationMonitor:
 
         # Check error rate
         recent_errors = self.get_metrics("error_rate", timedelta(minutes=5))
-        if recent_errors and recent_errors["mean"] > 0.2:  # Over 20% errors
+        if recent_errors and recent_errors["mean"] > self._alert_max_error_rate:
             self._send_alert(
                 Alert(
                     name="high_error_rate",
@@ -476,7 +631,7 @@ class GenerationMonitor:
 
         # Check token usage spikes
         recent_tokens = self.get_metrics("prompt_token_count", timedelta(minutes=5))
-        if recent_tokens and recent_tokens["mean"] > 4096:  # High token usage
+        if recent_tokens and recent_tokens["mean"] > self._alert_max_prompt_token_mean:
             self._send_alert(
                 Alert(
                     name="high_token_usage:prompt",
@@ -487,7 +642,7 @@ class GenerationMonitor:
                 )
             )
         recent_tokens = self.get_metrics("completion_token_count", timedelta(minutes=5))
-        if recent_tokens and recent_tokens["mean"] > 4096:  # High token usage
+        if recent_tokens and recent_tokens["mean"] > self._alert_max_completion_token_mean:
             self._send_alert(
                 Alert(
                     name="high_token_usage:completion",
@@ -498,7 +653,7 @@ class GenerationMonitor:
                 )
             )
         recent_tokens = self.get_metrics("total_token_count", timedelta(minutes=5))
-        if recent_tokens and recent_tokens["mean"] > 8192:  # High token usage
+        if recent_tokens and recent_tokens["mean"] > self._alert_max_total_token_mean:
             self._send_alert(
                 Alert(
                     name="high_token_usage:total",
@@ -511,7 +666,7 @@ class GenerationMonitor:
 
         # Check for long conversations
         recent_turns = self.get_metrics("conversation_length", timedelta(minutes=5))
-        if recent_turns and recent_turns["mean"] > 2:  # Less than 2 turns on average
+        if recent_turns and recent_turns["mean"] > self._alert_max_conversation_length_mean:
             self._send_alert(
                 Alert(
                     name="long_conversations",
@@ -524,8 +679,6 @@ class GenerationMonitor:
 
     def _send_alert(self, alert: Alert):
         """Send alert to all handlers."""
-        print(f"Alert: {alert.name} - {alert.message}")
-
         for handler in self.alert_handlers:
             try:
                 handler(alert)
@@ -552,7 +705,7 @@ class GenerationMonitor:
         self,
         output_path: str | Path,
         format: str = "json",
-        window: Optional[timedelta] = None,
+        window: timedelta | None = None,
     ) -> None:
         """Export metrics data to various formats.
 
@@ -636,7 +789,7 @@ class GenerationMonitor:
         save_dir: str | Path | None = None,
         figsize: tuple = (12, 6),
         return_figures: bool = False,
-    ) -> Dict[str, plt.Figure] | None:
+    ) -> dict[str, plt.Figure] | None:
         """Generate visualizations for metrics.
 
         Args:
@@ -819,15 +972,16 @@ class GenerationMonitor:
         Returns:
             matplotlib figure
         """
-        now = datetime.now()
-        window_start = now - window
-
-        # Filter metrics by time window
-        values = [
-            {"timestamp": m["timestamp"], "value": m["value"]}
-            for m in self._metrics[metric_name]
-            if m["timestamp"] >= window_start
-        ]
+        with self._lock:
+            if metric_name not in self._metrics:
+                raise ValueError(f"Metric {metric_name} not found")
+            now = datetime.now()
+            window_start = now - window
+            values = [
+                {"timestamp": m["timestamp"], "value": m["value"]}
+                for m in self._metrics[metric_name]
+                if m["timestamp"] >= window_start
+            ]
 
         if not values:
             raise ValueError(f"No data for metric {metric_name} in specified window")

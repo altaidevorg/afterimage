@@ -179,25 +179,26 @@ class AsyncConversationGenerator(BaseGenerator):
             )
 
             if self.monitor:
-                self.monitor.record_metric(
-                    "prompt_generation_time",
-                    time.time() - start_time,
-                    metadata={
-                        "prompt_type": "correspondent",
-                        "success": True,
-                    },
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    prompt_token_count=response.prompt_token_count,
+                    completion_token_count=response.completion_token_count,
+                    total_token_count=response.total_token_count,
+                    model_name=response.model_name,
+                    metadata={"operation": "correspondent_prompt_generation"},
                 )
 
             return prompt
         except Exception as e:
             if self.monitor:
-                self.monitor.record_metric(
-                    "prompt_generation_time",
-                    time.time() - start_time,
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    error=str(e),
                     metadata={
-                        "prompt_type": "correspondent",
-                        "success": False,
-                        "error": str(e),
+                        "operation": "correspondent_prompt_generation",
+                        "error_type": e.__class__.__name__,
                     },
                 )
             if api_key is not None:

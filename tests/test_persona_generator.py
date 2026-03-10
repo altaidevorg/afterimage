@@ -1,73 +1,60 @@
-import asyncio
-import unittest
-from unittest.mock import MagicMock, AsyncMock
+"""Tests for PersonaGenerator."""
+import pytest
+from unittest.mock import MagicMock, AsyncMock, patch
+
 from afterimage.persona_generator import PersonaGenerator
 from afterimage.providers import LLMProvider
 from afterimage.storage import JSONLStorage
 from afterimage.monitoring import GenerationMonitor
 from afterimage.types import Document
 
-class TestPersonaGenerator(unittest.TestCase):
 
-    def setUp(self):
-        self.api_key = "test_key"
-        self.llm_provider_mock = MagicMock(spec=LLMProvider)
-        self.storage_mock = MagicMock(spec=JSONLStorage)
-        self.storage_mock.asave_documents = AsyncMock()
-        self.monitor_mock = MagicMock(spec=GenerationMonitor)
+@pytest.fixture
+def persona_generator():
+    storage_mock = MagicMock(spec=JSONLStorage)
+    storage_mock.asave_documents = AsyncMock()
+    monitor_mock = MagicMock(spec=GenerationMonitor)
+    return PersonaGenerator(
+        api_key="test_key",
+        storage=storage_mock,
+        monitor=monitor_mock,
+    ), storage_mock, monitor_mock
 
-        self.persona_generator = PersonaGenerator(
-            api_key=self.api_key,
-            storage=self.storage_mock,
-            monitor=self.monitor_mock
-        )
 
-    def test_generate_success(self):
-        # Arrange
-        test_text = "Sample text"
-        mock_response = MagicMock()
-        mock_response.text = "Persona 1: A developer.\nPersona 2: A writer."
-        self.llm_provider_mock.generate_content.return_value = mock_response
+def test_generate_success(persona_generator):
+    generator, storage_mock, monitor_mock = persona_generator
+    mock_response = MagicMock()
+    mock_response.text = "Persona 1: A developer.\nPersona 2: A writer."
+    mock_response.prompt_token_count = 10
+    mock_response.completion_token_count = 20
+    mock_response.total_token_count = 30
+    mock_response.model_name = "mock_model"
 
-        with unittest.mock.patch('afterimage.persona_generator.LLMFactory') as mock_llm_factory:
-            mock_llm = mock_llm_factory.create.return_value
-            mock_llm.generate_content.return_value = mock_response
+    with patch("afterimage.persona_generator.LLMFactory") as mock_llm_factory:
+        mock_llm = mock_llm_factory.create.return_value
+        mock_llm.generate_content.return_value = mock_response
 
-            # Act
-            personas = self.persona_generator.generate_from_text(test_text)
+        personas = generator.generate_from_text("Sample text")
 
-            # Assert
-            self.assertEqual(len(personas), 2)
-            self.assertEqual(personas[0], "A developer.")
-            mock_llm.generate_content.assert_called_once()
-        self.monitor_mock.track_generation.assert_called_once()
-        args, kwargs = self.monitor_mock.track_generation.call_args
-        self.assertTrue(kwargs['success'])
-        self.assertEqual(kwargs['metadata']['operation'], 'text_to_persona_generation')
+    assert len(personas) == 2
+    assert personas[0] == "A developer."
+    mock_llm.generate_content.assert_called_once()
+    monitor_mock.track_generation.assert_called_once()
+    _, kwargs = monitor_mock.track_generation.call_args
+    assert kwargs["success"] is True
+    assert kwargs["metadata"]["operation"] == "text_to_persona_generation"
+    assert kwargs["prompt_token_count"] == 10
+    assert kwargs["total_token_count"] == 30
 
-    def test_generate_for_documents_batching(self):
-        # This is a more complex test to verify concurrency, so we'll simplify
-        # by checking the calls were made.
-        async def run_test():
-            # Arrange
-            docs = ["doc1", "doc2", "doc3"]
-            mock_response = MagicMock()
-            mock_response.text = "Persona 1: A persona."
-            
-            # Make the async generate_async mockable
-            self.persona_generator.agenerate_from_text = AsyncMock(return_value=["A persona."])
 
-            # Act
-            await self.persona_generator.generate_from_documents(docs)
+@pytest.mark.asyncio
+async def test_generate_for_documents_batching(persona_generator):
+    generator, storage_mock, monitor_mock = persona_generator
+    generator.agenerate_from_text = AsyncMock(return_value=["A persona."])
 
-            # Assert
-            self.assertEqual(self.persona_generator.agenerate_from_text.call_count, 3)
-            self.assertEqual(self.storage_mock.asave_documents.call_count, 3)
-            # Check if a Document was passed
-            args, _ = self.storage_mock.asave_documents.call_args
-            self.assertIsInstance(args[0][0], Document)
+    await generator.generate_from_documents(["doc1", "doc2", "doc3"])
 
-        asyncio.run(run_test())
-
-if __name__ == '__main__':
-    unittest.main()
+    assert generator.agenerate_from_text.call_count == 3
+    assert storage_mock.asave_documents.call_count == 3
+    args, _ = storage_mock.asave_documents.call_args
+    assert isinstance(args[0][0], Document)

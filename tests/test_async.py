@@ -1,9 +1,30 @@
-import asyncio
-import unittest
-from unittest.mock import MagicMock
+"""Tests for AsyncConversationGenerator."""
+import pytest
+from unittest.mock import MagicMock, AsyncMock
 
 from afterimage.async_conversation_generator import AsyncConversationGenerator
 from afterimage.providers.llm_providers import LLMResponse, ChatSession
+from afterimage.common import GeneratedInstructions
+
+
+class MockInstructionCallback:
+    """Minimal instruction callback that returns one instruction."""
+
+    monitor = None
+
+    def set_monitor(self, monitor):
+        self.monitor = monitor
+
+    async def acreate_correspondent_prompt(self, respondent_prompt):
+        return "You are a curious user."
+
+    async def acall(self, correspondent_prompt):
+        return GeneratedInstructions(
+            instructions=["First question?"],
+            context="",
+            context_id="test",
+            persona="A curious user",
+        )
 
 
 class MockChatSession(ChatSession):
@@ -15,7 +36,9 @@ class MockChatSession(ChatSession):
         self.history.append(message)
         return LLMResponse(
             text="mocked response",
-            tokens_used=10,
+            prompt_token_count=10,
+            completion_token_count=5,
+            total_token_count=15,
             finish_reason="stop",
             model_name="mock_model",
             raw_response=None,
@@ -26,7 +49,9 @@ class MockLLMProvider:
     async def agenerate_content(self, prompt, **kwargs) -> LLMResponse:
         return LLMResponse(
             text="mocked correspondent prompt",
-            tokens_used=10,
+            prompt_token_count=10,
+            completion_token_count=5,
+            total_token_count=15,
             finish_reason="stop",
             model_name="mock_model",
             raw_response=None,
@@ -36,28 +61,19 @@ class MockLLMProvider:
         return MockChatSession()
 
 
-class TestAsyncConversationGenerator(unittest.TestCase):
-    def test_generate(self):
-        async def run_test():
-            # Mock LLMFactory to return our mock provider
-            from afterimage.providers import llm_providers
-            llm_providers.LLMFactory.create = MagicMock(return_value=MockLLMProvider())
+@pytest.mark.asyncio
+async def test_async_conversation_generator_generate():
+    from afterimage.providers import llm_providers
 
-            # Initialize the generator
-            generator = AsyncConversationGenerator(
-                respondent_prompt="You are a helpful assistant.",
-                api_key="mock_key",
-            )
-            await generator.initialize()
+    original_create = llm_providers.LLMFactory.create
+    llm_providers.LLMFactory.create = MagicMock(return_value=MockLLMProvider())
 
-            # Run the generator
-            await generator.generate(num_dialogs=1)
-
-            # Check that the storage has been called
-            # (in a real scenario, we would mock the storage and check calls to it)
-            # For this simple test, we just check that it runs without errors.
-
-        asyncio.run(run_test())
-
-if __name__ == "__main__":
-    unittest.main()
+    try:
+        generator = AsyncConversationGenerator(
+            respondent_prompt="You are a helpful assistant.",
+            api_key="mock_key",
+            instruction_generator_callback=MockInstructionCallback(),
+        )
+        await generator.generate(num_dialogs=1)
+    finally:
+        llm_providers.LLMFactory.create = original_create

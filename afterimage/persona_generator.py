@@ -62,6 +62,10 @@ class PersonaGenerator:
                 self.monitor.track_generation(
                     duration=time.time() - start_time,
                     success=True,
+                    prompt_token_count=response.prompt_token_count,
+                    completion_token_count=response.completion_token_count,
+                    total_token_count=response.total_token_count,
+                    model_name=response.model_name,
                     metadata={
                         "operation": "text_to_persona_generation",
                         "text_length": len(text),
@@ -100,6 +104,10 @@ class PersonaGenerator:
                     self.monitor.track_generation(
                         duration=time.time() - start_time,
                         success=True,
+                        prompt_token_count=response.prompt_token_count,
+                        completion_token_count=response.completion_token_count,
+                        total_token_count=response.total_token_count,
+                        model_name=response.model_name,
                         metadata={
                             "operation": "text_to_persona_generation",
                             "text_length": len(text),
@@ -137,6 +145,10 @@ class PersonaGenerator:
                 self.monitor.track_generation(
                     duration=time.time() - start_time,
                     success=True,
+                    prompt_token_count=response.prompt_token_count,
+                    completion_token_count=response.completion_token_count,
+                    total_token_count=response.total_token_count,
+                    model_name=response.model_name,
                     metadata={
                         "operation": "persona_to_persona_generation",
                         "text_length": len(persona),
@@ -180,6 +192,10 @@ class PersonaGenerator:
                     self.monitor.track_generation(
                         duration=time.time() - start_time,
                         success=True,
+                        prompt_token_count=response.prompt_token_count,
+                        completion_token_count=response.completion_token_count,
+                        total_token_count=response.total_token_count,
+                        model_name=response.model_name,
                         metadata={
                             "operation": "persona_to_persona_generation",
                             "text_length": len(persona),

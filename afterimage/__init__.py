@@ -18,7 +18,11 @@ from afterimage.evaluator import (
     HybridSyntheticDatasetEvaluator,  # noqa
 )
 from afterimage.key_management import SmartKeyPool  # noqa
-from afterimage.monitoring import GenerationMonitor  # noqa
+from afterimage.monitoring import (
+    GenerationMonitor,  # noqa
+    ModelTokenUsage,  # noqa
+    TokenUsageReport,  # noqa
+)
 from afterimage.persona_generator import PersonaGenerator  # noqa
 from afterimage.providers import (
     DirectoryDocumentProvider,  # noqa
@@ -35,4 +39,4 @@ from afterimage.providers import (
 from afterimage.storage import BaseStorage, JSONLStorage, SQLStorage  # noqa
 from afterimage.types import PersonaEntry, Document  # noqa
 
-__version__ = "0.11.5"
+__version__ = "0.11.6"

@@ -1,6 +1,6 @@
 from sentence_transformers import SentenceTransformer
 import json
-from typing import List, TypedDict, Optional
+from typing import Any, List, Optional, TypedDict
 from .base import BaseEvaluator, EvaluationMetric, EvaluationResult
 from ..monitoring import GenerationMonitor
 from ..providers import LLMProvider
@@ -330,8 +330,8 @@ class LLMBaseEvaluator(BaseEvaluator):
         self.max_retries = max_retries
         self.monitor = monitor
 
-    def _get_valid_json_response(self, prompt: str) -> dict:
-        """Get valid JSON response with retry mechanism."""
+    def _get_valid_json_response(self, prompt: str) -> tuple[dict, Any]:
+        """Get valid JSON response with retry mechanism. Returns (evaluation_dict, llm_response) for token tracking."""
         last_error = None
 
         for attempt in range(self.max_retries):
@@ -358,7 +358,7 @@ class LLMBaseEvaluator(BaseEvaluator):
                                 isinstance(score, (int, float)) and 0 <= score <= 1
                                 for score in evaluation["scores"]
                             ):
-                                return evaluation
+                                return evaluation, response
 
             except Exception as e:
                 last_error = e
@@ -370,21 +370,49 @@ class LLMBaseEvaluator(BaseEvaluator):
 
     def evaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
         start_time = time.time()
+        self._llm_responses: list[Any] = []
         try:
             result = self._evaluate_impl(conversation)
 
             if self.monitor:
+                token_kw: dict[str, Any] = {}
+                if self._llm_responses:
+                    token_kw["prompt_token_count"] = sum(
+                        r.prompt_token_count for r in self._llm_responses
+                    )
+                    token_kw["completion_token_count"] = sum(
+                        r.completion_token_count for r in self._llm_responses
+                    )
+                    token_kw["total_token_count"] = sum(
+                        r.total_token_count for r in self._llm_responses
+                    )
+                    if self._llm_responses:
+                        token_kw["model_name"] = self._llm_responses[0].model_name
                 self.monitor.track_evaluation(
                     duration=time.time() - start_time,
                     success=True,
                     evaluator_type=self.__class__.__name__,
                     scores=result.scores,
+                    **token_kw,
                 )
 
             return result
 
         except Exception as e:
             if self.monitor:
+                token_kw = {}
+                if self._llm_responses:
+                    token_kw["prompt_token_count"] = sum(
+                        r.prompt_token_count for r in self._llm_responses
+                    )
+                    token_kw["completion_token_count"] = sum(
+                        r.completion_token_count for r in self._llm_responses
+                    )
+                    token_kw["total_token_count"] = sum(
+                        r.total_token_count for r in self._llm_responses
+                    )
+                    if self._llm_responses:
+                        token_kw["model_name"] = self._llm_responses[0].model_name
                 self.monitor.track_evaluation(
                     duration=time.time() - start_time,
                     success=False,
@@ -392,6 +420,7 @@ class LLMBaseEvaluator(BaseEvaluator):
                     scores={},
                     error=str(e),
                     error_type=e.__class__.__name__,
+                    **token_kw,
                 )
             raise
 
@@ -429,7 +458,8 @@ Evaluate each response's factual accuracy on a scale of 0-1, where:
 Provide your evaluation in JSON format."""
 
         try:
-            evaluation = self._get_valid_json_response(prompt)
+            evaluation, response = self._get_valid_json_response(prompt)
+            self._llm_responses.append(response)
             avg_score = sum(evaluation["scores"]) / len(evaluation["scores"])
             needs_regen = evaluation["needs_improvement"] or avg_score < 0.6
 
@@ -494,7 +524,8 @@ Evaluate each answer's helpfulness on a scale of 0-1, where:
 Provide your evaluation in JSON format."""
 
         try:
-            evaluation = self._get_valid_json_response(prompt)
+            evaluation, response = self._get_valid_json_response(prompt)
+            self._llm_responses.append(response)
             avg_score = sum(evaluation["scores"]) / len(evaluation["scores"])
             needs_regen = evaluation["needs_improvement"] or avg_score < 0.6
 
