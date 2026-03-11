@@ -10,6 +10,7 @@ docs/_build
 
 # Virtual environments
 .venv
+.env
 
 # generated data files
 *.json

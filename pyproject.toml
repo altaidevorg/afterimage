@@ -43,6 +43,19 @@ homepage = "https://github.com/altaidevorg/afterimage"
 project = "https://github.com/altaidevorg/afterimage"
 repository = "https://github.com/altaidevorg/afterimage"
 
+[project.optional-dependencies]
+server = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "python-multipart>=0.0.20",
+    "pydantic-settings>=2.0",
+    "sse-starlette>=2.0",
+    "aiosqlite>=0.20.0",
+]
+
+[project.scripts]
+afterimage-server = "afterimage.server:main"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["afterimage", "afterimage.*"]
