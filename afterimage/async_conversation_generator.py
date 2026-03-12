@@ -15,7 +15,11 @@ from .base import (
     BaseStoppingCallback,
 )
 from .callbacks import FixedNumberStoppingCallback
-from .common import default_model_name, default_safety_settings
+from .common import (
+    default_model_name,
+    default_safety_settings,
+    resolve_generation_max_concurrency,
+)
 from .evaluator import HybridSyntheticDatasetEvaluator, SimpleSyntheticDatasetEvaluator
 from .key_management import SmartKeyPool
 from .monitoring import GenerationMonitor
@@ -48,7 +52,7 @@ class AsyncConversationGenerator(BaseGenerator):
         auto_improve: Whether to try to improve low-quality generations
         evaluator_model_name: Model name for the evaluator when auto_improve is True
         evaluator_method: method to be used for evaluation.
-        model_provider_name: Provider used for accessing LLMs. `"gemini"` or `"openai"` for Openai-compatible APIs.
+        model_provider_name: Provider used for accessing LLMs. Supported values are `"gemini"`, `"openai"`, and `"deepseek"`.
         storage: Storage implementation for saving conversations.
                 If `None`, creates JSONLStorage with datetime-based filename.
         monitor: GenerationMonitor instance for tracking generation metrics.
@@ -164,8 +168,8 @@ class AsyncConversationGenerator(BaseGenerator):
             )
             api_key = await self.key_pool.aget_next_key()
             model = LLMFactory.create(
-                "gemini",
-                "gemini-2.5-pro",
+                self.model_provider_name,
+                self.model_name,
                 api_key=api_key,
                 safety_settings=self.safety_settings,
             )
@@ -282,7 +286,7 @@ class AsyncConversationGenerator(BaseGenerator):
 
     async def answer(
         self, respondent: ChatSession, question: str | ConversationEntry
-    ) -> str:
+    ) -> ConversationEntry:
         """Generates an answer from the respondent based on the given question."""
         start_time = time.time()
         try:
@@ -302,7 +306,11 @@ class AsyncConversationGenerator(BaseGenerator):
                 },
             )
 
-            return answer
+            return ConversationEntry(
+                role=Role.ASSISTANT,
+                content=answer,
+                reasoning_content=response.reasoning_content,
+            )
         except Exception as e:
             self.monitor.track_generation(
                 duration=time.time() - start_time,
@@ -349,16 +357,13 @@ class AsyncConversationGenerator(BaseGenerator):
             conversation.append(ConversationEntry(role=Role.USER, content=question))
 
             for turn in range(turns):
-                answer = await self.answer(respondent, question)
-
-                conversation.append(
-                    ConversationEntry(role=Role.ASSISTANT, content=answer)
-                )
+                answer_entry = await self.answer(respondent, question)
+                conversation.append(answer_entry)
 
                 if (turn + 1) == turns:
                     break
                 else:
-                    question = await self.ask(correspondent, answer)
+                    question = await self.ask(correspondent, answer_entry)
 
                     conversation.append(
                         ConversationEntry(role=Role.USER, content=question)
@@ -455,6 +460,7 @@ class AsyncConversationGenerator(BaseGenerator):
                     persona=persona,
                     metadata={
                         "context_id": gen_instructions.context_id,
+                        "context_ids": gen_instructions.context_ids,
                         "persona_name": persona,
                     },
                 )
@@ -498,7 +504,7 @@ class AsyncConversationGenerator(BaseGenerator):
         stopping_criteria: Optional[List[BaseStoppingCallback]] = None,
         instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
         respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
-        max_concurrency: int = 4,
+        max_concurrency: int | None = None,
     ) -> None:
         """Generates multiple conversation dialogs until stopping criteria is met.
 
@@ -510,7 +516,8 @@ class AsyncConversationGenerator(BaseGenerator):
                 Deprecated: Pass this to the constructor instead. Defaults to None.
             respondent_prompt_modifier: Callback to modify respondent prompts.
                 Deprecated: Pass this to the constructor instead. Defaults to None.
-            max_concurrency: Number of concurrent generations. Defaults to 4.
+            max_concurrency: Number of concurrent generations. Defaults to 8 for
+                DeepSeek and 4 for other providers.
         """
         if instruction_generator_callback is not None:
             warnings.warn(
@@ -559,13 +566,19 @@ class AsyncConversationGenerator(BaseGenerator):
             num_dialogs = 5
             final_stopping_criteria.append(FixedNumberStoppingCallback(n=num_dialogs))
 
+        self._configure_context_sampling(
+            instruction_generator_callback,
+            final_stopping_criteria,
+        )
+
         state = GenerationState(
             num_requested=num_dialogs or 0,
             monitor=self.monitor,
             stop_event=asyncio.Event(),
         )
 
-        semaphore = asyncio.Semaphore(max_concurrency)
+        resolved_max_concurrency = self._resolve_max_concurrency(max_concurrency)
+        semaphore = asyncio.Semaphore(resolved_max_concurrency)
 
         async def save_conversations(conversations: list[ConversationWithContext]):
             if conversations:
@@ -590,6 +603,10 @@ class AsyncConversationGenerator(BaseGenerator):
                         ):
                             # Update state and check stopping criteria
                             state.update(conversation)
+                            self._record_context_usage(
+                                instruction_generator_callback,
+                                conversation,
+                            )
 
                             for criteria in final_stopping_criteria:
                                 if await criteria.should_stop(state):
@@ -616,7 +633,7 @@ class AsyncConversationGenerator(BaseGenerator):
         tasks: list[asyncio.Task] = []
 
         # Create initial set of tasks
-        for _ in range(max_concurrency):
+        for _ in range(resolved_max_concurrency):
             tasks.append(asyncio.create_task(worker_task()))
 
         last_count = 0
@@ -650,3 +667,9 @@ class AsyncConversationGenerator(BaseGenerator):
         finally:
             self.monitor.log_info("Generation complete")
             self.monitor.visualize_metrics()
+
+    def _resolve_max_concurrency(self, max_concurrency: int | None) -> int:
+        return resolve_generation_max_concurrency(
+            self.model_provider_name,
+            max_concurrency,
+        )

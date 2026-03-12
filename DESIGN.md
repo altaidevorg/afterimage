@@ -15,6 +15,9 @@ The library is designed around a few core concepts:
     - **RespondentPromptModifier**: Modifies the prompt for the respondent based on context (e.g., `WithRAGRespondentPromptModifier`).
 - **Evaluation**: Flexible evaluation framework supporting Simple (LLM-as-judge) and Hybrid (Embedding + LLM) approaches.
 - **Monitoring**: Real-time tracking of generation metrics (time, tokens, errors) with alert support.
+- **Reasoning Capture**: OpenAI-compatible providers expose optional `reasoning_content`/`thinking` text; `AsyncConversationGenerator` persists assistant reasoning into `ConversationEntry.reasoning_content` when present.
+- **Adaptive Context Sampling**: Document providers now keep per-document usage counts and sampling weights so instruction generation can bias toward underused contexts. When a context coverage stopping callback is present, its `target_visits` is propagated into provider weights; otherwise providers fall back to a soft-decay weighting strategy (`1 / (usage + 1)`). Usage is recorded only after a final row is produced successfully, and all sampled context ids are carried through row metadata for coverage accounting across contextual, persona, and tool-calling instruction callbacks. Metadata-to-context-id extraction is centralized so usage reporting and coverage counting share the same semantics. If a provider target is set explicitly, generator-side inference does not overwrite it, and generated instruction payloads keep their `context_ids` in per-instance state.
+- **Provider-Aware Concurrency**: Async generators and persona generation resolve concurrency defaults per provider, with a higher default for DeepSeek workloads.
 
 ## Directory Structure
 
@@ -26,6 +29,7 @@ The code is organized into the following directories and files:
     - `base.py`: Base classes for generators and callbacks.
     - `callbacks.py`: Implements default callbacks for instructions and persona handling.
     - `common.py`: Common constants and data structures.
+        It also holds provider-aware concurrency defaults.
     - `conversation_generator.py`: Synchronous conversation generator (Legacy).
     - `evaluator.py`: Conversation evaluation logic.
     - `key_management.py`: Smart API key management with rate limiting.
@@ -44,6 +48,7 @@ The code is organized into the following directories and files:
     - `providers/`:
         - `__init__.py`: Exposes provider classes.
         - `document_providers.py`: Document source implementations (Memory, File, Directory, Qdrant).
+            Providers expose weighted random sampling plus document usage reporting for context coverage management, with target usage counts inferred from stopping callbacks when available.
         - `llm_providers.py`: LLM provider abstractions.
 
 ## Design Patterns

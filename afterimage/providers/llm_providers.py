@@ -14,6 +14,40 @@ from ..types import ConversationEntry
 T = TypeVar("T", bound=BaseModel)
 
 
+def _extract_reasoning_content(message: Any) -> str | None:
+    """Best-effort extraction of reasoning/thinking text from OpenAI-compatible messages."""
+
+    def _clean(value: Any) -> str | None:
+        if isinstance(value, str):
+            cleaned = value.strip()
+            return cleaned or None
+        return None
+
+    for attr in ("reasoning_content", "reasoning", "thinking"):
+        extracted = _clean(getattr(message, attr, None))
+        if extracted:
+            return extracted
+
+    as_dict: dict[str, Any] | None = None
+    if isinstance(message, dict):
+        as_dict = message
+    elif hasattr(message, "model_dump"):
+        try:
+            dumped = message.model_dump()
+            if isinstance(dumped, dict):
+                as_dict = dumped
+        except Exception:
+            as_dict = None
+
+    if as_dict:
+        for key in ("reasoning_content", "reasoning", "thinking"):
+            extracted = _clean(as_dict.get(key))
+            if extracted:
+                return extracted
+
+    return None
+
+
 @dataclass
 class LLMResponse:
     """Standardized LLM response."""
@@ -25,6 +59,7 @@ class LLMResponse:
     finish_reason: str
     model_name: str
     raw_response: Any  # Provider-specific response
+    reasoning_content: str | None = None
 
 
 @dataclass
@@ -150,6 +185,7 @@ class OpenAIChatSession(ChatSession):
         )
 
         assistant_message = response.choices[0].message
+        assistant_reasoning = _extract_reasoning_content(assistant_message)
         self.history.append(
             {"role": assistant_message.role, "content": assistant_message.content}
         )
@@ -157,13 +193,14 @@ class OpenAIChatSession(ChatSession):
         total_token_count = response.usage.total_tokens
         self.token_count = total_token_count
         return LLMResponse(
-            text=assistant_message.content,
+            text=assistant_message.content or "",
             finish_reason=response.choices[0].finish_reason,
             prompt_token_count=response.usage.prompt_tokens,
             completion_token_count=response.usage.completion_tokens,
             total_token_count=total_token_count,
             model_name=self.model_name,
             raw_response=response,
+            reasoning_content=assistant_reasoning,
         )
 
 
@@ -210,6 +247,7 @@ class AsyncOpenAIChatSession(ChatSession):
         )
 
         assistant_message = response.choices[0].message
+        assistant_reasoning = _extract_reasoning_content(assistant_message)
         self.history.append(
             {"role": assistant_message.role, "content": assistant_message.content}
         )
@@ -218,13 +256,14 @@ class AsyncOpenAIChatSession(ChatSession):
         self.token_count = total_token_count
 
         return LLMResponse(
-            text=assistant_message.content,
+            text=assistant_message.content or "",
             finish_reason=response.choices[0].finish_reason,
             prompt_token_count=response.usage.prompt_tokens,
             completion_token_count=response.usage.completion_tokens,
             total_token_count=total_token_count,
             model_name=self.model_name,
             raw_response=response,
+            reasoning_content=assistant_reasoning,
         )
 
 
@@ -635,15 +674,17 @@ class OpenAIProvider(LLMProvider):
                 stop=stop_sequences,
                 **current_kwargs,
             )
+            assistant_message = response.choices[0].message
 
             return LLMResponse(
-                text=response.choices[0].message.content,
+                text=assistant_message.content or "",
                 prompt_token_count=response.usage.prompt_tokens,
                 completion_token_count=response.usage.completion_tokens,
                 total_token_count=response.usage.total_tokens,
                 finish_reason=response.choices[0].finish_reason,
                 model_name=self.model_name,
                 raw_response=response,
+                reasoning_content=_extract_reasoning_content(assistant_message),
             )
 
         except Exception:
@@ -678,15 +719,17 @@ class OpenAIProvider(LLMProvider):
                 stop=stop_sequences,
                 **current_kwargs,
             )
+            assistant_message = response.choices[0].message
 
             return LLMResponse(
-                text=response.choices[0].message.content,
+                text=assistant_message.content or "",
                 prompt_token_count=response.usage.prompt_tokens,
                 completion_token_count=response.usage.completion_tokens,
                 total_token_count=response.usage.total_tokens,
                 finish_reason=response.choices[0].finish_reason,
                 model_name=self.model_name,
                 raw_response=response,
+                reasoning_content=_extract_reasoning_content(assistant_message),
             )
 
         except Exception:
@@ -719,16 +762,18 @@ class OpenAIProvider(LLMProvider):
                 temperature=temperature,
                 **current_kwargs,
             )
+            assistant_message = response.choices[0].message
 
             return StructuredLLMResponse(
-                text=response.choices[0].message.content or "",
-                parsed=response.choices[0].message.parsed,
+                text=assistant_message.content or "",
+                parsed=assistant_message.parsed,
                 prompt_token_count=response.usage.prompt_tokens,
                 completion_token_count=response.usage.completion_tokens,
                 total_token_count=response.usage.total_tokens,
                 finish_reason=response.choices[0].finish_reason,
                 model_name=self.model_name,
                 raw_response=response,
+                reasoning_content=_extract_reasoning_content(assistant_message),
             )
         except Exception:
             self.key_pool.report_error(api_key)
@@ -760,16 +805,18 @@ class OpenAIProvider(LLMProvider):
                 temperature=temperature,
                 **current_kwargs,
             )
+            assistant_message = response.choices[0].message
 
             return StructuredLLMResponse(
-                text=response.choices[0].message.content or "",
-                parsed=response.choices[0].message.parsed,
+                text=assistant_message.content or "",
+                parsed=assistant_message.parsed,
                 prompt_token_count=response.usage.prompt_tokens,
                 completion_token_count=response.usage.completion_tokens,
                 total_token_count=response.usage.total_tokens,
                 finish_reason=response.choices[0].finish_reason,
                 model_name=self.model_name,
                 raw_response=response,
+                reasoning_content=_extract_reasoning_content(assistant_message),
             )
         except Exception:
             self.key_pool.report_error(api_key)
@@ -845,7 +892,8 @@ class DeepSeekProvider(OpenAIProvider):
         )
 
     def _parse_structured_response(self, response: ChatCompletion, schema: Type[T]) -> StructuredLLMResponse[T]:
-        text = response.choices[0].message.content or ""
+        assistant_message = response.choices[0].message
+        text = assistant_message.content or ""
         parsed = schema.model_validate_json(text)
         return StructuredLLMResponse(
             text=text,
@@ -856,6 +904,7 @@ class DeepSeekProvider(OpenAIProvider):
             finish_reason=response.choices[0].finish_reason,
             model_name=self.model_name,
             raw_response=response,
+            reasoning_content=_extract_reasoning_content(assistant_message),
         )
 
     def _build_structured_messages(self, prompt: str, schema: Type[T]) -> List[Dict[str, str]]:

@@ -15,7 +15,11 @@ from .base import (
     BaseStoppingCallback,
 )
 from .callbacks import FixedNumberStoppingCallback
-from .common import default_model_name, default_safety_settings
+from .common import (
+    default_model_name,
+    default_safety_settings,
+    resolve_generation_max_concurrency,
+)
 from .key_management import SmartKeyPool
 from .providers import LLMFactory
 from .monitoring import GenerationMonitor
@@ -224,6 +228,7 @@ class AsyncStructuredGenerator(BaseGenerator):
                     output=output.parsed,
                     metadata={
                         "context_id": gen_instructions.context_id,
+                        "context_ids": gen_instructions.context_ids,
                         "persona_name": gen_instructions.persona,
                     },
                 )
@@ -251,7 +256,7 @@ class AsyncStructuredGenerator(BaseGenerator):
         stopping_criteria: list[BaseStoppingCallback] | None = None,
         instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
         respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
-        max_concurrency: int = 4,
+        max_concurrency: int | None = None,
     ) -> None:
         """Generates structured samples and saves them to storage.
 
@@ -262,7 +267,8 @@ class AsyncStructuredGenerator(BaseGenerator):
                 Deprecated: Pass this to the constructor instead. Defaults to None.
             respondent_prompt_modifier: Callback to modify respondent prompts.
                 Deprecated: Pass this to the constructor instead. Defaults to None.
-            max_concurrency: Maximum number of concurrent tasks.
+            max_concurrency: Maximum number of concurrent tasks. Defaults to 8 for
+                DeepSeek and 4 for other providers.
         """
         if instruction_generator_callback is not None:
             warnings.warn(
@@ -311,13 +317,19 @@ class AsyncStructuredGenerator(BaseGenerator):
             num_samples = 5
             final_stopping_criteria.append(FixedNumberStoppingCallback(n=num_samples))
 
+        self._configure_context_sampling(
+            instruction_generator_callback,
+            final_stopping_criteria,
+        )
+
         state = GenerationState(
             num_requested=num_samples or 0,
             monitor=self.monitor,
             stop_event=asyncio.Event(),
         )
 
-        semaphore = asyncio.Semaphore(max_concurrency)
+        resolved_max_concurrency = self._resolve_max_concurrency(max_concurrency)
+        semaphore = asyncio.Semaphore(resolved_max_concurrency)
 
         async def save_samples(samples: List[StructuredGenerationRow]):
             if samples:
@@ -339,6 +351,10 @@ class AsyncStructuredGenerator(BaseGenerator):
                         ):
                             # Update state and check stopping criteria
                             state.update(sample)
+                            self._record_context_usage(
+                                instruction_generator_callback,
+                                sample,
+                            )
 
                             for criteria in final_stopping_criteria:
                                 if await criteria.should_stop(state):
@@ -367,7 +383,7 @@ class AsyncStructuredGenerator(BaseGenerator):
         tasks: list[asyncio.Task] = []
 
         # Create initial set of tasks
-        for _ in range(max_concurrency):
+        for _ in range(resolved_max_concurrency):
             tasks.append(asyncio.create_task(worker_task()))
 
         last_count = 0
@@ -401,3 +417,9 @@ class AsyncStructuredGenerator(BaseGenerator):
         finally:
             self.monitor.log_info("Generation complete")
             self.monitor.visualize_metrics()
+
+    def _resolve_max_concurrency(self, max_concurrency: int | None) -> int:
+        return resolve_generation_max_concurrency(
+            self.model_provider_name,
+            max_concurrency,
+        )

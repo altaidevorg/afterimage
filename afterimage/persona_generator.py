@@ -5,7 +5,11 @@ from typing import Optional, Union, Literal
 
 from tqdm import tqdm
 
-from .common import default_model_name, default_safety_settings
+from .common import (
+    default_model_name,
+    default_safety_settings,
+    resolve_generation_max_concurrency,
+)
 from .key_management import SmartKeyPool
 from .providers import LLMFactory, DocumentProvider, InMemoryDocumentProvider
 from .storage import BaseStorage, JSONLStorage
@@ -27,7 +31,7 @@ class PersonaGenerator:
         model_provider_name: Literal["gemini", "openai", "deepseek"] = "gemini",
         storage: Optional[BaseStorage] = None,
         monitor: Optional[GenerationMonitor] = None,
-        max_concurrency: int = 4,
+        max_concurrency: int | None = None,
     ):
         self.key_pool = (
             api_key
@@ -43,7 +47,14 @@ class PersonaGenerator:
 
         self.storage = storage or JSONLStorage()
         self.monitor = monitor
-        self.semaphore = asyncio.Semaphore(max_concurrency)
+        self.max_concurrency = self._resolve_max_concurrency(max_concurrency)
+        self.semaphore = asyncio.Semaphore(self.max_concurrency)
+
+    def _resolve_max_concurrency(self, max_concurrency: int | None) -> int:
+        return resolve_generation_max_concurrency(
+            self.model_provider_name,
+            max_concurrency,
+        )
 
     def generate_from_text(self, text: str) -> list[str]:
         api_key = self.key_pool.get_next_key()

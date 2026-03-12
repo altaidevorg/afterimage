@@ -67,7 +67,7 @@ class ConversationGenerator(BaseGenerator):
             auto_improve: Whether to try to improve low-quality generations
             evaluator_model_name: Model name for the evaluator when auto_improve is True
             evaluator_method: method to be used for evaluation.
-            model_provider_name: Provider used for accessing LLMs. `"gemini"` or `"openai"` for Openai-compatible APIs.
+            model_provider_name: Provider used for accessing LLMs. Supported values are `"gemini"`, `"openai"`, and `"deepseek"`.
             storage: Storage implementation for saving conversations
                     If None, creates JSONLStorage with datetime-based filename
             monitor: GenerationMonitor instance for tracking generation metrics
@@ -142,8 +142,9 @@ class ConversationGenerator(BaseGenerator):
             )
             api_key = self.key_pool.get_next_key()
             model = LLMFactory.create(
-                "gemini",
-                "gemini-2.5-pro",
+                self.model_provider_name,
+                self.model_name,
+                api_key=api_key,
                 safety_settings=self.safety_settings,
             )
 
@@ -180,7 +181,7 @@ class ConversationGenerator(BaseGenerator):
         try:
             api_key = self.key_pool.get_next_key()
             model = LLMFactory.create(
-                "gemini",
+                self.model_provider_name,
                 self.model_name,
                 api_key=api_key,
                 system_instruction=prompt,
@@ -613,6 +614,11 @@ class ConversationGenerator(BaseGenerator):
                             warnings.warn(f"Exception in future: {e}")
                             traceback.print_exc()
                     else:
+                        for conversation in conversations:
+                            self._record_context_usage(
+                                instruction_generator_callback,
+                                conversation,
+                            )
                         save_conversations(conversations)
                         num_generated += len(conversations)
                         pbar.update(len(conversations))

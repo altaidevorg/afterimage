@@ -135,6 +135,7 @@ Ask the questions in the same language as this context.
         prompt: str,
         full_context: str,
         context_id: str | None,
+        context_ids: list[str] | None = None,
         persona: str | None = None,
     ) -> GeneratedInstructions:
         """Execute the generation process with monitoring."""
@@ -160,6 +161,7 @@ Ask the questions in the same language as this context.
                 instructions=output.parsed.instructions,
                 context=full_context,
                 context_id=context_id,
+                context_ids=context_ids or [],
                 persona=persona,
             )
         except Exception as e:
@@ -181,6 +183,7 @@ Ask the questions in the same language as this context.
         prompt: str,
         full_context: str,
         context_id: str | None,
+        context_ids: list[str] | None = None,
         persona: str | None = None,
     ) -> GeneratedInstructions:
         """Execute the asynchronous generation process with monitoring."""
@@ -206,6 +209,7 @@ Ask the questions in the same language as this context.
                 instructions=response.parsed.instructions,
                 context=full_context,
                 context_id=context_id,
+                context_ids=context_ids or [],
                 persona=persona,
             )
         except Exception as e:
@@ -239,12 +243,14 @@ Ask the questions in the same language as this context.
 
         # Pick the first document ID as the context_id for the merged context
         context_id = random_contexts[0].id if random_contexts else None
+        context_ids = [doc.id for doc in random_contexts]
 
         return self._execute_generation(
             model=model,
             prompt=prompt,
             full_context=full_context,
             context_id=context_id,
+            context_ids=context_ids,
         )
 
     async def agenerate(self, original_prompt):
@@ -258,12 +264,14 @@ Ask the questions in the same language as this context.
 
         # Pick the first document ID as the context_id for the merged context
         context_id = random_contexts[0].id if random_contexts else None
+        context_ids = [doc.id for doc in random_contexts]
 
         return await self._aexecute_generation(
             model=model,
             prompt=prompt,
             full_context=full_context,
             context_id=context_id,
+            context_ids=context_ids,
         )
 
     def create_correspondent_prompt(self, respondent_prompt: str) -> str:
@@ -276,8 +284,8 @@ Ask the questions in the same language as this context.
             )
             api_key = self.key_pool.get_next_key()
             model = LLMFactory.create(
-                "gemini",
-                "gemini-2.5-pro",
+                self.model_provider_name,
+                self.model_name,
                 api_key=api_key,
                 safety_settings=self.safety_settings,
             )
@@ -331,8 +339,8 @@ Ask the questions in the same language as this context.
             )
             api_key = await self.key_pool.aget_next_key()
             model = LLMFactory.create(
-                "gemini",
-                "gemini-2.5-pro",
+                self.model_provider_name,
+                self.model_name,
                 api_key=api_key,
                 safety_settings=self.safety_settings,
             )
@@ -465,12 +473,14 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
 
         # Pick the first document ID as the context_id for the merged context
         context_id = random_contexts[0].id if random_contexts else None
+        context_ids = [doc.id for doc in random_contexts]
 
         return self._execute_generation(
             model=model,
             prompt=prompt,
             full_context=full_context,
             context_id=context_id,
+            context_ids=context_ids,
             persona=persona,
         )
 
@@ -492,12 +502,14 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
 
         # Pick the first document ID as the context_id for the merged context
         context_id = random_contexts[0].id if random_contexts else None
+        context_ids = [doc.id for doc in random_contexts]
 
         return await self._aexecute_generation(
             model=model,
             prompt=prompt,
             full_context=full_context,
             context_id=context_id,
+            context_ids=context_ids,
             persona=persona,
         )
 
@@ -638,12 +650,14 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
         prompt = "Generate the instructions now."
 
         context_id = random_contexts[0].id if random_contexts else None
+        context_ids = [doc.id for doc in random_contexts]
 
         return self._execute_generation(
             model=model,
             prompt=prompt,
             full_context=full_context,
             context_id=context_id,
+            context_ids=context_ids,
             persona=persona,
         )
 
@@ -670,12 +684,14 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
         prompt = "Generate the instructions now."
 
         context_id = random_contexts[0].id if random_contexts else None
+        context_ids = [doc.id for doc in random_contexts]
 
         return await self._aexecute_generation(
             model=model,
             prompt=prompt,
             full_context=full_context,
             context_id=context_id,
+            context_ids=context_ids,
             persona=persona,
         )
 

@@ -27,6 +27,9 @@ class DocumentProvider(Protocol):
         - get_documents(n: int) -> list[Document]
         - get_all() -> list[Document]
         - sample(n: int) -> list[Document]
+        - report_doc_usage(document_id: str) -> int
+        - set_target_context_usage_count(target_context_usage_count: int | None)
+        - mark_fully_covered(document_id: str)
         - clear_cache()
         - __len__(), __iter__(), __getitem__(i)
     """
@@ -37,9 +40,72 @@ class DocumentProvider(Protocol):
         ...
 
     # --- default helpers (implementations can override) ---
+    def _ensure_usage_tracking_state(self, docs: list[Document]) -> None:
+        """Initialize and refresh usage/weight bookkeeping for loaded documents."""
+        if not hasattr(self, "_doc_usage_counts"):
+            self._doc_usage_counts = {}
+        if not hasattr(self, "_doc_sampling_weights"):
+            self._doc_sampling_weights = {}
+        if not hasattr(self, "_fully_covered_doc_ids"):
+            self._fully_covered_doc_ids = set()
+        if not hasattr(self, "target_context_usage_count"):
+            self.target_context_usage_count = None
+        if not hasattr(self, "_target_context_usage_count_explicit"):
+            self._target_context_usage_count_explicit = False
+
+        doc_ids = {doc.id for doc in docs}
+        self._doc_usage_counts = {
+            doc_id: self._doc_usage_counts.get(doc_id, 0) for doc_id in doc_ids
+        }
+        self._doc_sampling_weights = {
+            doc_id: self._doc_sampling_weights.get(doc_id, 1.0) for doc_id in doc_ids
+        }
+        self._fully_covered_doc_ids = {
+            doc_id for doc_id in self._fully_covered_doc_ids if doc_id in doc_ids
+        }
+        self._recalculate_sampling_weights(docs)
+
+    def _get_sampling_weight(self, document_id: str) -> float:
+        if document_id in self._fully_covered_doc_ids:
+            return 0.0
+
+        usage_count = self._doc_usage_counts.get(document_id, 0)
+        target_usage_count = self.target_context_usage_count
+        if target_usage_count is not None:
+            if target_usage_count <= 0:
+                return 0.0
+            return float(max(target_usage_count - usage_count, 0))
+
+        return 1.0 / (usage_count + 1)
+
+    def _recalculate_sampling_weights(self, docs: list[Document]) -> None:
+        for doc in docs:
+            self._doc_sampling_weights[doc.id] = self._get_sampling_weight(doc.id)
+
+    def _weighted_sample_without_replacement(
+        self, docs: list[Document], k: int
+    ) -> list[Document]:
+        remaining_docs = list(docs)
+        sampled_docs: list[Document] = []
+
+        while remaining_docs and len(sampled_docs) < k:
+            weights = [self._doc_sampling_weights.get(doc.id, 0.0) for doc in remaining_docs]
+            if not any(weight > 0 for weight in weights):
+                break
+
+            selected_index = random.choices(
+                range(len(remaining_docs)),
+                weights=weights,
+                k=1,
+            )[0]
+            sampled_docs.append(remaining_docs.pop(selected_index))
+
+        return sampled_docs
+
     def get_all(self) -> list[Document]:
         """Return all documents (loads once if implementation caches)."""
         docs = self._load_documents()
+        self._ensure_usage_tracking_state(docs)
         return docs
 
     def get_documents(self, n: int) -> list[Document]:
@@ -52,14 +118,54 @@ class DocumentProvider(Protocol):
         k = min(int(n), len(docs))
         if k == 0:
             return []
-        if k == len(docs):
-            return list(docs)
-        # sample without replacement
-        return random.sample(docs, k)
+
+        active_docs = [
+            doc for doc in docs if self._doc_sampling_weights.get(doc.id, 0.0) > 0
+        ]
+        if not active_docs:
+            return []
+        if k >= len(active_docs):
+            return list(active_docs)
+
+        return self._weighted_sample_without_replacement(active_docs, k)
 
     def sample(self, n: int) -> list[Document]:
         """Alias for get_documents."""
         return self.get_documents(n)
+
+    def report_doc_usage(self, document_id: str) -> int:
+        """Record usage for a document and refresh sampling weights."""
+        docs = self.get_all()
+        if document_id not in self._doc_usage_counts:
+            raise KeyError(f"Unknown document id: {document_id}")
+
+        self._doc_usage_counts[document_id] += 1
+        self._recalculate_sampling_weights(docs)
+        return self._doc_usage_counts[document_id]
+
+    def set_target_context_usage_count(
+        self,
+        target_context_usage_count: int | None,
+    ) -> None:
+        """Update the target usage count used by weight calculation."""
+        self.target_context_usage_count = target_context_usage_count
+        self._target_context_usage_count_explicit = target_context_usage_count is not None
+        docs = self.get_all()
+        self._recalculate_sampling_weights(docs)
+
+    def get_target_context_usage_count(self) -> int | None:
+        """Return the current target usage count, if configured."""
+        self.get_all()
+        return self.target_context_usage_count
+
+    def mark_fully_covered(self, document_id: str) -> None:
+        """Exclude a document from future weighted sampling."""
+        self.get_all()
+        if document_id not in self._doc_sampling_weights:
+            raise KeyError(f"Unknown document id: {document_id}")
+
+        self._fully_covered_doc_ids.add(document_id)
+        self._doc_sampling_weights[document_id] = 0.0
 
     def clear_cache(self) -> None:
         """Optional: implementations can override to clear internal caches."""
@@ -70,10 +176,10 @@ class DocumentProvider(Protocol):
         """Length if supported (may force load)."""
         return len(self.get_all())
 
-    def __iter__(self) -> Iterable[str]:
+    def __iter__(self) -> Iterable[Document]:
         return iter(self.get_all())
 
-    def __getitem__(self, index: int) -> str:
+    def __getitem__(self, index: int) -> Document:
         """Index access (forces load)."""
         return self.get_all()[index]
 
@@ -84,12 +190,20 @@ class DocumentProvider(Protocol):
 class InMemoryDocumentProvider(DocumentProvider):
     """Simple provider backed by a list of strings."""
 
-    def __init__(self, texts: list[str | Document]):
+    def __init__(
+        self,
+        texts: list[str | Document],
+        target_context_usage_count: int | None = None,
+    ):
         if not isinstance(texts, list) or not (
             all(isinstance(d, str) for d in texts)
             or all(isinstance(d, Document) for d in texts)
         ):
             raise TypeError("texts must be a list[str|Document] but got: " + str(texts))
+        self.target_context_usage_count = target_context_usage_count
+        self._target_context_usage_count_explicit = (
+            target_context_usage_count is not None
+        )
         self._documents = (
             [Document(text=text) for text in texts]
             if len(texts) > 0 and isinstance(texts[0], str)
@@ -114,11 +228,16 @@ class FileSystemDocumentProvider(DocumentProvider):
         recursive: bool = False,
         min_length: int = 1,
         cache: bool = True,
+        target_context_usage_count: int | None = None,
     ):
         self.pattern = path_pattern
         self.encoding = encoding
         self.recursive = recursive
         self.min_length = min_length
+        self.target_context_usage_count = target_context_usage_count
+        self._target_context_usage_count_explicit = (
+            target_context_usage_count is not None
+        )
         self._cache_enabled = bool(cache)
         self._cache: Optional[list[Document]] = None
 
@@ -139,7 +258,7 @@ class FileSystemDocumentProvider(DocumentProvider):
                 with open(path, "r", encoding=self.encoding) as f:
                     text = f.read().strip()
                     if len(text) >= self.min_length:
-                        docs.append(Document(text=text))
+                        docs.append(Document(id=str(Path(path).resolve()), text=text))
             except Exception as exc:
                 logger.warning("Failed to read %s: %s", path, exc)
                 continue
@@ -168,14 +287,19 @@ class DirectoryDocumentProvider(DocumentProvider):
         recursive: bool = True,
         min_length: int = 1,
         cache: bool = True,
+        target_context_usage_count: int | None = None,
     ):
         self.directory = Path(directory)
         self.patterns = file_patterns or ["*.txt", "*.md"]
         self.encoding = encoding
         self.recursive = recursive
         self.min_length = min_length
+        self.target_context_usage_count = target_context_usage_count
+        self._target_context_usage_count_explicit = (
+            target_context_usage_count is not None
+        )
         self._cache_enabled = bool(cache)
-        self._cache: Optional[list[str]] = None
+        self._cache: Optional[list[Document]] = None
 
     def _find_files(self) -> List[Path]:
         patterns = self.patterns
@@ -203,7 +327,7 @@ class DirectoryDocumentProvider(DocumentProvider):
                 with path.open("r", encoding=self.encoding) as f:
                     text = f.read().strip()
                     if len(text) >= self.min_length:
-                        docs.append(Document(text=text))
+                        docs.append(Document(id=str(path.resolve()), text=text))
             except Exception as exc:
                 logger.debug("skip %s: %s", path, exc)
                 continue
@@ -233,11 +357,16 @@ class JSONLDocumentProvider(DocumentProvider):
         recursive: bool = False,
         cache: bool = True,
         max_docs: Optional[int] = None,
+        target_context_usage_count: int | None = None,
     ):
         self.pattern = path_pattern
         self.content_key = content_key
         self.encoding = encoding
         self.recursive = recursive
+        self.target_context_usage_count = target_context_usage_count
+        self._target_context_usage_count_explicit = (
+            target_context_usage_count is not None
+        )
         self._cache_enabled = bool(cache)
         self._cache: Optional[list[Document]] = None
         self._max_docs = max_docs
@@ -245,7 +374,7 @@ class JSONLDocumentProvider(DocumentProvider):
     def _find_files(self) -> List[str]:
         return glob.glob(self.pattern, recursive=self.recursive)
 
-    def _load_documents(self) -> List[str]:
+    def _load_documents(self) -> list[Document]:
         if self._cache_enabled and self._cache is not None:
             return self._cache
 
@@ -257,7 +386,7 @@ class JSONLDocumentProvider(DocumentProvider):
         for fp in files:
             try:
                 with open(fp, "r", encoding=self.encoding) as f:
-                    for line in f:
+                    for line_number, line in enumerate(f, start=1):
                         if not line.strip():
                             continue
                         try:
@@ -268,7 +397,12 @@ class JSONLDocumentProvider(DocumentProvider):
                         if isinstance(obj, dict) and self.content_key in obj:
                             val = obj[self.content_key]
                             if isinstance(val, str) and val.strip():
-                                docs.append(Document(text=val.strip()))
+                                docs.append(
+                                    Document(
+                                        id=f"{Path(fp).resolve()}:{line_number}",
+                                        text=val.strip(),
+                                    )
+                                )
                                 if self._max_docs and len(docs) >= self._max_docs:
                                     break
             except Exception as exc:
@@ -309,17 +443,22 @@ try:
             with_payload_keys: Optional[List[str]] = None,
             cache: bool = True,
             max_docs: Optional[int] = None,
+            target_context_usage_count: int | None = None,
         ):
             self.client = client
             self.collection_name = collection_name
             self.content_key = content_key
             self.batch_size = batch_size
             self.scroll_filter = scroll_filter
+            self.target_context_usage_count = target_context_usage_count
+            self._target_context_usage_count_explicit = (
+                target_context_usage_count is not None
+            )
             self.with_payload_keys = (
                 [content_key] if with_payload_keys is None else with_payload_keys
             )
             self._cache_enabled = bool(cache)
-            self._cache: Optional[List[str]] = None
+            self._cache: Optional[list[Document]] = None
             self._max_docs = max_docs
 
         def _scroll_once(self, offset: Optional[int] = None) -> List[ScoredPoint]:
@@ -353,7 +492,7 @@ try:
                     if getattr(p, "payload", None) and self.content_key in p.payload:
                         val = p.payload[self.content_key]
                         if isinstance(val, str) and val.strip():
-                            docs.append(Document(text=val.strip()))
+                            docs.append(Document(id=str(p.id), text=val.strip()))
                             if self._max_docs and len(docs) >= self._max_docs:
                                 break
                 if self._max_docs and len(docs) >= self._max_docs:
