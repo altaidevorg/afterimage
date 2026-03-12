@@ -110,6 +110,11 @@ class JobStatusResponse(BaseModel):
     error: str | None = None
     created_at: datetime
     updated_at: datetime
+    # Request parameters — useful for auditing which model/settings actually ran
+    model_name: str | None = None
+    model_provider_name: str | None = None
+    num_dialogs: int | None = None
+    output_format: str | None = None
 
 
 class JobSummary(BaseModel):
@@ -117,6 +122,7 @@ class JobSummary(BaseModel):
     status: JobStatus
     num_dialogs: int
     model_name: str
+    model_provider_name: str
     created_at: datetime
     updated_at: datetime
 

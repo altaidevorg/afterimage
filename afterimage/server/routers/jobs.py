@@ -44,6 +44,7 @@ async def list_jobs(
             status=r.status,
             num_dialogs=r.request.num_dialogs,
             model_name=r.request.model_name,
+            model_provider_name=r.request.model_provider_name,
             created_at=r.created_at,
             updated_at=r.updated_at,
         )
@@ -73,6 +74,10 @@ async def get_job(
         error=record.error,
         created_at=record.created_at,
         updated_at=record.updated_at,
+        model_name=record.request.model_name,
+        model_provider_name=record.request.model_provider_name,
+        num_dialogs=record.request.num_dialogs,
+        output_format=record.request.output_format,
     )
 
 
