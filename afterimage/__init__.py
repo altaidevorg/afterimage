@@ -40,4 +40,4 @@ from afterimage.providers import (
 from afterimage.storage import BaseStorage, JSONLStorage, SQLStorage  # noqa
 from afterimage.types import PersonaEntry, Document  # noqa
 
-__version__ = "0.11.7"
+__version__ = "0.12.0"
