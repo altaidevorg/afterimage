@@ -105,12 +105,11 @@ AFTERIMAGE_RESULTS_DIR=/data/results
 
 ### `GenerationRequest`
 
-The request body for `POST /api/v1/generate`. At least one of `document_text`, `document_url`, or `document_chunks` is required.
+The request body for `POST /api/v1/generate`. At least one of `document_text` or `document_chunks` is required.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `document_text` | `string \| null` | `null` | Full document as a plain string |
-| `document_url` | `string \| null` | `null` | URL to fetch the document from *(reserved, not yet implemented)* |
 | `document_chunks` | `string[] \| null` | `null` | Pre-split document chunks |
 | `chunk_size` | `integer` | `5000` | Characters per chunk when auto-splitting `document_text` |
 | `num_dialogs` | `integer` | `10` | Number of QA / conversation pairs to generate (max: 1000) |
@@ -206,7 +205,7 @@ Submit a new dataset generation job. Returns immediately with a job ID; generati
   "estimated_duration_seconds": null,
   "links": {
     "self":   "/api/v1/jobs/f26ba273-ccce-4c49-be15-6c8e810836d7",
-    "status": "/api/v1/jobs/f26ba273-ccce-4c49-be15-6c8e810836d7/status",
+    "status": "/api/v1/jobs/f26ba273-ccce-4c49-be15-6c8e810836d7",
     "stream": "/api/v1/jobs/f26ba273-ccce-4c49-be15-6c8e810836d7/stream",
     "result": "/api/v1/jobs/f26ba273-ccce-4c49-be15-6c8e810836d7/result",
     "cancel": "/api/v1/jobs/f26ba273-ccce-4c49-be15-6c8e810836d7"

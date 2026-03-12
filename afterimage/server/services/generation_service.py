@@ -268,7 +268,7 @@ class GenerationService:
             size = request.chunk_size
             return [text[i : i + size] for i in range(0, len(text), size)]
         raise ValueError(
-            "No document provided. Supply one of: document_text, document_url, document_chunks."
+            "No document provided. Supply one of: document_text, document_chunks."
         )
 
 

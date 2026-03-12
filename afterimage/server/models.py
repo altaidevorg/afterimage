@@ -32,7 +32,6 @@ class GenerationRequest(BaseModel):
 
     # Document input — at least one required
     document_text: str | None = None
-    document_url: str | None = None
     document_chunks: list[str] | None = None
     chunk_size: int = Field(5000, gt=0)
 
