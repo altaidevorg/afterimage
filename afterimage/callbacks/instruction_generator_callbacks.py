@@ -1,6 +1,10 @@
 import json
+import math
 import random
+import threading
 import time
+from collections import Counter
+from dataclasses import dataclass, field
 from typing import List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel
@@ -26,6 +30,40 @@ from ..providers.llm_providers import LLMFactory
 from ..types import (
     Document,
 )
+
+
+@dataclass(frozen=True)
+class PersonaCandidate:
+    text: str
+    generation_depth: int
+
+
+@dataclass
+class PersonaSelectionState:
+    mode: Literal["cycle", "weighted"]
+    active_pool: list[PersonaCandidate] = field(default_factory=list)
+    population: list[PersonaCandidate] = field(default_factory=list)
+    weights: list[float] = field(default_factory=list)
+    next_index: int = 0
+    lock: threading.Lock = field(
+        default_factory=threading.Lock,
+        repr=False,
+        compare=False,
+    )
+
+    def next_candidate(self) -> PersonaCandidate | None:
+        if self.mode == "weighted":
+            if not self.population:
+                return None
+            return random.choices(self.population, weights=self.weights, k=1)[0]
+
+        if not self.active_pool:
+            return None
+
+        with self.lock:
+            candidate = self.active_pool[self.next_index]
+            self.next_index = (self.next_index + 1) % len(self.active_pool)
+            return candidate
 
 
 class InstructionsSchema(BaseModel):
@@ -137,6 +175,7 @@ Ask the questions in the same language as this context.
         context_id: str | None,
         context_ids: list[str] | None = None,
         persona: str | None = None,
+        persona_generation_depth: int | None = None,
     ) -> GeneratedInstructions:
         """Execute the generation process with monitoring."""
         start = time.time()
@@ -163,6 +202,7 @@ Ask the questions in the same language as this context.
                 context_id=context_id,
                 context_ids=context_ids or [],
                 persona=persona,
+                persona_generation_depth=persona_generation_depth,
             )
         except Exception as e:
             if self.monitor:
@@ -185,6 +225,7 @@ Ask the questions in the same language as this context.
         context_id: str | None,
         context_ids: list[str] | None = None,
         persona: str | None = None,
+        persona_generation_depth: int | None = None,
     ) -> GeneratedInstructions:
         """Execute the asynchronous generation process with monitoring."""
         start = time.time()
@@ -211,6 +252,7 @@ Ask the questions in the same language as this context.
                 context_id=context_id,
                 context_ids=context_ids or [],
                 persona=persona,
+                persona_generation_depth=persona_generation_depth,
             )
         except Exception as e:
             if self.monitor:
@@ -433,19 +475,147 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
             safety_settings=safety_settings,
             monitor=monitor,
         )
+        self._persona_target_per_document: int | None = None
+        self._persona_selection_state: dict[str, PersonaSelectionState] = {}
+        self._persona_selection_lock = threading.Lock()
 
-    def _sample(self) -> tuple[list[Document], str | None]:
+    def _resolve_persona_target_from_context_usage(
+        self,
+        target_context_usage_count: int,
+    ) -> int:
+        contexts_per_row = max(int(self.num_random_contexts), 1)
+        return max(math.ceil(target_context_usage_count / contexts_per_row), 1)
+
+    def configure_persona_sampling(self, num_requested: int | None = None) -> None:
+        with self._persona_selection_lock:
+            self._persona_selection_state = {}
+
+        target_context_usage_count = None
+        if hasattr(self.provider, "get_target_context_usage_count"):
+            target_context_usage_count = self.provider.get_target_context_usage_count()
+        else:
+            target_context_usage_count = getattr(
+                self.provider,
+                "target_context_usage_count",
+                None,
+            )
+
+        if isinstance(target_context_usage_count, int) and target_context_usage_count > 0:
+            self._persona_target_per_document = (
+                self._resolve_persona_target_from_context_usage(
+                    target_context_usage_count
+                )
+            )
+            return
+
+        if num_requested is None:
+            self._persona_target_per_document = None
+            return
+
+        all_docs = self.provider.get_all()
+        if hasattr(self.provider, "_doc_sampling_weights"):
+            active_doc_count = sum(
+                1
+                for doc in all_docs
+                if self.provider._doc_sampling_weights.get(doc.id, 0.0) > 0
+            )
+        else:
+            active_doc_count = len(all_docs)
+
+        active_doc_count = max(active_doc_count, 1)
+        requested = max(int(num_requested), 1)
+        inferred_target = math.ceil(requested / active_doc_count)
+        self._persona_target_per_document = max(inferred_target, 1)
+
+    def _normalize_generation_depth(self, raw_depth) -> int:
+        try:
+            depth = int(raw_depth)
+        except (TypeError, ValueError):
+            return 0
+        return depth if depth >= 0 else 0
+
+    def _flatten_document_personas(self, doc: Document) -> list[PersonaCandidate]:
+        candidates: list[PersonaCandidate] = []
+
+        for persona_entry in doc.personas:
+            metadata = getattr(persona_entry, "metadata", {}) or {}
+            generation_depth = self._normalize_generation_depth(
+                metadata.get("generation_depth")
+            )
+            for description in persona_entry.descriptions:
+                if not description:
+                    continue
+                candidates.append(
+                    PersonaCandidate(
+                        text=description,
+                        generation_depth=generation_depth,
+                    )
+                )
+
+        return sorted(candidates, key=lambda candidate: candidate.generation_depth)
+
+    def _build_persona_selection_state(self, doc: Document) -> PersonaSelectionState:
+        persona_candidates = self._flatten_document_personas(doc)
+        if not persona_candidates:
+            return PersonaSelectionState(mode="cycle")
+
+        target = self._persona_target_per_document
+        if target is None:
+            return PersonaSelectionState(mode="cycle", active_pool=persona_candidates)
+
+        total_personas = len(persona_candidates)
+        target = max(target, 1)
+
+        if target <= total_personas:
+            active_pool = (
+                persona_candidates
+                if target == total_personas
+                else persona_candidates[:target]
+            )
+            return PersonaSelectionState(mode="cycle", active_pool=active_pool)
+
+        max_depth = max(
+            candidate.generation_depth for candidate in persona_candidates
+        )
+        depth_counts = Counter(
+            candidate.generation_depth for candidate in persona_candidates
+        )
+        weights = [
+            float((max_depth - candidate.generation_depth) + 1)
+            / depth_counts[candidate.generation_depth]
+            for candidate in persona_candidates
+        ]
+        return PersonaSelectionState(
+            mode="weighted",
+            population=persona_candidates,
+            weights=weights,
+        )
+
+    def _get_persona_selection_state(self, doc: Document) -> PersonaSelectionState:
+        with self._persona_selection_lock:
+            state = self._persona_selection_state.get(doc.id)
+            if state is None:
+                state = self._build_persona_selection_state(doc)
+                self._persona_selection_state[doc.id] = state
+            return state
+
+    def _sample_persona_candidate(
+        self,
+        docs: list[Document],
+    ) -> PersonaCandidate | None:
+        docs_with_personas = [
+            doc for doc in docs if self._flatten_document_personas(doc)
+        ]
+        if not docs_with_personas:
+            return None
+
+        selected_doc = random.choice(docs_with_personas)
+        return self._get_persona_selection_state(selected_doc).next_candidate()
+
+    def _sample(self) -> tuple[list[Document], PersonaCandidate | None]:
         """Sample random contexts and a persona using the document provider."""
         docs = self.provider.get_documents(self.num_random_contexts)
-
-        # Collect all personas from sampled documents
-        all_personas = []
-        for doc in docs:
-            for persona_entry in doc.personas:
-                all_personas.extend(persona_entry.descriptions)
-
-        selected_persona = random.choice(all_personas) if all_personas else None
-        return docs, selected_persona
+        return docs, self._sample_persona_candidate(docs)
 
     def generate(self, original_prompt):
         """Generates instructions based on the provided prompt, sampled context and persona.
@@ -456,9 +626,15 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
         Returns:
             GeneratedInstructions: The instructions generated along with the context and persona used.
         """
-        random_contexts, persona = self._sample()
-        if persona is None:
-            persona = "A curious user"
+        random_contexts, persona_candidate = self._sample()
+        persona = (
+            persona_candidate.text if persona_candidate is not None else "A curious user"
+        )
+        persona_generation_depth = (
+            persona_candidate.generation_depth
+            if persona_candidate is not None
+            else None
+        )
 
         # Format the system prompt with persona
         # We use self.prompt which is already formatted for n_instructions but still has a placeholder for persona
@@ -482,13 +658,20 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
             context_id=context_id,
             context_ids=context_ids,
             persona=persona,
+            persona_generation_depth=persona_generation_depth,
         )
 
     async def agenerate(self, original_prompt):
         """Generates instructions based on the provided prompt, sampled context and persona asynchronously."""
-        random_contexts, persona = self._sample()
-        if persona is None:
-            persona = "A curious user"
+        random_contexts, persona_candidate = self._sample()
+        persona = (
+            persona_candidate.text if persona_candidate is not None else "A curious user"
+        )
+        persona_generation_depth = (
+            persona_candidate.generation_depth
+            if persona_candidate is not None
+            else None
+        )
 
         # Format the system prompt with persona
         system_prompt = self.prompt
@@ -511,6 +694,7 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
             context_id=context_id,
             context_ids=context_ids,
             persona=persona,
+            persona_generation_depth=persona_generation_depth,
         )
 
 
@@ -627,9 +811,15 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
 
     def generate(self, original_prompt):
         """Generates instructions that require tool calls."""
-        random_contexts, persona = self._sample()
-        if persona is None:
-            persona = "A curious user"
+        random_contexts, persona_candidate = self._sample()
+        persona = (
+            persona_candidate.text if persona_candidate is not None else "A curious user"
+        )
+        persona_generation_depth = (
+            persona_candidate.generation_depth
+            if persona_candidate is not None
+            else None
+        )
 
         full_context = self._merge_contexts([c.text for c in random_contexts])
 
@@ -659,13 +849,20 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
             context_id=context_id,
             context_ids=context_ids,
             persona=persona,
+            persona_generation_depth=persona_generation_depth,
         )
 
     async def agenerate(self, original_prompt):
         """Generates instructions that require tool calls asynchronously."""
-        random_contexts, persona = self._sample()
-        if persona is None:
-            persona = "A curious user"
+        random_contexts, persona_candidate = self._sample()
+        persona = (
+            persona_candidate.text if persona_candidate is not None else "A curious user"
+        )
+        persona_generation_depth = (
+            persona_candidate.generation_depth
+            if persona_candidate is not None
+            else None
+        )
 
         full_context = self._merge_contexts([c.text for c in random_contexts])
 
@@ -693,6 +890,7 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
             context_id=context_id,
             context_ids=context_ids,
             persona=persona,
+            persona_generation_depth=persona_generation_depth,
         )
 
     def create_correspondent_prompt(self, respondent_prompt: str) -> str:

@@ -118,6 +118,7 @@ class GenerationMetadata(TypedDict, total=False):
     context_id: str
     context_ids: list[str]
     persona_name: Optional[str]
+    persona_generation_depth: Optional[int]
     instruction_index: int
     batch_id: str
     session_id: str

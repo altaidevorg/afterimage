@@ -17,6 +17,7 @@ class GeneratedInstructions(BaseModel):
     instructions: List[str]
     context: str
     persona: str | None = None
+    persona_generation_depth: int | None = None
     context_id: str | None = None
     context_ids: List[str] = Field(default_factory=list)
 

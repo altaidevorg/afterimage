@@ -450,18 +450,32 @@ class ConversationGenerator(BaseGenerator):
                     respondent_prompt=respondent_prompt,
                 )
 
+                def build_conversation_row(
+                    generated_conversation,
+                ) -> ConversationWithContext:
+                    return ConversationWithContext(
+                        conversations=generated_conversation,
+                        instruction_context=instruction_context,
+                        response_context=response_context,
+                        persona=persona,
+                        metadata={
+                            "context_id": gen_instructions.context_id,
+                            "context_ids": gen_instructions.context_ids,
+                            "persona_name": persona,
+                            "persona_generation_depth": (
+                                gen_instructions.persona_generation_depth
+                            ),
+                        },
+                    )
+
+                conversation_row = build_conversation_row(conversation)
+
                 evaluation_grade = GradeSchema.NOT_ACCEPTABLE
                 while self.evaluator and evaluation_grade in [
                     GradeSchema.NOT_ACCEPTABLE,
                     GradeSchema.BAD,
                     GradeSchema.NEEDS_IMPROVEMENT,
                 ]:
-                    conversation_row = ConversationWithContext(
-                        conversations=conversation,
-                        instruction_context=instruction_context,
-                        response_context=response_context,
-                        persona=persona,
-                    )
                     evaluated_conversation = self.evaluator.evaluate_row(
                         conversation_row
                     )
@@ -478,6 +492,7 @@ class ConversationGenerator(BaseGenerator):
                             correspondent_prompt=correspondent_prompt,
                             respondent_prompt=respondent_prompt,
                         )
+                        conversation_row = build_conversation_row(conversation)
                     else:
                         evaluation_grade = (
                             evaluated_conversation.evaluation.overall_grade
@@ -579,6 +594,10 @@ class ConversationGenerator(BaseGenerator):
                 )
 
         self.initialize(instruction_generator_callback)
+        self._configure_persona_sampling(
+            instruction_generator_callback,
+            num_requested=num_dialogs,
+        )
 
         num_generated = 0
         pbar = tqdm(total=n_conversations, desc="Generating...", unit="conversation")

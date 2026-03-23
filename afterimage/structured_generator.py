@@ -230,6 +230,9 @@ class AsyncStructuredGenerator(BaseGenerator):
                         "context_id": gen_instructions.context_id,
                         "context_ids": gen_instructions.context_ids,
                         "persona_name": gen_instructions.persona,
+                        "persona_generation_depth": (
+                            gen_instructions.persona_generation_depth
+                        ),
                     },
                 )
 
@@ -320,6 +323,11 @@ class AsyncStructuredGenerator(BaseGenerator):
         self._configure_context_sampling(
             instruction_generator_callback,
             final_stopping_criteria,
+        )
+        self._configure_persona_sampling(
+            instruction_generator_callback,
+            num_requested=num_samples,
+            stopping_criteria=final_stopping_criteria,
         )
 
         state = GenerationState(

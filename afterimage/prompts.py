@@ -210,7 +210,7 @@ Below is relevant information retrieved from our knowledge base that may help an
 
 Remember to provide accurate, contextually relevant answers while maintaining your expert persona."""
 
-text_to_persona_generation_prompt_tmpl = """Generate three to five high-quality persona descriptions that are likely to engage with the following text in some way (e.g., read, write, like, dislike etc.). Each persona description should be **no longer than 40 words**, describing the individual’s background, interests, expertise level, experiences, goals, and/or desires. Personas should be **descriptive** and as **specific** as possible. They must never **explicitly** refer to provided text but be highly relevant to their contents.
+text_to_persona_generation_prompt_tmpl = """Generate exactly five high-quality persona descriptions that are likely to engage with the following text in some way (e.g., read, write, like, dislike etc.). Each persona description should be **no longer than 40 words**, describing the individual’s background, interests, expertise level, experiences, goals, and/or desires. Personas should be **descriptive** and as **specific** as possible. They must never **explicitly** refer to provided text but be highly relevant to their contents.
 Persona descriptions should be nuanced, but they must not contain personal names or other types of PIIs.
 
 
@@ -221,7 +221,7 @@ Each persona should be written on a separate line, and each line must begin with
 </text>
 """
 
-persona_to_persona_generation_prompt_tmpl = """Generate three to five high-quality persona descriptions that are in **close relation** to the following personas (e.g., colleagues, clients, mentors, collaborators, counterparts, or relevant stakeholders). Each persona description should be **no longer than 40 words**, describing the individual’s background, interests, expertise level, experiences, goals, and/or desires. Personas should be **descriptive** and as **specific** as possible. They must never **explicitly** refer to the provided personas but remain highly relevant and connected to their roles. 
+persona_to_persona_generation_prompt_tmpl = """Generate exactly five high-quality persona descriptions that are in **close relation** to the following personas (e.g., colleagues, clients, mentors, collaborators, counterparts, or relevant stakeholders). Each persona description should be **no longer than 40 words**, describing the individual’s background, interests, expertise level, experiences, goals, and/or desires. Personas should be **descriptive** and as **specific** as possible. They must never **explicitly** refer to the provided personas but remain highly relevant and connected to their roles. 
 Persona descriptions should be nuanced, but they must not contain personal names or other types of PIIs.
 
 Each persona should be written on a separate line, and each line must begin with "Persona N:", where N is the enumeration starting at 1. Your output must not include any preamble, explanations, or commentary --output only the persona descriptions.
