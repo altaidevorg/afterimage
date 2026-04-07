@@ -77,6 +77,9 @@ class SimpleSyntheticDatasetEvaluator:
             # Initialize lists to store evaluations and scores for each turn
             evaluations = []
             final_scores = []
+            total_prompt_tokens = 0
+            total_completion_tokens = 0
+            total_tokens = 0
 
             # Process each conversation turn pair (instruction-response)
             for i in range(0, len(row_dict["conversations"]), 2):
@@ -111,6 +114,14 @@ class SimpleSyntheticDatasetEvaluator:
                     ),
                     contents=compiled_prompt,
                 )
+
+                usage = getattr(evaluation_output, "usage_metadata", None)
+                if usage is not None:
+                    total_prompt_tokens += getattr(usage, "prompt_token_count", 0) or 0
+                    total_completion_tokens += (
+                        getattr(usage, "candidates_token_count", 0) or 0
+                    )
+                    total_tokens += getattr(usage, "total_token_count", 0) or 0
 
                 try:
                     evaluation = evaluation_output.parsed.dict()
@@ -172,6 +183,10 @@ class SimpleSyntheticDatasetEvaluator:
                             if k != "overall_grade"
                         },
                     },
+                    prompt_token_count=total_prompt_tokens,
+                    completion_token_count=total_completion_tokens,
+                    total_token_count=total_tokens,
+                    model_name=self.model_name,
                 )
 
             return EvaluatedConversationWithContext(

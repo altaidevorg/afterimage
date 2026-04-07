@@ -14,8 +14,42 @@ from ..types import ConversationEntry
 T = TypeVar("T", bound=BaseModel)
 
 
+def _extract_reasoning_content(message: Any) -> str | None:
+    """Best-effort extraction of reasoning/thinking text from OpenAI-compatible messages."""
+
+    def _clean(value: Any) -> str | None:
+        if isinstance(value, str):
+            cleaned = value.strip()
+            return cleaned or None
+        return None
+
+    for attr in ("reasoning_content", "reasoning", "thinking"):
+        extracted = _clean(getattr(message, attr, None))
+        if extracted:
+            return extracted
+
+    as_dict: dict[str, Any] | None = None
+    if isinstance(message, dict):
+        as_dict = message
+    elif hasattr(message, "model_dump"):
+        try:
+            dumped = message.model_dump()
+            if isinstance(dumped, dict):
+                as_dict = dumped
+        except Exception:
+            as_dict = None
+
+    if as_dict:
+        for key in ("reasoning_content", "reasoning", "thinking"):
+            extracted = _clean(as_dict.get(key))
+            if extracted:
+                return extracted
+
+    return None
+
+
 @dataclass
-class LLMResponse:
+class CommonLLMResponse:
     """Standardized LLM response."""
 
     text: str
@@ -28,10 +62,16 @@ class LLMResponse:
 
 
 @dataclass
-class StructuredLLMResponse(LLMResponse, Generic[T]):
+class LLMResponse(CommonLLMResponse):
+    reasoning_content: str | None = None
+
+
+@dataclass
+class StructuredLLMResponse(CommonLLMResponse, Generic[T]):
     """Standardized LLM response with structured output."""
 
     parsed: T
+    reasoning_content: str | None = None
 
 
 class ChatSession:
@@ -150,6 +190,7 @@ class OpenAIChatSession(ChatSession):
         )
 
         assistant_message = response.choices[0].message
+        assistant_reasoning = _extract_reasoning_content(assistant_message)
         self.history.append(
             {"role": assistant_message.role, "content": assistant_message.content}
         )
@@ -157,13 +198,14 @@ class OpenAIChatSession(ChatSession):
         total_token_count = response.usage.total_tokens
         self.token_count = total_token_count
         return LLMResponse(
-            text=assistant_message.content,
+            text=assistant_message.content or "",
             finish_reason=response.choices[0].finish_reason,
             prompt_token_count=response.usage.prompt_tokens,
             completion_token_count=response.usage.completion_tokens,
             total_token_count=total_token_count,
             model_name=self.model_name,
             raw_response=response,
+            reasoning_content=assistant_reasoning,
         )
 
 
@@ -210,6 +252,7 @@ class AsyncOpenAIChatSession(ChatSession):
         )
 
         assistant_message = response.choices[0].message
+        assistant_reasoning = _extract_reasoning_content(assistant_message)
         self.history.append(
             {"role": assistant_message.role, "content": assistant_message.content}
         )
@@ -218,13 +261,14 @@ class AsyncOpenAIChatSession(ChatSession):
         self.token_count = total_token_count
 
         return LLMResponse(
-            text=assistant_message.content,
+            text=assistant_message.content or "",
             finish_reason=response.choices[0].finish_reason,
             prompt_token_count=response.usage.prompt_tokens,
             completion_token_count=response.usage.completion_tokens,
             total_token_count=total_token_count,
             model_name=self.model_name,
             raw_response=response,
+            reasoning_content=assistant_reasoning,
         )
 
 
@@ -303,13 +347,19 @@ class GeminiProvider(LLMProvider):
             # Accessing client.aio creates the async client wrappers,
             # so we check if _aio is already populated or if we can access the underlying api_client differently.
             # But client.aio corresponds to the AsyncClient wrapper.
-            
+
             # If client.aio was used, it should be initialized.
             if hasattr(client, "aio"):
                 api_client = client.aio._api_client
-                if hasattr(api_client, "_aiohttp_session") and api_client._aiohttp_session:
+                if (
+                    hasattr(api_client, "_aiohttp_session")
+                    and api_client._aiohttp_session
+                ):
                     await api_client._aiohttp_session.close()
-                if hasattr(api_client, "_async_httpx_client") and api_client._async_httpx_client:
+                if (
+                    hasattr(api_client, "_async_httpx_client")
+                    and api_client._async_httpx_client
+                ):
                     await api_client._async_httpx_client.aclose()
         except Exception:
             pass
@@ -635,15 +685,17 @@ class OpenAIProvider(LLMProvider):
                 stop=stop_sequences,
                 **current_kwargs,
             )
+            assistant_message = response.choices[0].message
 
             return LLMResponse(
-                text=response.choices[0].message.content,
+                text=assistant_message.content or "",
                 prompt_token_count=response.usage.prompt_tokens,
                 completion_token_count=response.usage.completion_tokens,
                 total_token_count=response.usage.total_tokens,
                 finish_reason=response.choices[0].finish_reason,
                 model_name=self.model_name,
                 raw_response=response,
+                reasoning_content=_extract_reasoning_content(assistant_message),
             )
 
         except Exception:
@@ -678,15 +730,17 @@ class OpenAIProvider(LLMProvider):
                 stop=stop_sequences,
                 **current_kwargs,
             )
+            assistant_message = response.choices[0].message
 
             return LLMResponse(
-                text=response.choices[0].message.content,
+                text=assistant_message.content or "",
                 prompt_token_count=response.usage.prompt_tokens,
                 completion_token_count=response.usage.completion_tokens,
                 total_token_count=response.usage.total_tokens,
                 finish_reason=response.choices[0].finish_reason,
                 model_name=self.model_name,
                 raw_response=response,
+                reasoning_content=_extract_reasoning_content(assistant_message),
             )
 
         except Exception:
@@ -719,16 +773,18 @@ class OpenAIProvider(LLMProvider):
                 temperature=temperature,
                 **current_kwargs,
             )
+            assistant_message = response.choices[0].message
 
             return StructuredLLMResponse(
-                text=response.choices[0].message.content or "",
-                parsed=response.choices[0].message.parsed,
+                text=assistant_message.content or "",
+                parsed=assistant_message.parsed,
                 prompt_token_count=response.usage.prompt_tokens,
                 completion_token_count=response.usage.completion_tokens,
                 total_token_count=response.usage.total_tokens,
                 finish_reason=response.choices[0].finish_reason,
                 model_name=self.model_name,
                 raw_response=response,
+                reasoning_content=_extract_reasoning_content(assistant_message),
             )
         except Exception:
             self.key_pool.report_error(api_key)
@@ -760,16 +816,18 @@ class OpenAIProvider(LLMProvider):
                 temperature=temperature,
                 **current_kwargs,
             )
+            assistant_message = response.choices[0].message
 
             return StructuredLLMResponse(
-                text=response.choices[0].message.content or "",
-                parsed=response.choices[0].message.parsed,
+                text=assistant_message.content or "",
+                parsed=assistant_message.parsed,
                 prompt_token_count=response.usage.prompt_tokens,
                 completion_token_count=response.usage.completion_tokens,
                 total_token_count=response.usage.total_tokens,
                 finish_reason=response.choices[0].finish_reason,
                 model_name=self.model_name,
                 raw_response=response,
+                reasoning_content=_extract_reasoning_content(assistant_message),
             )
         except Exception:
             self.key_pool.report_error(api_key)
@@ -844,8 +902,11 @@ class DeepSeekProvider(OpenAIProvider):
             **kwargs,
         )
 
-    def _parse_structured_response(self, response: ChatCompletion, schema: Type[T]) -> StructuredLLMResponse[T]:
-        text = response.choices[0].message.content or ""
+    def _parse_structured_response(
+        self, response: ChatCompletion, schema: Type[T]
+    ) -> StructuredLLMResponse[T]:
+        assistant_message = response.choices[0].message
+        text = assistant_message.content or ""
         parsed = schema.model_validate_json(text)
         return StructuredLLMResponse(
             text=text,
@@ -856,11 +917,16 @@ class DeepSeekProvider(OpenAIProvider):
             finish_reason=response.choices[0].finish_reason,
             model_name=self.model_name,
             raw_response=response,
+            reasoning_content=_extract_reasoning_content(assistant_message),
         )
 
-    def _build_structured_messages(self, prompt: str, schema: Type[T]) -> List[Dict[str, str]]:
+    def _build_structured_messages(
+        self, prompt: str, schema: Type[T]
+    ) -> List[Dict[str, str]]:
         schema_str = json.dumps(schema.model_json_schema(), indent=2)
-        system_content = (self.system_instruction or "") + f"\nRespond with a valid JSON object matching this schema:\n{schema_str}"
+        system_content = (
+            self.system_instruction or ""
+        ) + f"\nRespond with a valid JSON object matching this schema:\n{schema_str}"
         return [
             {"role": "system", "content": system_content},
             {"role": "user", "content": prompt},
@@ -942,7 +1008,11 @@ class LLMFactory:
             raise ValueError(f"Unknown provider: {provider}")
 
         provider_cls = providers[provider]
-        init_kwargs = {"api_key": api_key, "system_instruction": system_instruction, **kwargs}
+        init_kwargs = {
+            "api_key": api_key,
+            "system_instruction": system_instruction,
+            **kwargs,
+        }
         if model_name is not None:
             init_kwargs["model_name"] = model_name
         return provider_cls(**init_kwargs)

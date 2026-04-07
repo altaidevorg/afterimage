@@ -7,6 +7,7 @@ import subprocess
 import threading
 import queue
 import re
+from collections import deque
 from typing import AsyncGenerator, Tuple
 
 import pandas as pd
@@ -94,7 +95,6 @@ def filter_and_prepare_dataset(training_file, tool_filter_config, target_dir) ->
                     data_by_tool[primary_tool].append(line)
                 else:
                     others.append(line)
-                    others.append(line)
             except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                 others.append(line)
     
@@ -166,6 +166,7 @@ async def _execute_training_subprocess(
     current_remaining = ""
     phase = "loading"  # loading, training, done
     all_logs = [] # Used in dev mode
+    recent_lines: deque[str] = deque(maxlen=200)  # Always kept for failure diagnostics
     
     while True:
         # Check for new lines (non-blocking)
@@ -177,6 +178,8 @@ async def _execute_training_subprocess(
                     break
                 
                 if not line: continue
+
+                recent_lines.append(line)
                 
                 if is_dev_mode:
                     all_logs.append(line)
@@ -253,7 +256,16 @@ async def _execute_training_subprocess(
             final_logs = "\n".join(all_logs)
             yield "Status: Error - Training failed", final_logs
         else:
-            yield "Status: Error - Training failed", "Please check your files and try again."
+            tail = "\n".join(recent_lines).strip()
+            detail = (
+                tail
+                if tail
+                else "No log output captured. Typical causes: missing HF_TOKEN, dataset path mismatch, or model download failure."
+            )
+            yield (
+                "Status: Error - Training failed",
+                "Training subprocess exited with an error. Last output:\n\n" + detail,
+            )
 
 
 async def run_training(training_file, tool_filter_config=None) -> AsyncGenerator[Tuple[str, str], None]:
@@ -289,8 +301,9 @@ async def run_training(training_file, tool_filter_config=None) -> AsyncGenerator
         yield "Status: ✓ Files ready", ""
         await asyncio.sleep(0.5)
         
-        # Run training command
-        cmd = [sys.executable, "train.py"]
+        # Run training command (explicit dataset path so filtered merges and UI-prepared files match train.py)
+        rel_dataset = os.path.relpath(prepared_dataset_path, training_dir)
+        cmd = [sys.executable, "train.py", "--dataset", rel_dataset]
         
         async for status, output in _execute_training_subprocess(cmd, training_dir, is_dev_mode=False):
             yield status, output
@@ -336,9 +349,11 @@ async def run_training_developer(
         
         yield "Status: ✓ Files ready, starting training subprocess...", ""
         
+        rel_dataset = os.path.relpath(prepared_dataset_path, training_dir)
         # Build command with hyperparameters
         cmd = [
             sys.executable, "train.py",
+            "--dataset", rel_dataset,
             "--num_epochs", str(num_epochs),
             "--learning_rate", str(learning_rate),
             "--batch_size", str(batch_size),

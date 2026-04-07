@@ -1,6 +1,6 @@
 [project]
 name = "afterimage"
-version = "0.11.4"
+version = "0.12.0"
 keywords = ["afterimage", "synthetic", "dataset-generation", "synthetic-dataset"]
 authors = [
     { name = "Yusuf Sarıgöz", email = "yusuf@altai.dev"}
@@ -34,8 +34,7 @@ dependencies = [
     "python-docx>=1.2.0",
     "striprtf>=0.0.29",
     "gradio>=6.3.0",
-    "fastmcp",
-    "python-dotenv>=1.0.0",
+    "fastmcp>=3.2.0",
 ]
 
 [project.urls]
@@ -56,6 +55,18 @@ server = [
 [project.scripts]
 afterimage-server = "afterimage.server:main"
 
+# Demo UI model training (`examples/demo_ui/training_scripts/train.py`); mirrors `examples/demo_ui/training_scripts/requirements.txt`
+training = [
+    "torch>=2.0.0",
+    "transformers>=4.56.2,<5.0.0",
+    "datasets>=2.18.0",
+    "peft>=0.10.0",
+    "accelerate>=0.28.0",
+    "huggingface_hub>=0.22.0",
+    "trl>=0.29.1,<0.30.0",
+    "python-dotenv>=1.0.0",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["afterimage", "afterimage.*"]
@@ -63,6 +74,18 @@ include = ["afterimage", "afterimage.*"]
 [dependency-groups]
 dev = [
     "myst-parser>=4.0.1",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=0.24.0",
     "sphinx>=8.2.3",
     "sphinx-rtd-theme>=3.1.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+markers = [
+    "integration: marks tests that call real APIs (deselect with '-m \"not integration\"')",
 ]

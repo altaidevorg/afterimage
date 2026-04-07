@@ -68,8 +68,10 @@ Afterimage uses a callback system to modularize "User Behavior" and "Assistant K
 ### 1. Instruction Generators (The "User")
 These determine what the simulated user wants to talk about.
 *   **`ContextualInstructionGeneratorCallback`**: Samples a document and generates a question based on it.
-*   **`PersonaInstructionGeneratorCallback`**: Samples a persona ("Angry Customer", "Novice") and a document to generate a styled question.
+*   **`PersonaInstructionGeneratorCallback`**: Samples a document-aware persona ("Angry Customer", "Novice") and a document to generate a styled question. It prunes deeper persona layers when supply exceeds demand and uses depth-weighted reuse when more rows are needed than unique personas.
 *   **`ToolCallingInstructionGeneratorCallback`**: Generates instructions specifically designed to trigger tool/function calls (requires a list of tools).
+
+Persona-based generations also carry `persona_generation_depth` in row metadata so downstream analysis can see whether the selected persona came from the seed layer or an evolved layer.
 
 ### 2. Prompt Modifiers (The "Assistant")
 These modify the assistant's system prompt at runtime, usually to inject context.

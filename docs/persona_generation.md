@@ -13,6 +13,8 @@ By generating varied personas based on your actual data, you can test how your m
 
 The `PersonaGenerator` class is responsible for creating these personas. It can generate them from raw text (analyzing what kind of person would be interested in this text) or evolve existing personas.
 
+Each persona generation call now targets **exactly five personas** from the LLM. Outputs are whitespace-normalized, exact duplicates are dropped, and the call is retried up to three times before failing the persona enrichment step.
+
 ### Initialization
 
 ```python
@@ -33,11 +35,34 @@ The most common workflow. It reads documents from a `DocumentProvider`, analyzes
 await persona_gen.generate_from_documents(
     documents=docs,
     max_docs=10,       # Limit how many documents to analyze
-    n_iterations=0     # (Experimental) Evolve personas further
+    n_iterations=None, # Auto-pick depth from target if available
+    target_data_count=1000,
+    num_random_contexts=1,
 )
 ```
 
 This method doesn't return the personas directly. Instead, it saves them into the `DocumentProvider`'s internal memory (specifically, into the `Document` objects themselves). This allows the `PersonaInstructionGeneratorCallback` to later retrieve a document AND its associated personas together.
+
+When `n_iterations` is omitted, Afterimage tries to choose it automatically. The heuristic resolves an effective per-document persona target from either:
+
+- `ceil(documents.target_context_usage_count / num_random_contexts)`, if the provider already exposes a context-usage target
+- or `ceil(target_data_count / active_doc_count)`
+
+It then chooses the depth whose expected persona pool is closest to that target. This avoids cases like generating `3905` personas for a `20`-row per-document demand.
+
+Examples:
+
+- target `20 / doc` -> `n_iterations = 1` -> `30` total personas
+- target `1000 / doc` -> `n_iterations = 3` -> `780` total personas, then runtime oversampling covers the remainder
+- target `3905 / doc` -> `n_iterations = 4` -> `3905` total personas
+
+When `n_iterations > 0`, each successful generation step fans out by five. The expected per-document persona pool after `n_iterations = n` is:
+
+```text
+S(n) = sum(i=1..n+1) 5^i = 5(5^(n+1) - 1) / 4
+```
+
+For example, `n_iterations = 4` yields an expected full per-document persona pool of `3905`.
 
 #### `generate_from_text` (Single)
 
@@ -58,7 +83,11 @@ Once you have generated personas using `PersonaGenerator`, you need to tell the 
 
 1.  **Load Documents**: Prepare your content.
 2.  **Generate Personas**: Run `PersonaGenerator` over these documents to "enrich" them with potential user profiles.
-3.  **Generate Conversations**: Use the `PersonaInstructionGeneratorCallback`. It will pick a document, randomly select one of the generated personas for that document, and then instruct the Correspondent to "act" like that person.
+3.  **Generate Conversations**: Use the `PersonaInstructionGeneratorCallback`. It will pick a document, build a depth-aware persona pool for that document, and then instruct the Correspondent to "act" like that person.
+
+At runtime, persona sampling is adaptive:
+- If the target rows per document are lower than the available persona pool, Afterimage keeps the shallowest personas first and prunes deeper layers.
+- If the target rows per document exceed the available pool, Afterimage reuses personas with a depth-based weight that favors upper layers.
 
 ```python
 import asyncio

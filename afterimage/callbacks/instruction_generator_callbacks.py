@@ -340,6 +340,7 @@ Ask the questions in the same language as this context.
                 .strip()
             )
             if self.monitor:
+              
                 self.monitor.track_generation(
                     duration=time.time() - start_time,
                     success=True,

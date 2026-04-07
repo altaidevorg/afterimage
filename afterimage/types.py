@@ -6,6 +6,8 @@ from typing import Any, Dict, Generic, List, Optional, TypedDict, TypeVar
 
 from pydantic import BaseModel, Field
 
+from .metadata_utils import extract_unique_context_ids
+
 T = TypeVar("T")
 
 
@@ -39,6 +41,7 @@ class Role(str, Enum):
 class ConversationEntry(BaseModel):
     role: Role
     content: str
+    reasoning_content: str | None = None
 
 
 class Conversation(BaseModel):
@@ -113,7 +116,9 @@ class GenerationMetadata(TypedDict, total=False):
     """Structured metadata for generation samples."""
 
     context_id: str
+    context_ids: list[str]
     persona_name: Optional[str]
+    persona_generation_depth: Optional[int]
     instruction_index: int
     batch_id: str
     session_id: str
@@ -148,8 +153,7 @@ class GenerationState:
             meta = item.get("metadata")
 
         if meta is not None and isinstance(meta, dict):
-            ctx_id = meta.get("context_id")
-            if ctx_id:
+            for ctx_id in extract_unique_context_ids(meta):
                 self.context_counts[ctx_id] = self.context_counts.get(ctx_id, 0) + 1
 
         persona = getattr(item, "persona", None) or (

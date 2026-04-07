@@ -67,7 +67,7 @@ class ConversationGenerator(BaseGenerator):
             auto_improve: Whether to try to improve low-quality generations
             evaluator_model_name: Model name for the evaluator when auto_improve is True
             evaluator_method: method to be used for evaluation.
-            model_provider_name: Provider used for accessing LLMs. `"gemini"` or `"openai"` for Openai-compatible APIs.
+            model_provider_name: Provider used for accessing LLMs. Supported values are `"gemini"`, `"openai"`, and `"deepseek"`.
             storage: Storage implementation for saving conversations
                     If None, creates JSONLStorage with datetime-based filename
             monitor: GenerationMonitor instance for tracking generation metrics
@@ -142,8 +142,9 @@ class ConversationGenerator(BaseGenerator):
             )
             api_key = self.key_pool.get_next_key()
             model = LLMFactory.create(
-                "gemini",
-                "gemini-2.5-pro",
+                self.model_provider_name,
+                self.model_name,
+                api_key=api_key,
                 safety_settings=self.safety_settings,
             )
 
@@ -180,7 +181,7 @@ class ConversationGenerator(BaseGenerator):
         try:
             api_key = self.key_pool.get_next_key()
             model = LLMFactory.create(
-                "gemini",
+                self.model_provider_name,
                 self.model_name,
                 api_key=api_key,
                 system_instruction=prompt,
@@ -216,12 +217,17 @@ class ConversationGenerator(BaseGenerator):
         """Generates a question from the correspondent based on the given answer."""
         start_time = time.time()
         try:
-            question = correspondent.send_message(answer).text
+            response = correspondent.send_message(answer)
+            question = response.text
 
             if self.monitor:
                 self.monitor.track_generation(
                     duration=time.time() - start_time,
                     success=True,
+                    prompt_token_count=response.prompt_token_count,
+                    completion_token_count=response.completion_token_count,
+                    total_token_count=response.total_token_count,
+                    model_name=response.model_name,
                     metadata={
                         "operation": "question_generation",
                         "answer_length": len(answer),
@@ -247,12 +253,17 @@ class ConversationGenerator(BaseGenerator):
         """Generates an answer from the respondent based on the given question."""
         start_time = time.time()
         try:
-            answer = respondent.send_message(question).text
+            response = respondent.send_message(question)
+            answer = response.text
 
             if self.monitor:
                 self.monitor.track_generation(
                     duration=time.time() - start_time,
                     success=True,
+                    prompt_token_count=response.prompt_token_count,
+                    completion_token_count=response.completion_token_count,
+                    total_token_count=response.total_token_count,
+                    model_name=response.model_name,
                     metadata={
                         "operation": "answer_generation",
                         "question_length": len(question),
@@ -439,18 +450,32 @@ class ConversationGenerator(BaseGenerator):
                     respondent_prompt=respondent_prompt,
                 )
 
+                def build_conversation_row(
+                    generated_conversation,
+                ) -> ConversationWithContext:
+                    return ConversationWithContext(
+                        conversations=generated_conversation,
+                        instruction_context=instruction_context,
+                        response_context=response_context,
+                        persona=persona,
+                        metadata={
+                            "context_id": gen_instructions.context_id,
+                            "context_ids": gen_instructions.context_ids,
+                            "persona_name": persona,
+                            "persona_generation_depth": (
+                                gen_instructions.persona_generation_depth
+                            ),
+                        },
+                    )
+
+                conversation_row = build_conversation_row(conversation)
+
                 evaluation_grade = GradeSchema.NOT_ACCEPTABLE
                 while self.evaluator and evaluation_grade in [
                     GradeSchema.NOT_ACCEPTABLE,
                     GradeSchema.BAD,
                     GradeSchema.NEEDS_IMPROVEMENT,
                 ]:
-                    conversation_row = ConversationWithContext(
-                        conversations=conversation,
-                        instruction_context=instruction_context,
-                        response_context=response_context,
-                        persona=persona,
-                    )
                     evaluated_conversation = self.evaluator.evaluate_row(
                         conversation_row
                     )
@@ -467,6 +492,7 @@ class ConversationGenerator(BaseGenerator):
                             correspondent_prompt=correspondent_prompt,
                             respondent_prompt=respondent_prompt,
                         )
+                        conversation_row = build_conversation_row(conversation)
                     else:
                         evaluation_grade = (
                             evaluated_conversation.evaluation.overall_grade
@@ -568,6 +594,10 @@ class ConversationGenerator(BaseGenerator):
                 )
 
         self.initialize(instruction_generator_callback)
+        self._configure_persona_sampling(
+            instruction_generator_callback,
+            num_requested=num_dialogs,
+        )
 
         num_generated = 0
         pbar = tqdm(total=n_conversations, desc="Generating...", unit="conversation")
@@ -603,6 +633,11 @@ class ConversationGenerator(BaseGenerator):
                             warnings.warn(f"Exception in future: {e}")
                             traceback.print_exc()
                     else:
+                        for conversation in conversations:
+                            self._record_context_usage(
+                                instruction_generator_callback,
+                                conversation,
+                            )
                         save_conversations(conversations)
                         num_generated += len(conversations)
                         pbar.update(len(conversations))

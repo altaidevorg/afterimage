@@ -9,12 +9,22 @@ The library is designed around a few core concepts:
 - **ConversationGenerator & AsyncConversationGenerator**: The main entry points for generating conversations. `AsyncConversationGenerator` is the recommended high-performance engine for concurrent generation.
 - **PersonaGenerator**: Analyzes documents to generate diverse user personas, enhancing dataset variety.
 - **LLMProvider**: An abstraction over different language model providers (Gemini, OpenAI compatible).
-- **DatasetStorage**: An abstraction for storing the generated conversations. It supports JSONL and SQL backends.
+- **DatasetStorage**: An abstraction for storing and loading generated conversations and documents. It supports JSONL and SQL backends.
 - **Callbacks**: These allow for customization of the generation process.
     - **InstructionGeneratorCallback**: Generates the initial questions or instructions (e.g., `PersonaInstructionGeneratorCallback`).
     - **RespondentPromptModifier**: Modifies the prompt for the respondent based on context (e.g., `WithRAGRespondentPromptModifier`).
 - **Evaluation**: Flexible evaluation framework supporting Simple (LLM-as-judge) and Hybrid (Embedding + LLM) approaches.
 - **Monitoring**: Real-time tracking of generation metrics (time, tokens, errors) with alert support.
+- **Reasoning Capture**: OpenAI-compatible providers expose optional `reasoning_content`/`thinking` text; `AsyncConversationGenerator` persists assistant reasoning into `ConversationEntry.reasoning_content` when present.
+- **Adaptive Context Sampling**: Document providers now keep per-document usage counts and sampling weights so instruction generation can bias toward underused contexts. When a context coverage stopping callback is present, its `target_visits` is propagated into provider weights; otherwise providers fall back to a soft-decay weighting strategy (`1 / (usage + 1)`). Usage is recorded only after a final row is produced successfully, and all sampled context ids are carried through row metadata for coverage accounting across contextual, persona, and tool-calling instruction callbacks. Metadata-to-context-id extraction is centralized so usage reporting and coverage counting share the same semantics. If a provider target is set explicitly, generator-side inference does not overwrite it, and generated instruction payloads keep their `context_ids` in per-instance state.
+- **Fixed-Width Persona Generation**: Persona generation now enforces an exactly-five-persona contract per generation step. Persona outputs are LLM-generated, whitespace-normalized, deduplicated, and retried up to three times before a document-level enrichment failure is surfaced back to the caller. Batch enrichment now follows a gather-then-commit flow: documents are enriched on deep copies, successful results are saved together only after the whole batch succeeds, and failed batches leave in-memory documents and storage untouched.
+- **Dynamic Persona Tree Depth**: `PersonaGenerator.generate_from_documents()` now treats `n_iterations=None` as auto mode. In auto mode it resolves an effective per-document persona target from provider usage targets or `target_data_count`, accounting for how many contexts are merged into each row, then chooses the depth whose expected pool is closest to that target instead of always building a large tree. Partial persona-chain failures are tolerated per branch so one bad expansion does not discard an entire document's persona tree.
+- **Depth-Aware Persona Sampling**: Persona-based instruction callbacks flatten stored persona trees per document, preserve `generation_depth`, and derive a per-document persona target from provider coverage targets, explicit request size, or fixed-number stopping callbacks. If the effective target is unknown, they keep the full pool instead of pruning heuristically. When demand is smaller than supply, shallow layers are kept first via top-down pruning and round-robin reuse. When demand is larger than supply, personas are reused with layer-normalized depth weights so upper layers truly receive more total reuse despite deeper layers having many more nodes. Selection state is synchronized for threaded sync generation, and selected persona depth is propagated as `persona_generation_depth` in generation metadata. Sync and async evaluator retries rebuild the full row after regeneration and preserve any prompt-modifier-adjusted respondent prompt, so judges see the updated conversation under the same prompting conditions. Scenario coverage now includes auto-depth generation targets, small targets, layer-boundary targets, exact-pool matches, large oversampling targets, multi-context target inference, active-document inference cases, fixed-number stopping inference, and evaluator retry regressions.
+- **Provider-Aware Concurrency**: Async generators and persona generation resolve concurrency defaults per provider, with a higher default for DeepSeek workloads.
+- **Demo UI Storage Compatibility**: Demo `CaptureStorage` implements the full storage interface expected by generators (including `load_documents`) and keeps sync/async conversation save methods compatible with base storage contracts.
+- **Demo UI Provider Consistency**: Tool-calling generation now builds personas with the same DeepSeek model/provider configuration used by demo generators to avoid cross-provider key mismatches.
+- **Training Version Compatibility Guards**: Demo training requirements constrain `transformers` and `trl` to a compatible range (`transformers>=4.56.2,<5.0.0`, `trl>=0.29.1,<0.30.0`) to avoid runtime API mismatches during `SFTConfig` import and trainer startup. The same stack is declared as the `training` optional extra in `pyproject.toml` (aligned with `examples/demo_ui/training_scripts/requirements.txt`); install with `pip install -e ".[training]"` or `uv sync --extra training` so the Gradio-launched `train.py` subprocess can import `trl` and related packages.
+- **Environment Template Files**: Repository root includes a minimal `.env.example` and local `.env` template for demo runtime and training credentials (`GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `HF_TOKEN`, optional `HF_HUB_DISABLE_XET`); `.env` is gitignored to keep secrets out of version control.
 
 ## Directory Structure
 
@@ -26,6 +36,7 @@ The code is organized into the following directories and files:
     - `base.py`: Base classes for generators and callbacks.
     - `callbacks.py`: Implements default callbacks for instructions and persona handling.
     - `common.py`: Common constants and data structures.
+        It also holds provider-aware concurrency defaults.
     - `conversation_generator.py`: Synchronous conversation generator (Legacy).
     - `evaluator.py`: Conversation evaluation logic.
     - `key_management.py`: Smart API key management with rate limiting.
@@ -44,7 +55,15 @@ The code is organized into the following directories and files:
     - `providers/`:
         - `__init__.py`: Exposes provider classes.
         - `document_providers.py`: Document source implementations (Memory, File, Directory, Qdrant).
+            Providers expose weighted random sampling plus document usage reporting for context coverage management, with target usage counts inferred from stopping callbacks when available.
         - `llm_providers.py`: LLM provider abstractions.
+- `examples/demo_ui/`: Gradio demo application.
+    - `README.md`: Page-by-page demo UI guide (routes, features, setup, troubleshooting).
+    - `app.py`: Ensures the repository root is included in `sys.path` when the demo is run directly as `uv run examples/demo_ui/app.py`.
+    - `core/storage.py`: Implements demo capture storage with full storage-protocol compatibility.
+    - `pages/handlers/generation.py`: Aligns persona-generation provider/model with the demo generator provider defaults.
+    - `training_scripts/requirements.txt`: Owns training stack compatibility bounds for `trl` and `transformers`.
+    - **Demo training subprocess**: `train.py` accepts `--dataset` (resolved relative to `training_scripts/` cwd) so the UI-prepared merge/filter output always matches what SFT trains on; `training_config` loads `.env` via `find_dotenv` so `HF_TOKEN` is found from repo root when the training cwd is `training_scripts/`. On failure, the runner surfaces the last lines of subprocess output instead of a generic message only.
 
 ## Design Patterns
 
