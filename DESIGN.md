@@ -83,3 +83,7 @@ The architecture of the library is modular and extensible. The core components a
 The evaluation framework is also designed to be extensible. You can add new evaluation metrics by implementing the `BaseEvaluator` protocol and adding it to the `CompositeEvaluator`.
 
 The monitoring system is also extensible. You can add new metric handlers by implementing the `MetricHandler` protocol and adding it to the `GenerationMonitor`.
+
+## Scripts
+
+- `generate_qa.py`: QA dataset generation script that uses `AsyncConversationGenerator` with a **dynamic system prompt parts** feature. Before generating QA pairs, it makes a single LLM API call (using `google-genai` with Pydantic structured output) to analyze the input document and generate context-appropriate system prompt "parts" (a role description and an answering instruction). These parts are used as the respondent prompt and also saved to the output JSON alongside QA pairs and formatted samples (following the `format_sample` pattern with `input`/`output` fields).

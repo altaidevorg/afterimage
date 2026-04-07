@@ -340,6 +340,7 @@ Ask the questions in the same language as this context.
                 .strip()
             )
             if self.monitor:
+              
                 self.monitor.track_generation(
                     duration=time.time() - start_time,
                     success=True,
@@ -902,3 +903,4 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
     async def acreate_correspondent_prompt(self, respondent_prompt: str) -> str:
         """Create a prompt for the correspondent asynchronously."""
         return self.create_correspondent_prompt(respondent_prompt)
+        
