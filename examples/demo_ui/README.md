@@ -1,158 +1,96 @@
-# Afterimage Demo UI
+# Afterimage — Demo arayüzü kullanım kılavuzu
 
-Gradio tabanlı arayüz: sentetik veri üretimi (konuşma, yapılandırılmış çıktı, tool calling), araç kütüphanesi yönetimi ve isteğe bağlı model eğitimi / değerlendirme / sohbet.
+Bu arayüz, tarayıcıda çalışan bir **demo uygulamasıdır**. Amaç: metin veya dosya olarak verdiğiniz bağlama dayalı **örnek konuşmalar ve veri setleri** üretmek; gerekirse **araç (tool) çağrıları** ve **model eğitimi** adımlarını denemek.
 
-## Gereksinimler
+Uygulamayı açtığınızda üst menüden sayfalar arasında geçebilirsiniz. Aşağıda her menü başlığında neler yapabileceğiniz özetlenir.
 
-- Python 3.11+
-- Proje kökünden kurulum: `pip install -e .` (veya `uv sync`)
-- **Eğitim** (Train Model, Tool Calling’de “Train after generation”): `pip install -e ".[training]"` — `trl`, `torch`, `transformers` vb.
-- Ortam değişkenleri (köke `.env` önerilir):
-  - `DEEPSEEK_API_KEY` — demo üretim akışları (zorunlu)
-  - `GEMINI_API_KEY` — kütüphane örnekleri için isteğe bağlı
-  - `HF_TOKEN` — Hugging Face model indirme ve eğitim için
-
-Çalıştırmadan önce anahtarları shell’e aktarın:
-
-```bash
-cd /path/to/afterimage
-set -a && source .env && set +a
-python examples/demo_ui/app.py
-```
-
-Varsayılan adres: `http://127.0.0.1:7860` (uygulama `share=True` ile public Gradio linki de üretebilir).
+**Not:** Uygulamayı size bir bağlantı veya adres ile veren ekip / yönetici, gerekli hesap ve erişimleri de sağlar. Bir şey çalışmazsa onlara başvurun.
 
 ---
 
-## Sayfalar ve rotalar
+## How it Works (Nasıl çalışır?)
 
-Üst gezinme çubuğundan sayfalar arasında geçilir. Aşağıda her rota ve o sayfada yapılabilecekler özetlenir.
+Burada sistemin genel mantığı anlatılır: belgelerin yüklenmesi, farklı kullanıcı tipleri (persona), soru üretimi ve yanıtlar. Küçük bir akış şeması da vardır.
 
-### How it Works (`/` — ana sayfa)
-
-- Afterimage boru hattının kısa açıklaması: bağlam yükleme → persona → talimat → yanıt / şema.
-- Mermaid diyagramı (iş akışı özeti).
-- Bu demodaki üç üretim türünün (konuşma, tool calling, yapılandırılmış üretim) ne işe yaradığına dair metin.
-
-Burada üretim başlatılmaz; bilgilendirme amaçlıdır.
+Bu sayfada veri üretmezsiniz; sadece **bilgi** içindir.
 
 ---
 
-### Generic Conversation (`/conversations`)
+## Generic Conversation (Genel konuşma)
 
-**Amaç:** Belgelere dayalı, çok dönüşlü konuşma tarzı sentetik veri üretmek.
+**Ne işe yarar:** Verdiğiniz metinlere dayalı, doğal konuşma tarzında **sentetik diyalog örnekleri** üretir.
 
-**Ne yapılır:**
+**Nasıl kullanılır:**
 
-1. **Context Source** — Manuel metin veya dosya yükleme (`.txt`, `.csv`, `.tsv`, `.jsonl`, `.docx`, `.rtf`, `.html`). Yapılandırılmış dosyalarda içerik sütunu seçilir (`key`).
-2. **Configuration** — Respondent sistem prompt’u ve üretilecek **diyalog sayısı** (1–50).
-3. **Generate Conversations** — Persona + talimat + yanıt üretimi; tabloda Instruction, Response, Context, Persona vb. kolonlar.
-4. Tamamlanınca **JSONL indirme** üretilen veri seti için kullanılabilir.
-
----
-
-### Structured Generation (`/structured`)
-
-**Amaç:** Sabit bir şema (ör. müşteri desteği senaryosu) için tutarlı, alanları doldurulmuş örnekler üretmek.
-
-**Ne yapılır:**
-
-1. **Context Source** — Manuel veya dosya (varsayılan örnek bağlamlar TechGadget politikası / troubleshooting tarzıdır).
-2. **Configuration** — Respondent prompt ve **örnek sayısı** (1–50).
-3. **Generate Structured Data** — `CustomerSupportInteraction` benzeri alanlar: Persona, Instruction, Intent, Urgency, Reasoning, Response vb.
-4. **İndirme** ile JSONL alınır.
+1. **Bağlam:** Hazır metni düzenleyebilir veya kendi metninizi yazabilir; isteğe bağlı olarak dosya yükleyebilirsiniz (metin, tablo veya belge türleri menüde listelenir).
+2. **Ayarlar:** Asistanın rolünü tanımlayan metin ve üretilecek **diyalog sayısı**.
+3. **Üret:** Butona bastığınızda tabloda soru–cevap ve ilgili bilgiler birikir; işlem bitince veriyi **indirebilirsiniz**.
 
 ---
 
-### Tool Calling (`/tools`)
+## Structured Generation (Yapılandırılmış üretim)
 
-**Amaç:** Seçilen araç şemalarına uygun, doğal dil → tool çağrısı veri seti üretmek (ör. akıllı ev asistanı). İsteğe bağlı üretim sonrası model eğitimi.
+**Ne işe yarar:** Müşteri hizmeti benzeri senaryolarda **aynı tür alanları** (örneğin niyet, aciliyet, düşünce özeti, yanıt) dolduran tutarlı örnekler üretir.
 
-**Sihirbaz adımları:**
-
-| Adım | İçerik |
-|------|--------|
-| **1. Context Source** | Manuel veya dosya; varsayılan akıllı ev kullanım kılavuzu metni. |
-| **2. Configuration** | Respondent prompt, örnek sayısı (1–50), **Dataset Category** (kütüphanede gruplama için). |
-| **3. Select Tools** | Tool Library’deki araçlar kategorilere göre; kategori / tümünü seç, tümünü kaldır, yenile. |
-| **4. Generate & Train** | İsteğe bağlı **“Train Model after generation”** — üretim bitince aynı veri ile eğitim sürecini başlatır. |
-
-**Çıktı:** Persona, Instruction, Response, Reasoning, Tool Calls kolonları; gizli indirme bileşeni eğitim için dosya yolunu kullanır. Eğitim açıksa ilerleme ve (başarılıysa) eğitilmiş model indirme.
+**Nasıl kullanılır:** Bağlamı manuel veya dosyadan verin, asistan rolünü ve **örnek sayısını** seçin, üret butonuna basın. Sonuçları tabloda görür, bitince **dosya olarak indirebilirsiniz**.
 
 ---
 
-### Train Model (`/train`)
+## Tool Calling (Araç çağrıları)
 
-**Amaç:** `datasets/` altındaki JSONL veri setlerini seçmek, birleştirmek/filtrelemek, **Function Gemma** tabanlı ince ayar eğitimi çalıştırmak, değerlendirme ve sohbet.
+**Ne işe yarar:** Doğal dil isteklerinin, tanımlı **akıllı araçlara** (örneğin ışık açma, termostat) nasıl eşleneceğine dair örnek veri üretir. İsterseniz üretim bittikten sonra **model eğitimini** de başlatabilirsiniz.
 
-**Adım 1 — Dataset Library**
+**Adımlar (sihirbaz):**
 
-- Kategorilere göre veri setleri listesi; seçim, yenileme.
-- **Training Overview:** özet istatistikler, araç bazlı örnek dağılımı.
-- **Filter by Tool:** Her araç için kaç örneğin eğitime dahil edileceğini sınırlayan kaydırıcılar (metadata’daki tool kullanımına göre).
-- **Edit:** Veri seti adı ve kategori.
-- **Merge:** Birden fazla seti tek dosyada birleştirme.
-- **Split:** Araçlara göre gruplara bölerek yeni dosyalar oluşturma.
-- **Delete:** Veri seti silme (onay ile).
-
-**Adım 2 — Train Model**
-
-- **Normal Mode:** Sabit hiperparametrelerle eğitim; durum ve ilerleme çubuğu.
-- **Developer Mode:** Epoch, batch size vb. parametrelerle eğitim; ham log çıktısı.
-- Başarılı eğitimde **Download** ile paketlenmiş model indirilebilir (`final_model_stable`).
-
-**Adım 3 — Evaluate Model**
-
-- Eğitilen modele karşı değerlendirme betiği çalıştırma; sonuçlar log alanında.
-
-**Adım 4 — Chat with Model**
-
-- Eğitilmiş model ile basit sohbet (chat template ile).
+1. **Bağlam:** Örnek akıllı ev metni veya kendi belgeniz.
+2. **Ayarlar:** Asistan rolü, örnek sayısı ve veri setinin kütüphanede hangi **kategori** altında görüneceği.
+3. **Araç seçimi:** Araç Kütüphanesi’ndeki araçları kategorilere göre işaretleyin; tümünü seç / kaldır ve yenile seçenekleri vardır.
+4. **Üret (ve isteğe bağlı eğit):** Örnekleri oluşturur; **“Train Model after generation”** işaretliyse ardından eğitim ekranı açılır ve ilerleme gösterilir. Uygun olduğunda eğitilmiş modeli **indirebilirsiniz**.
 
 ---
 
-### Tool Library (`/tool-library`)
+## Train Model (Model eğitimi)
 
-**Amaç:** Tool Calling üretiminde kullanılacak araç tanımlarını yönetmek (kategori, önizleme, düzenleme, silme).
+**Ne işe yarar:** Daha önce üretilmiş veya yüklenmiş **veri setlerinizi** seçip birleştirmenizi, filtrelemenizi ve bir yapay zeka modelini **eğitmenizi** sağlar; ardından değerlendirme ve basit **sohbet** adımları vardır.
 
-**Sol panel:** Kategorilere göre gruplanmış araç listesi; **Refresh**, **+ New Tool**.
+**1. Veri kütüphanesi**
 
-**Sağ panel — yeni/düzenleme:**
+- Kategorilere göre listelenen setleri seçebilir, yenileyebilirsiniz.
+- Özet ekranda istatistik ve araç kullanımına göre dağılım görünür.
+- **Araç filtresi:** Hangi araçtan kaç örneğin eğitime gireceğini kaydırıcılarla sınırlayabilirsiniz.
+- Setleri **yeniden adlandırma**, **kategori değiştirme**, **birleştirme**, **araç gruplarına göre bölme** veya **silme** (onaylı) yapılabilir.
 
-1. **Import from MCP** — MCP sunucusuna bağlanıp araç listesi çekme:
-   - Local (komut + argümanlar), Remote (SSE URL), Config (JSON).
-   - Bulunan araçlardan seçip içe aktarma.
-2. **Manual Entry** — İsim, açıklama, parametre ekleme/çıkarma, **Save Tool**.
-3. **From Code** — Tip ipuçlı Python fonksiyonu yapıştırıp **Parse & Preview** veya doğrudan **Save Tool**.
+**2. Eğitim**
 
-**Önizleme:** Araç detayı, kategori değiştirme, düzenleme, silme. Yerleşik (built-in) şemalar etiketle gösterilir.
+- **Normal mod:** Hazır ayarlarla eğitim; durum ve ilerleme gösterilir.
+- **Geliştirici modu:** Daha teknik kullanıcılar için ek parametreler ve ayrıntılı günlük metni.
 
----
+Eğitim tamamlanınca modeli **paket olarak indirme** seçeneği sunulabilir.
 
-## Ortak UI öğeleri
+**3. Değerlendirme** — Modelin bir test üzerinden ölçülmesi; sonuçlar ekranda metin olarak görünür.
 
-- **Context Source:** Çoğu üretim sayfasında “Manual Entry” / “File Upload”; dosya formatları `base.py` içindeki `create_context_section` ile uyumludur.
-- **Respondent System Prompt:** Üretilen “asistan” davranışını tanımlar.
-- Üretim sırasında **canlı tablo** ve durum mesajları; bitişte **JSONL indirme** (sayfaya göre).
+**4. Sohbet** — Eğitilen modelle kısa mesajlaşma denemesi.
 
 ---
 
-## Sorun giderme
+## Tool Library (Araç kütüphanesi)
 
-| Sorun | Olası neden |
-|-------|-------------|
-| `DEEPSEEK_API_KEY` hatası | `.env` yüklenmedi veya anahtar eksik. |
-| Eğitimde `ModuleNotFoundError: trl` | `pip install -e ".[training]"` yapılmadı. |
-| Eğitimde HF / model hatası | `HF_TOKEN` eksik veya geçersiz; ağ erişimi. |
-| `train.py` farklı veri okudu | Runner artık hazırlanan dosyayı `--dataset` ile iletir; yine de `examples/demo_ui/training_scripts/data` altını kontrol edin. |
+**Ne işe yarar:** Tool Calling sayfasında kullanılacak **araç tanımlarını** görüntüleme, düzenleme ve yenilerini ekleme.
+
+- Solda kategorilere göre liste; **Yenile** ve **Yeni araç** ile başlarsınız.
+- Sağda bir aracı seçtiğinizde ayrıntılar, kategori değişikliği, düzenleme ve silme.
+- Yeni araç eklerken:
+  - **Dış bağlantıdan içe aktarma** (kurulu bir araç sunucusu varsa),
+  - **Elle** isim, açıklama ve parametrelerle tanımlama,
+  - **Koddan** örnek bir fonksiyon yapıştırarak tanımlama  
+  seçenekleri bulunur.
+
+Hazır (yerleşik) araçlar listede ayrıca belirtilir.
 
 ---
 
-## İlgili dosyalar
+## Birlikte kullanılan bölümler
 
-- `app.py` — Rotalar ve `launch` ayarları.
-- `core/` — Üretim, depolama, eğitim koşucusu.
-- `training_scripts/train.py` — İnce ayar eğitimi.
-- `pyproject.toml` — `[project.optional-dependencies] training` paket grubu.
+Çoğu üretim sayfasında **Bağlam kaynağı** (elle yazma veya dosya yükleme) ve **asistan rol metni** vardır. Üretim sırasında tablo canlı güncellenir; bittiğinde çoğu akışta veri setini **indirebilirsiniz**.
 
-Daha genel kütüphane tasarımı için depo kökündeki `DESIGN.md` dosyasına bakın.
+Eğitim ve model indirme işlemleri **zaman alabilir** ve sunucunun internete bağlı olmasını gerektirir.
