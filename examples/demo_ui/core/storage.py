@@ -4,7 +4,6 @@ Captures items in-memory for live updates and writes to a temporary file for dow
 """
 
 import json
-import os
 from datetime import datetime
 from typing import List
 
@@ -97,7 +96,7 @@ class CaptureStorage(BaseStorage):
         with open(self.metadata_path, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-    async def save_conversations(
+    def save_conversations(
         self,
         conversations: List[
             EvaluatedConversationWithContext | ConversationWithContext | BaseModel
@@ -122,11 +121,16 @@ class CaptureStorage(BaseStorage):
     ) -> List[ConversationWithContext]:
         return []
 
+    def load_documents(
+        self, limit: int | None = None, offset: int | None = None
+    ) -> List[Document]:
+        return self.jsonl_storage.load_documents(limit=limit, offset=offset)
+
     def save_documents(self, documents: List[Document]) -> None:
-        pass
+        self.jsonl_storage.save_documents(documents)
 
     async def asave_documents(self, documents: List[Document]) -> None:
-        pass
+        await self.jsonl_storage.asave_documents(documents)
 
     def get_download_path(self) -> str:
         return self.jsonl_storage.conversations_path.absolute().as_posix()

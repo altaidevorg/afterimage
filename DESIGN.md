@@ -21,6 +21,10 @@ The library is designed around a few core concepts:
 - **Dynamic Persona Tree Depth**: `PersonaGenerator.generate_from_documents()` now treats `n_iterations=None` as auto mode. In auto mode it resolves an effective per-document persona target from provider usage targets or `target_data_count`, accounting for how many contexts are merged into each row, then chooses the depth whose expected pool is closest to that target instead of always building a large tree. Partial persona-chain failures are tolerated per branch so one bad expansion does not discard an entire document's persona tree.
 - **Depth-Aware Persona Sampling**: Persona-based instruction callbacks flatten stored persona trees per document, preserve `generation_depth`, and derive a per-document persona target from provider coverage targets, explicit request size, or fixed-number stopping callbacks. If the effective target is unknown, they keep the full pool instead of pruning heuristically. When demand is smaller than supply, shallow layers are kept first via top-down pruning and round-robin reuse. When demand is larger than supply, personas are reused with layer-normalized depth weights so upper layers truly receive more total reuse despite deeper layers having many more nodes. Selection state is synchronized for threaded sync generation, and selected persona depth is propagated as `persona_generation_depth` in generation metadata. Sync and async evaluator retries rebuild the full row after regeneration and preserve any prompt-modifier-adjusted respondent prompt, so judges see the updated conversation under the same prompting conditions. Scenario coverage now includes auto-depth generation targets, small targets, layer-boundary targets, exact-pool matches, large oversampling targets, multi-context target inference, active-document inference cases, fixed-number stopping inference, and evaluator retry regressions.
 - **Provider-Aware Concurrency**: Async generators and persona generation resolve concurrency defaults per provider, with a higher default for DeepSeek workloads.
+- **Demo UI Storage Compatibility**: Demo `CaptureStorage` implements the full storage interface expected by generators (including `load_documents`) and keeps sync/async conversation save methods compatible with base storage contracts.
+- **Demo UI Provider Consistency**: Tool-calling generation now builds personas with the same DeepSeek model/provider configuration used by demo generators to avoid cross-provider key mismatches.
+- **Training Version Compatibility Guards**: Demo training requirements constrain `transformers` and `trl` to a compatible range (`transformers>=4.56.2,<5.0.0`, `trl>=0.29.1,<0.30.0`) to avoid runtime API mismatches during `SFTConfig` import and trainer startup. The same stack is declared as the `training` optional extra in `pyproject.toml` (aligned with `examples/demo_ui/training_scripts/requirements.txt`); install with `pip install -e ".[training]"` or `uv sync --extra training` so the Gradio-launched `train.py` subprocess can import `trl` and related packages.
+- **Environment Template Files**: Repository root includes a minimal `.env.example` and local `.env` template for demo runtime and training credentials (`GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `HF_TOKEN`, optional `HF_HUB_DISABLE_XET`); `.env` is gitignored to keep secrets out of version control.
 
 ## Directory Structure
 
@@ -53,6 +57,13 @@ The code is organized into the following directories and files:
         - `document_providers.py`: Document source implementations (Memory, File, Directory, Qdrant).
             Providers expose weighted random sampling plus document usage reporting for context coverage management, with target usage counts inferred from stopping callbacks when available.
         - `llm_providers.py`: LLM provider abstractions.
+- `examples/demo_ui/`: Gradio demo application.
+    - `README.md`: Page-by-page demo UI guide (routes, features, setup, troubleshooting).
+    - `app.py`: Ensures the repository root is included in `sys.path` when the demo is run directly as `uv run examples/demo_ui/app.py`.
+    - `core/storage.py`: Implements demo capture storage with full storage-protocol compatibility.
+    - `pages/handlers/generation.py`: Aligns persona-generation provider/model with the demo generator provider defaults.
+    - `training_scripts/requirements.txt`: Owns training stack compatibility bounds for `trl` and `transformers`.
+    - **Demo training subprocess**: `train.py` accepts `--dataset` (resolved relative to `training_scripts/` cwd) so the UI-prepared merge/filter output always matches what SFT trains on; `training_config` loads `.env` via `find_dotenv` so `HF_TOKEN` is found from repo root when the training cwd is `training_scripts/`. On failure, the runner surfaces the last lines of subprocess output instead of a generic message only.
 
 ## Design Patterns
 
