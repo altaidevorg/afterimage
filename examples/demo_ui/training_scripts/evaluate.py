@@ -5,18 +5,27 @@ Model Evaluation Script
 Evaluate fine-tuned model with detailed metrics.
 """
 
+import importlib.util
 import os
 import sys
 import json
 import ast
 import re
+from pathlib import Path
+
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_dataset
 
-# Add parent directory to path to import from core package
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from core.parsing_utils import try_parse_args, extract_balanced_braces
+# Load parsing_utils by file path so we never import `core` (its __init__ pulls `afterimage` via storage).
+_pu_path = Path(__file__).resolve().parent.parent / "core" / "parsing_utils.py"
+_pu_spec = importlib.util.spec_from_file_location("demo_ui_parsing_utils", _pu_path)
+if _pu_spec is None or _pu_spec.loader is None:
+    raise ImportError(f"Cannot load module from {_pu_path}")
+_pu_mod = importlib.util.module_from_spec(_pu_spec)
+_pu_spec.loader.exec_module(_pu_mod)
+try_parse_args = _pu_mod.try_parse_args
+extract_balanced_braces = _pu_mod.extract_balanced_braces
 
 import training_config as config
 from utils import load_tools_schema
