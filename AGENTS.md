@@ -20,22 +20,7 @@
 
 ### Evaluation
 
-Afterimage provides two evaluation approaches:
-
-1. **Simple LLM-based Evaluation** (SimpleSyntheticDatasetEvaluator)
-   - Uses LLM as a judge to evaluate conversations
-   - Single-model evaluation approach
-   - Suitable for basic quality checks
-
-2. **Hybrid Evaluation System** (HybridSyntheticDatasetEvaluator)
-   - Combines embedding models and LLMs for comprehensive evaluation
-   - Multiple evaluation metrics:
-     - Coherence: Measures question-answer semantic alignment
-     - Grounding: Ensures responses are based on provided context
-     - Relevance: Checks if questions are based on the provided context
-     - Factuality: Verifies factual accuracy using LLM
-     - Helpfulness: Assesses response usefulness using LLM
-   - Extensible architecture for custom evaluators
+Afterimage evaluates conversations with **`ConversationJudge`** (`afterimage.evaluator`): embedding-based coherence, grounding, and relevance (via `EmbeddingProvider`) plus LLM-as-judge factuality and helpfulness (`agenerate_structured`). Scores are merged by **`CompositeEvaluator`** with configurable **`AggregationMode`**. With **`ConversationGenerator(..., auto_improve=True)`**, a judge is created automatically; default embeddings follow the chat provider (Gemini/OpenAI API) or a local process model for DeepSeek.
 
 ### Monitoring
 
