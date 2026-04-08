@@ -1,3 +1,20 @@
+"""Generate Yargıtay-style dialogs with contextual instructions and RAG.
+
+Requires ``GEMINI_API_KEY``. RAG uses :class:`~afterimage.retrievers.QdrantRetriever`
+with an async :class:`~afterimage.providers.embedding_providers.EmbeddingProvider`
+so retrieval does not block the event loop during ``generate``.
+
+**Embedding choice:** Query vectors must match how the Qdrant collection was
+indexed. The default below uses a **process** provider with the same HuggingFace
+model as the legacy ``embedding_model=`` path. If you indexed with Gemini API
+embeddings instead, switch to the commented ``gemini`` block (and install only
+what you need).
+
+Run from the repository root::
+
+    uv run examples/generate_yargitay.py
+"""
+
 import asyncio
 import os
 from datetime import timedelta
@@ -5,6 +22,7 @@ from datetime import timedelta
 from afterimage import (
     ConversationGenerator,
     ContextualInstructionGeneratorCallback,
+    EmbeddingProviderFactory,
     GenerationMonitor,
     WithRAGRespondentPromptModifier,
 )
@@ -70,38 +88,53 @@ instruction_generator_callback = ContextualInstructionGeneratorCallback(
     num_random_contexts=1,  # Experiment with different values
 )
 
-# Set up the respondent prompt modifier
+# RAG: async embeddings via EmbeddingProvider (WithRAG uses aget_context).
+# Default matches the former SentenceTransformer id for the same Qdrant index.
+# Requires: pip install "afterimage[embeddings-local]" (or sentence-transformers).
+embedding_provider = EmbeddingProviderFactory.create(
+    {"type": "process", "model": "altaidevorg/bge-m3-distill-8l", "workers": 2},
+)
+# If your collection was built with Gemini embeddings, use instead:
+# from afterimage import SmartKeyPool
+# _pool = SmartKeyPool.from_single_key(api_key)
+# embedding_provider = EmbeddingProviderFactory.create(
+#     {"type": "gemini", "model": "gemini-embedding-001"},
+#     key_pool=_pool,
+# )
+
 retriever = QdrantRetriever(
     client=qd_client,
     collection_name="yargitay",
-    embedding_model="altaidevorg/bge-m3-distill-8l",
+    embedding_provider=embedding_provider,
     payload_key="content",
     limit=3,
 )
 respondent_prompt_modifier = WithRAGRespondentPromptModifier(retriever=retriever)
 
+
 async def main():
-    await conv_gen.generate(
-        num_dialogs=100,  # Total dialogs to generate
-        max_turns=1,  # Max turns per conversation
-        instruction_generator_callback=instruction_generator_callback,
-        respondent_prompt_modifier=respondent_prompt_modifier,
-    )
+    try:
+        await conv_gen.generate(
+            num_dialogs=100,  # Total dialogs to generate
+            max_turns=1,  # Max turns per conversation
+            instruction_generator_callback=instruction_generator_callback,
+            respondent_prompt_modifier=respondent_prompt_modifier,
+        )
 
-    # Get metrics for the last one hour
-    generation_time = monitor.get_metrics("generation_time", window=timedelta(hours=1))
-    print(f"Avg. generation time: {generation_time['mean']:.2f} secs")
+        # Get metrics for the last one hour
+        generation_time = monitor.get_metrics("generation_time", window=timedelta(hours=1))
+        print(f"Avg. generation time: {generation_time['mean']:.2f} secs")
 
-    # Generate visualizations
-    monitor.visualize_metrics(save_dir="plots")
+        # Generate visualizations
+        monitor.visualize_metrics(save_dir="plots")
 
-    # Optional: Export metrics data
-    # monitor.export_metrics(
-    # "monitoring_metrics_export.json", format="json", window=timedelta(minutes=1)
-    # )
-
-    # graceful shutdown
-    monitor.shutdown()
+        # Optional: Export metrics data
+        # monitor.export_metrics(
+        # "monitoring_metrics_export.json", format="json", window=timedelta(minutes=1)
+        # )
+    finally:
+        await embedding_provider.aclose()
+        monitor.shutdown()
 
 
 if __name__ == "__main__":
