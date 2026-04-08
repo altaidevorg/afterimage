@@ -30,12 +30,17 @@ from afterimage.providers import (
     ChatSession,  # noqa
     DirectoryDocumentProvider,  # noqa
     DocumentProvider,  # noqa
+    EmbeddingProvider,  # noqa
+    EmbeddingProviderFactory,  # noqa
     FileSystemDocumentProvider,  # noqa
     GeminiChatSession,  # noqa
+    GeminiEmbeddingProvider,  # noqa
     InMemoryDocumentProvider,  # noqa
     JSONLDocumentProvider,  # noqa
     LLMFactory,  # noqa
     LLMProvider,  # noqa
+    OpenAIEmbeddingProvider,  # noqa
+    ProcessEmbeddingProvider,  # noqa
     QdrantDocumentProvider,  # noqa
 )
 from afterimage.storage import BaseStorage, JSONLStorage, SQLStorage  # noqa
