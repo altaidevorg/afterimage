@@ -38,7 +38,7 @@ dependencies = [
 ]
 
 [project.urls]
-homepage = "https://github.com/altaidevorg/afterimage"
+homepage = "https://altai.dev"
 project = "https://github.com/altaidevorg/afterimage"
 repository = "https://github.com/altaidevorg/afterimage"
 
