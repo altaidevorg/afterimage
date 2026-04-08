@@ -1,10 +1,27 @@
+from __future__ import annotations
+
 from abc import abstractmethod
 from collections import OrderedDict
-from typing import List, Optional, Protocol, Tuple, runtime_checkable
 from dataclasses import dataclass
 import time
+from typing import TYPE_CHECKING, Any, List, Optional, Protocol, Tuple, Union, runtime_checkable
+
 from qdrant_client import QdrantClient
-from sentence_transformers import SentenceTransformer
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
+
+
+def _require_sentence_transformers():
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as e:
+        raise ImportError(
+            "QdrantRetriever requires sentence-transformers. "
+            'Install with pip install "afterimage[embeddings-local]" '
+            "or pip install sentence-transformers"
+        ) from e
+    return SentenceTransformer
 
 
 @runtime_checkable
@@ -189,7 +206,7 @@ class QdrantRetriever(ContextRetriever):
         self,
         client: QdrantClient,
         collection_name: str,
-        embedding_model: SentenceTransformer | str,
+        embedding_model: Union[str, "SentenceTransformer", Any],
         payload_key: str = "text",
         limit: int = 3,
         score_threshold: float = 0.5,
@@ -200,7 +217,8 @@ class QdrantRetriever(ContextRetriever):
         Args:
             client: Initialized QdrantClient for vector search
             collection_name: Name of the Qdrant collection to search
-            embedding_model: SentenceTransformer model or name for embeddings
+            embedding_model: SentenceTransformer model or HuggingFace model id (requires
+                ``embeddings-local`` extra if loading by name).
             payload_key: Key in the payload containing the text content
             limit: Maximum number of documents to retrieve
             score_threshold: Minimum similarity score to include results
@@ -213,9 +231,9 @@ class QdrantRetriever(ContextRetriever):
         self.score_threshold = score_threshold
         self.separator = separator
 
-        # Initialize embedding model
+        ST = _require_sentence_transformers()
         if isinstance(embedding_model, str):
-            self.model = SentenceTransformer(embedding_model)
+            self.model = ST(embedding_model)
         else:
             self.model = embedding_model
 
