@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from abc import abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass
-import time
-from typing import TYPE_CHECKING, Any, List, Optional, Protocol, Tuple, Union, runtime_checkable
+from typing import Any, List, Optional, Protocol, Tuple, Union, runtime_checkable
 
 from qdrant_client import QdrantClient
 
-if TYPE_CHECKING:
-    from sentence_transformers import SentenceTransformer
+from .providers.embedding_providers import EmbeddingProvider
 
 
 def _require_sentence_transformers():
@@ -17,7 +17,7 @@ def _require_sentence_transformers():
         from sentence_transformers import SentenceTransformer
     except ImportError as e:
         raise ImportError(
-            "QdrantRetriever requires sentence-transformers. "
+            "SentenceTransformer-based QdrantRetriever requires sentence-transformers. "
             'Install with pip install "afterimage[embeddings-local]" '
             "or pip install sentence-transformers"
         ) from e
@@ -30,15 +30,19 @@ class ContextRetriever(Protocol):
 
     @abstractmethod
     def get_context(self, query: str) -> str:
-        """Retrieve context based on the query.
+        """Retrieve context based on the query (sync).
 
-        Args:
-            query: The query to search for relevant context
-
-        Returns:
-            str: Retrieved context as a string
+        Implementations that only support async embedding backends should implement
+        :meth:`aget_context` and may raise from here when called inside a running event loop.
         """
         pass
+
+
+async def _aget_or_thread(retriever: ContextRetriever, query: str) -> str:
+    """Use ``retriever.aget_context`` when present, else run sync ``get_context`` in a thread."""
+    if hasattr(retriever, "aget_context"):
+        return await retriever.aget_context(query)  # type: ignore[union-attr]
+    return await asyncio.to_thread(retriever.get_context, query)
 
 
 @dataclass
@@ -60,7 +64,6 @@ class LRUCache:
         if key not in self.cache:
             return None
 
-        # Move to end to show it was recently used
         self.cache.move_to_end(key)
         return self.cache[key]
 
@@ -81,27 +84,30 @@ class CacheRetriever(ContextRetriever):
         cache_size: int = 1000,
         ttl: int = 3600,  # seconds
     ):
-        """Initialize the cache retriever.
-
-        Args:
-            base_retriever: The underlying retriever to cache
-            cache_size: Maximum number of entries to cache
-            ttl: Time-to-live for cache entries in seconds
-        """
         self.retriever = base_retriever
         self.cache = LRUCache(cache_size)
         self.ttl = ttl
 
     def get_context(self, query: str) -> str:
-        # Check cache first
         cached = self.cache.get(query)
         current_time = time.time()
 
         if cached and (current_time - cached.timestamp) < self.ttl:
             return cached.context
 
-        # Cache miss or expired - get fresh context
         context = self.retriever.get_context(query)
+        self.cache.put(query, CacheEntry(context, current_time))
+        return context
+
+    async def aget_context(self, query: str) -> str:
+        """Async cache; uses underlying ``aget_context`` when available."""
+        cached = self.cache.get(query)
+        current_time = time.time()
+
+        if cached and (current_time - cached.timestamp) < self.ttl:
+            return cached.context
+
+        context = await _aget_or_thread(self.retriever, query)
         self.cache.put(query, CacheEntry(context, current_time))
         return context
 
@@ -115,13 +121,6 @@ class ChainedRetriever(ContextRetriever):
         min_context_length: int = 50,
         separator: str = "\n\n",
     ):
-        """Initialize the chained retriever.
-
-        Args:
-            retrievers: List of retrievers to try in sequence
-            min_context_length: Minimum acceptable context length
-            separator: String to use when combining contexts
-        """
         assert len(retrievers) > 0, "Must provide at least one retriever"
         self.retrievers = retrievers
         self.min_length = min_context_length
@@ -135,7 +134,23 @@ class ChainedRetriever(ContextRetriever):
             if context and context != "No relevant context found.":
                 contexts.append(context)
 
-            # If we have enough context, return it
+            combined = self.separator.join(contexts)
+            if len(combined) >= self.min_length:
+                return combined
+
+        return (
+            self.separator.join(contexts) if contexts else "No relevant context found."
+        )
+
+    async def aget_context(self, query: str) -> str:
+        """Sequential retrieval; each stage uses ``aget_context`` when available."""
+        contexts: List[str] = []
+
+        for retriever in self.retrievers:
+            context = await _aget_or_thread(retriever, query)
+            if context and context != "No relevant context found.":
+                contexts.append(context)
+
             combined = self.separator.join(contexts)
             if len(combined) >= self.min_length:
                 return combined
@@ -150,19 +165,11 @@ class EnsembleRetriever(ContextRetriever):
 
     def __init__(
         self,
-        retrievers: List[Tuple[ContextRetriever, float]],  # (retriever, weight)
+        retrievers: List[Tuple[ContextRetriever, float]],
         aggregation_method: str = "weighted_merge",
         separator: str = "\n\n",
         max_contexts: int = 3,
     ):
-        """Initialize the ensemble retriever.
-
-        Args:
-            retrievers: List of (retriever, weight) tuples
-            aggregation_method: How to combine results ("weighted_merge" or "round_robin")
-            separator: String to use when combining contexts
-            max_contexts: Maximum number of contexts to include in final result
-        """
         assert len(retrievers) > 0, "Must provide at least one retriever"
         assert all(w >= 0 for _, w in retrievers), "Weights must be non-negative"
         assert sum(w for _, w in retrievers) > 0, "At least one weight must be positive"
@@ -175,9 +182,8 @@ class EnsembleRetriever(ContextRetriever):
     def get_context(self, query: str) -> str:
         all_contexts = []
 
-        # Collect contexts from all retrievers
         for retriever, weight in self.retrievers:
-            if weight > 0:  # Skip retrievers with zero weight
+            if weight > 0:
                 context = retriever.get_context(query)
                 if context and context != "No relevant context found.":
                     all_contexts.append((context, weight))
@@ -186,11 +192,38 @@ class EnsembleRetriever(ContextRetriever):
             return "No relevant context found."
 
         if self.method == "weighted_merge":
-            # Sort by weight and take top contexts
             sorted_contexts = sorted(all_contexts, key=lambda x: x[1], reverse=True)
             selected = [context for context, _ in sorted_contexts[: self.max_contexts]]
-        else:  # round_robin
-            # Take one from each retriever until max_contexts
+        else:
+            selected = []
+            while all_contexts and len(selected) < self.max_contexts:
+                context, _ = all_contexts.pop(0)
+                selected.append(context)
+
+        return self.separator.join(selected)
+
+    async def aget_context(self, query: str) -> str:
+        """Parallel fetch from weighted retrievers, then same aggregation as :meth:`get_context`."""
+
+        async def _fetch(
+            retriever: ContextRetriever, weight: float
+        ) -> Optional[Tuple[str, float]]:
+            context = await _aget_or_thread(retriever, query)
+            if context and context != "No relevant context found.":
+                return (context, weight)
+            return None
+
+        pairs = [(r, w) for r, w in self.retrievers if w > 0]
+        results = await asyncio.gather(*[_fetch(r, w) for r, w in pairs])
+        all_contexts = [x for x in results if x is not None]
+
+        if not all_contexts:
+            return "No relevant context found."
+
+        if self.method == "weighted_merge":
+            sorted_contexts = sorted(all_contexts, key=lambda x: x[1], reverse=True)
+            selected = [context for context, _ in sorted_contexts[: self.max_contexts]]
+        else:
             selected = []
             while all_contexts and len(selected) < self.max_contexts:
                 context, _ = all_contexts.pop(0)
@@ -200,30 +233,30 @@ class EnsembleRetriever(ContextRetriever):
 
 
 class QdrantRetriever(ContextRetriever):
-    """Implements context retrieval using Qdrant vector database."""
+    """Context retrieval from Qdrant using an async :class:`~afterimage.providers.embedding_providers.EmbeddingProvider` or a local SentenceTransformer.
+
+    Pass exactly one of ``embedding_provider`` (recommended; API or process pool) or
+    ``embedding_model`` (HuggingFace id, or loaded SentenceTransformer — requires
+    ``embeddings-local`` extra when loading by id).
+    """
 
     def __init__(
         self,
         client: QdrantClient,
         collection_name: str,
-        embedding_model: Union[str, "SentenceTransformer", Any],
+        embedding_model: Union[str, Any, None] = None,
+        *,
+        embedding_provider: EmbeddingProvider | None = None,
         payload_key: str = "text",
         limit: int = 3,
         score_threshold: float = 0.5,
         separator: str = "\n" + "-" * 80 + "\n\n",
     ):
-        """Initialize the Qdrant retriever.
+        if embedding_provider is not None and embedding_model is not None:
+            raise ValueError("Pass only one of embedding_provider or embedding_model")
+        if embedding_provider is None and embedding_model is None:
+            raise ValueError("Pass embedding_provider or embedding_model")
 
-        Args:
-            client: Initialized QdrantClient for vector search
-            collection_name: Name of the Qdrant collection to search
-            embedding_model: SentenceTransformer model or HuggingFace model id (requires
-                ``embeddings-local`` extra if loading by name).
-            payload_key: Key in the payload containing the text content
-            limit: Maximum number of documents to retrieve
-            score_threshold: Minimum similarity score to include results
-            separator: String to use when combining multiple contexts
-        """
         self.client = client
         self.collection_name = collection_name
         self.payload_key = payload_key
@@ -231,16 +264,18 @@ class QdrantRetriever(ContextRetriever):
         self.score_threshold = score_threshold
         self.separator = separator
 
-        ST = _require_sentence_transformers()
-        if isinstance(embedding_model, str):
-            self.model = ST(embedding_model)
+        if embedding_provider is not None:
+            self._embedding_provider = embedding_provider
+            self._st_model = None
         else:
-            self.model = embedding_model
+            self._embedding_provider = None
+            ST = _require_sentence_transformers()
+            if isinstance(embedding_model, str):
+                self._st_model = ST(embedding_model)
+            else:
+                self._st_model = embedding_model
 
-    def get_context(self, query: str) -> str:
-        """Retrieve context from Qdrant using vector similarity search."""
-        query_vector = self.model.encode(query).tolist()
-
+    def _search_with_vector(self, query_vector: list[float]) -> str:
         search_results = self.client.search(
             collection_name=self.collection_name,
             query_vector=query_vector,
@@ -256,3 +291,33 @@ class QdrantRetriever(ContextRetriever):
         return (
             self.separator.join(contexts) if contexts else "No relevant context found."
         )
+
+    async def aget_context(self, query: str) -> str:
+        """Retrieve context; uses ``embedding_provider.embed`` or encodes in a thread."""
+        if self._embedding_provider is not None:
+            vectors = await self._embedding_provider.embed([query])
+            query_vector = vectors[0]
+        else:
+            query_vector = await asyncio.to_thread(
+                lambda: self._st_model.encode(query).tolist()
+            )
+        return self._search_with_vector(query_vector)
+
+    def get_context(self, query: str) -> str:
+        """Sync retrieval.
+
+        When using ``embedding_provider``, this uses :func:`asyncio.run` only if no event
+        loop is running; inside ``async def`` code, use :meth:`aget_context` instead.
+        """
+        if self._embedding_provider is not None:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                return asyncio.run(self.aget_context(query))
+            raise RuntimeError(
+                "QdrantRetriever with embedding_provider cannot use get_context() "
+                "while an asyncio event loop is running; await aget_context() instead."
+            )
+
+        query_vector = self._st_model.encode(query).tolist()
+        return self._search_with_vector(query_vector)
