@@ -1,98 +1,67 @@
 # Evaluation Framework
 
-Generating synthetic data is only half the battle. You also need to ensure that the data is high quality, faithful to your source material, and diverse. Afterimage provides a flexible **Evaluation Framework** to assess your datasets.
+Generating synthetic data is only half the battle. You also need to ensure that the data is high quality, faithful to your source material, and diverse. Afterimage provides an **async evaluation stack** built around **`ConversationJudge`**: embedding-based metrics plus LLM-as-judge rubrics, composed with configurable aggregation and grade thresholds.
 
 ## Overview
 
-There are two main approaches to evaluation in Afterimage:
+- **`ConversationJudge`** (`afterimage.evaluator`): Primary entry point. Runs `CoherenceEvaluator`, `GroundingEvaluator`, `RelevanceEvaluator` (via :class:`~afterimage.providers.embedding_providers.EmbeddingProvider`) and `FactualityEvaluator`, `HelpfulnessEvaluator` (via :class:`~afterimage.providers.llm_providers.LLMProvider` structured output). Returns :class:`~afterimage.types.EvaluatedConversationWithContext` with :class:`~afterimage.types.EvaluationSchema`.
+- **`CompositeEvaluator`** (`afterimage.evaluation`): Combines async sub-evaluators in parallel; supports :class:`~afterimage.evaluation.base.AggregationMode` (`MEAN`, `WEIGHTED_MEAN`, `MIN`).
+- **Generator integration**: `ConversationGenerator(..., auto_improve=True)` builds a judge automatically using `default_embedding_provider_config(model_provider_name)` when you do not pass `embedding_provider` or `embedding_provider_config`.
 
-1.  **Simple Evaluation (`SimpleSyntheticDatasetEvaluator`)**: Uses an LLM as a judge to rate conversations based on a rubric. Good for general quality checks.
-2.  **Hybrid Evaluation (`HybridSyntheticDatasetEvaluator`)**: Combines embedding-based metrics (for semantic similarity) with LLM-based verification. This is more robust and cheaper for checking grounding.
+The legacy Gemini one-shot path and `evaluator_method="simple" | "hybrid"` have been removed in favor of this single pipeline.
 
 ## Metrics
 
-Afterimage comes with several built-in evaluators that target different aspects of conversation quality.
+### Coherence (`CoherenceEvaluator`)
 
-### 1. Coherence (`CoherenceEvaluator`)
-*   **Method**: Embedding alignment + LLM check.
-*   **Goal**: Ensure the question and answer make sense together.
-*   **Check**: Does the answer actually address the question asked?
+*   **Method**: Cosine similarity between embeddings of each user turn and the following assistant turn.
+*   **Goal**: Question and answer are semantically aligned.
 
-### 2. Grounding (`GroundingEvaluator`)
-*   **Method**: Semantic similarity (embeddings).
-*   **Goal**: Ensure the answer is derived *only* from the provided context (RAG).
-*   **Check**: Is the answer supported by the retrieved document chunks?
-*   *Note: This is critical for preventing hallucinations.*
+### Grounding (`GroundingEvaluator`)
 
-### 3. Relevance (`RelevanceEvaluator`)
-*   **Method**: Embedding alignment.
-*   **Goal**: Ensure the user's question is actually about the topic we wanted them to ask about.
-*   **Check**: Does the generated question align with the source document?
+*   **Method**: Cosine similarity between `response_context` embedding and each assistant reply.
+*   **Goal**: Answers stay close to the provided response context (RAG-style).
 
-### 4. Factuality (`FactualityEvaluator`)
-*   **Method**: LLM-as-judge.
-*   **Goal**: Verify factual accuracy against a gold standard or general knowledge.
+### Relevance (`RelevanceEvaluator`)
 
-### 5. Helpfulness (`HelpfulnessEvaluator`)
-*   **Method**: LLM-as-judge.
-*   **Goal**: Assess if the answer is useful, polite, and complete.
+*   **Method**: Cosine similarity between `instruction_context` embedding and each user question.
+*   **Goal**: Questions match the instruction-side context.
 
-## Usage Guide
+### Factuality / Helpfulness (`FactualityEvaluator`, `HelpfulnessEvaluator`)
 
-You can run evaluations on any `ConversationWithContext` object or a saved `.jsonl` dataset.
+*   **Method**: LLM structured output (`agenerate_structured`) with per-item scores in `[0, 1]` and short feedback.
 
-### Running Basic Evaluation
+## Usage
 
-The simplest way is to use the `SimpleSyntheticDatasetEvaluator` which runs a standard "LLM-as-judge" prompt.
+### Standalone judge
 
 ```python
 import asyncio
-import os
-from afterimage.evaluation import SimpleSyntheticDatasetEvaluator
+from afterimage import ConversationJudge, LLMFactory, SmartKeyPool
+from afterimage.providers import EmbeddingProviderFactory
 
 async def main():
-    api_key = os.getenv("GEMINI_API_KEY")
-    evaluator = SimpleSyntheticDatasetEvaluator(api_key=api_key)
+    pool = SmartKeyPool.from_single_key("YOUR_KEY")
+    llm = LLMFactory.create("gemini", "gemini-2.0-flash", pool)
+    embed = EmbeddingProviderFactory.create(
+        {"type": "gemini", "model": "text-embedding-004"},
+        key_pool=pool,
+    )
+    judge = ConversationJudge(llm=llm, embedding_provider=embed)
+    row = ...  # ConversationWithContext
+    out = await judge.aevaluate_row(row)
+    print(out.evaluation.overall_grade, out.final_score)
+    await judge.aclose()
 
-    # Evaluate a JSONL file
-    results = await evaluator.evaluate_dataset("my_conversations.jsonl")
-    
-    # Print summary
-    print(f"Average Score: {results['average_score']}")
-    print(f"Pass Rate: {results['pass_rate']}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())
 ```
 
-### Running Hybrid Evaluation
+### With `ConversationGenerator` (auto-improve)
 
-For a more rigorous check, use the `HybridSyntheticDatasetEvaluator` and specify which metrics you want.
+Pass `auto_improve=True`. Optionally set `embedding_provider`, `embedding_provider_config`, or `judge_config` (:class:`~afterimage.evaluator.ConversationJudgeConfig`).
 
-```python
-from afterimage.evaluation import (
-    HybridSyntheticDatasetEvaluator, 
-    CoherenceEvaluator, 
-    GroundingEvaluator
-)
+### Interpreting results
 
-# Initialize specific evaluators
-coherence = CoherenceEvaluator()
-grounding = GroundingEvaluator()
-
-# Create hybrid evaluator
-evaluator = HybridSyntheticDatasetEvaluator(
-    evaluators=[coherence, grounding]
-)
-
-# Run evaluation
-results = await evaluator.evaluate_dataset("rag_dataset.jsonl")
-```
-
-### Interpreting reports
-The evaluation results will typically contain:
-*   **Score**: A numerical value (0.0 to 1.0 or 1 to 5).
-*   **Feedback**: A text explanation of why that score was given.
-*   **Needs Regeneration**: A boolean flag suggesting if this sample should be discarded.
-
-You can use these signals to filter your dataset, keeping only the high-quality examples for fine-tuning.
+*   **Per-metric scores**: `0.0`–`1.0` in `evaluation.*.score`.
+*   **overall_grade**: Derived from the composite overall score and configurable thresholds on `ConversationJudgeConfig`.
+*   **needs_regeneration** (internal): Composite result when overall score is below `min_acceptable_score`; future hooks may use this with regeneration strategies.
