@@ -39,7 +39,7 @@ from afterimage.providers import (
     QdrantDocumentProvider,  # noqa
 )
 from afterimage.storage import BaseStorage, JSONLStorage, SQLStorage  # noqa
-from afterimage.structured_generator import AsyncStructuredGenerator  # noqa
+from afterimage.structured_generator import StructuredGenerator, AsyncStructuredGenerator  # noqa
 from afterimage.types import Document, PersonaEntry  # noqa
 
 try:

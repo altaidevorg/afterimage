@@ -1,6 +1,6 @@
 # Structured Generation
 
-Sometimes you don't want a conversation. You want to extract specific information from a document or generate synthetic data that fits a strict schema (like a database row). Afterimage supports **Structured Generation** using `AsyncStructuredGenerator` and Pydantic models.
+Sometimes you don't want a conversation. You want to extract specific information from a document or generate synthetic data that fits a strict schema (like a database row). Afterimage supports **Structured Generation** using `StructuredGenerator` and Pydantic models.
 
 ## Concept
 
@@ -9,16 +9,16 @@ Structured generation forces the LLM to output valid JSON that matches a schema 
 *   **Synthetic Database Rows**: "Generate 100 fake user profiles with names, ages, and bios."
 *   **Golden Sets for RAG**: "Generate a question, the correct answer, and the key facts" for evaluation.
 
-## `AsyncStructuredGenerator`
+## `StructuredGenerator` class
 
-This generator works differently than the conversation generator. Instead of simulation loops (User <-> Assistant), it performs a single-step generation: `Instruction + Context -> Structured Output`.
+This generator works differently than the conversation generator. Instead of simulation loops (User <-> Assistant), it simulates a single-turn interaction: `Instruction + Context -> Structured Output`.
 
 ### Initialization
 
 The strategy callbacks (for instructions and prompt modification) should be configured at initialization.
 
 ```python
-from afterimage import AsyncStructuredGenerator
+from afterimage import StructuredGenerator
 from pydantic import BaseModel, Field
 
 # 1. Define your Output Schema
@@ -28,7 +28,7 @@ class CustomerFeedback(BaseModel):
     summary: str = Field(..., description="One sentence summary")
 
 # 2. Initialize Generator with Strategies
-generator = AsyncStructuredGenerator(
+generator = StructuredGenerator(
     output_schema=CustomerFeedback,
     respondent_prompt="You are an expert data analyst. Extract insights from the feedback.",
     api_key=os.getenv("GEMINI_API_KEY"),
@@ -73,7 +73,7 @@ import asyncio
 import os
 from pydantic import BaseModel, Field
 from afterimage import (
-    AsyncStructuredGenerator,
+    StructuredGenerator,
     ContextualInstructionGeneratorCallback,
     InMemoryDocumentProvider
 )
@@ -105,7 +105,7 @@ async def main():
     )
 
     # 4. Initialize Generator
-    generator = AsyncStructuredGenerator(
+    generator = StructuredGenerator(
         output_schema=ReviewAnalysis,
         respondent_prompt="Analyze the provided review.",
         api_key=api_key,

@@ -1,3 +1,4 @@
+import asyncio
 import os
 from datetime import timedelta
 
@@ -35,18 +36,6 @@ Hukuki ve ticari kavramları doğru şekilde kullanmaya özen göster ama herkes
 Onlara asla 'gerçek bir mali müşavire danışmalarını' ya da 'hukuki yardıma başvurmalarını' tavsiye etme çünkü sen, tüm vatandaşların ve mali müşavirlerin güvendiği, saygıdeğer bir mali müşavirsin.
 """
 
-# Initialize the ConversationGenerator
-conv_gen = ConversationGenerator(
-    respondent_prompt=respondent_prompt,
-    api_key=api_key,
-    model_name="gemini-2.0-flash",
-    monitor=monitor,
-)
-
-# Print the auto-generated correspondent prompt
-print("Generated Correspondent Prompt:")
-print(conv_gen.correspondent_prompt)
-
 # Prepare contextual documents
 documents = JSONLDocumentProvider(
     "../scraping/data/gib/gib-ozelge.jsonl", content_key="markdown"
@@ -62,26 +51,37 @@ instruction_generator_callback = ContextualInstructionGeneratorCallback(
 # Set up the respondent prompt modifier
 respondent_prompt_modifier = WithContextRespondentPromptModifier()
 
-# Generate conversations
-if __name__ == "__main__":
-    conv_gen.generate(
+
+async def main():
+    conv_gen = ConversationGenerator(
+        respondent_prompt=respondent_prompt,
+        api_key=api_key,
+        model_name="gemini-2.0-flash",
+        monitor=monitor,
+    )
+    await conv_gen.ainitialize(instruction_generator_callback)
+    print("Generated Correspondent Prompt:")
+    print(conv_gen.correspondent_prompt)
+
+    await conv_gen.generate(
         num_dialogs=30,  # Total dialogs to generate
         max_turns=1,  # Max turns per conversation
         instruction_generator_callback=instruction_generator_callback,
         respondent_prompt_modifier=respondent_prompt_modifier,
     )
 
-    # Get metrics for the last one hour
     generation_time = monitor.get_metrics("generation_time", window=timedelta(hours=1))
     print(f"Avg. generation time: {generation_time['mean']:.2f} secs")
 
-    # Generate visualizations
-    figures = monitor.visualize_metrics(save_dir="plots")
+    monitor.visualize_metrics(save_dir="plots")
 
     # Optional: Export metrics data
     # monitor.export_metrics(
     # "monitoring_metrics_export.json", format="json", window=timedelta(minutes=1)
     # )
 
-    # graceful shutdown
     monitor.shutdown()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -10,7 +10,7 @@ pip install git+https://github.com/altaidevorg/afterimage.git
 
 ## Core Concepts
 
-*   **Generator**: The core engine (`AsyncConversationGenerator`) that orchestrates the conversation flow. It manages the LLM sessions for both the user and the assistant.
+*   **Generator**: The core engine (`ConversationGenerator`) that orchestrates the conversation flow. It manages the LLM sessions for both the user and the assistant.
 *   **Correspondent**: The simulated user who asks questions. Its behavior is driven by an **Instruction Generator**.
 *   **Respondent**: The assistant who answers questions. Its behavior is defined by a **System Prompt** and optional **Prompt Modifiers**.
 *   **Document Provider**: A source of knowledge (text files, JSONL, memory) used to ground the conversation or generate relevant questions.
@@ -25,7 +25,7 @@ The simplest way to use `afterimage` is to define a system prompt for the assist
 ```python
 import asyncio
 import os
-from afterimage import AsyncConversationGenerator
+from afterimage import ConversationGenerator
 
 # Ensure your API key is set
 api_key = os.getenv("GEMINI_API_KEY")
@@ -42,7 +42,7 @@ async def main():
     # If you don't provide a correspondent_prompt, one is auto-generated based on the respondent_prompt.
     # We encourage to give a try to the auto-generated correspondent prompt first,
     # and then you can try to provide your own correspondent prompt.
-    generator = AsyncConversationGenerator(
+    generator = ConversationGenerator(
         respondent_prompt=respondent_prompt,
         api_key=api_key,
         model_name="gemini-2.0-flash",  # Default model
@@ -72,7 +72,7 @@ To generate high-quality domain-specific datasets, you often want the "User" to 
 import asyncio
 import os
 from afterimage import (
-    AsyncConversationGenerator,
+    ConversationGenerator,
     ContextualInstructionGeneratorCallback,
     InMemoryDocumentProvider,
     WithContextRespondentPromptModifier
@@ -104,7 +104,7 @@ async def main():
     prompt_modifier = WithContextRespondentPromptModifier()
 
     # 4. Initialize Generator
-    generator = AsyncConversationGenerator(
+    generator = ConversationGenerator(
         respondent_prompt="You are an expert on the Afterimage library. Answer questions based on the provided context.",
         api_key=api_key,
         instruction_generator_callback=instruction_callback,
@@ -126,7 +126,7 @@ To add variety, you can generate specific "Personas" for your documents (e.g., "
 import asyncio
 import os
 from afterimage import (
-    AsyncConversationGenerator,
+    ConversationGenerator,
     PersonaInstructionGeneratorCallback,
     PersonaGenerator,
     InMemoryDocumentProvider
@@ -157,7 +157,7 @@ async def main():
     )
 
     # 4. Initialize Generator
-    generator = AsyncConversationGenerator(
+    generator = ConversationGenerator(
         respondent_prompt="You are a professional barista. Answer questions about coffee brewing methods.",
         api_key=api_key,
         instruction_generator_callback=instruction_callback

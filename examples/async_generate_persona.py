@@ -1,7 +1,7 @@
 import os
 import asyncio
 from afterimage import (
-    AsyncConversationGenerator,
+    ConversationGenerator,
     PersonaInstructionGeneratorCallback,
     PersonaGenerator,
     InMemoryDocumentProvider,
@@ -69,7 +69,7 @@ async def main():
     respondent_prompt_modifier = WithContextRespondentPromptModifier()
 
     # Initialize the ConversationGenerator
-    conv_gen = AsyncConversationGenerator(
+    conv_gen = ConversationGenerator(
         respondent_prompt=respondent_prompt,
         api_key=api_key,
         model_name="gemini-2.0-flash",

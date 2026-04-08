@@ -3,7 +3,7 @@ import os
 from enum import Enum
 from pydantic import BaseModel, Field
 from afterimage import (
-    AsyncStructuredGenerator,
+    StructuredGenerator,
     PersonaGenerator,
     PersonaInstructionGeneratorCallback,
     InMemoryDocumentProvider,
@@ -70,13 +70,12 @@ async def main():
     instruction_callback = PersonaInstructionGeneratorCallback(
         api_key=api_key,
         documents=docs,
-        num_random_contexts=1,
         # We can also generate personas if we wanted to run the persona generator first,
         # but here we'll let it use default/random personas if documents don't have them yet.
     )
 
     # Initialize the generator
-    generator = AsyncStructuredGenerator(
+    generator = StructuredGenerator(
         output_schema=MovieReview,
         respondent_prompt="You are an experienced movie critic. You always have a very sharp language and you are not afraid to use it. Generate reviews based on the user's questions.",
         api_key=api_key,

@@ -5,7 +5,7 @@ from typing import List
 from pydantic import BaseModel, Field
 
 from afterimage import (
-    AsyncStructuredGenerator,
+    StructuredGenerator,
     PersonaGenerator,
     PersonaInstructionGeneratorCallback,
     InMemoryDocumentProvider,
@@ -100,15 +100,14 @@ async def main():
     Let's play a game with you.
 I am an expert educational content creator and exam setter. I can create high-quality multiple-choice questions based on any text you provide.
 You will roleplay as a teacher, student, or course creator who needs a quiz.
-Given a context and persona, write instructions for a set of questions to be generated.
+Given a context and persona which describes who you are, tell me to prepare a set of questions about that context for you.
 You can specify the number of questions or the difficulty.
 For example, you could start with: "I need 5 multiple-choice questions based on the following article about the Roman Empire."
-I will create the questions for you. You can then ask for changes or follow-ups.
+I will create the questions for you.
 Never break the game and always act as a user who genuinely needs to create a quiz.
-
     """
 
-    generator = AsyncStructuredGenerator(
+    generator = StructuredGenerator(
         output_schema=MCQList,
         respondent_prompt=respondent_prompt,
         correspondent_prompt=correspondent_prompt,

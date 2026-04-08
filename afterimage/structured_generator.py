@@ -31,7 +31,7 @@ T = TypeVar("T", bound=BaseModel)
 logger = logging.getLogger(__name__)
 
 
-class AsyncStructuredGenerator(BaseGenerator):
+class StructuredGenerator(BaseGenerator):
     """Generates structured datasets where outputs strictly conform to a Pydantic schema."""
 
     def __init__(
@@ -431,3 +431,8 @@ class AsyncStructuredGenerator(BaseGenerator):
             self.model_provider_name,
             max_concurrency,
         )
+
+# temporary alias for old imports
+AsyncStructuredGenerator = StructuredGenerator
+
+__all__ = ["StructuredGenerator", "AsyncStructuredGenerator"]

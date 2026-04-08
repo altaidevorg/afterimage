@@ -33,8 +33,8 @@ To effectively use Afterimage, it helps to understand its core abstractions:
 
 ### 2. Generators
 The engine that runs the simulation.
-*   **`AsyncConversationGenerator`**: The primary engine for multi-turn chat.
-*   **`AsyncStructuredGenerator`**: Specialized engine for single-turn data extraction into JSON.
+*   **`ConversationGenerator`**: The primary engine for multi-turn chat.
+*   **`StructuredGenerator`**: Specialized engine for single-turn data extraction into JSON.
 
 ### 3. Callbacks
 Hooks to customize the behavior of the agents:

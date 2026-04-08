@@ -4,12 +4,12 @@ Generators
 .. automodule:: afterimage
    :noindex:
 
-.. autoclass:: afterimage.AsyncConversationGenerator
+.. autoclass:: afterimage.ConversationGenerator
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: afterimage.AsyncStructuredGenerator
+.. autoclass:: afterimage.StructuredGenerator
    :members:
    :undoc-members:
    :show-inheritance:

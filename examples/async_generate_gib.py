@@ -72,7 +72,7 @@ async def main():
     # and it will be automatically called in the `generate()` method
     # we call it here just to trigger the creation of correspondent prompt and print it
     # before entering the generation loop.
-    await conv_gen.initialize(instruction_generator_callback)
+    await conv_gen.ainitialize(instruction_generator_callback)
     
     # Print the auto-generated correspondent prompt
     print("Generated Correspondent Prompt:")

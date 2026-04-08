@@ -1,3 +1,4 @@
+import asyncio
 import os
 from datetime import timedelta
 
@@ -79,9 +80,8 @@ retriever = QdrantRetriever(
 )
 respondent_prompt_modifier = WithRAGRespondentPromptModifier(retriever=retriever)
 
-# Generate conversations
-if __name__ == "__main__":
-    conv_gen.generate(
+async def main():
+    await conv_gen.generate(
         num_dialogs=100,  # Total dialogs to generate
         max_turns=1,  # Max turns per conversation
         instruction_generator_callback=instruction_generator_callback,
@@ -93,7 +93,7 @@ if __name__ == "__main__":
     print(f"Avg. generation time: {generation_time['mean']:.2f} secs")
 
     # Generate visualizations
-    figures = monitor.visualize_metrics(save_dir="plots")
+    monitor.visualize_metrics(save_dir="plots")
 
     # Optional: Export metrics data
     # monitor.export_metrics(
@@ -102,3 +102,7 @@ if __name__ == "__main__":
 
     # graceful shutdown
     monitor.shutdown()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
