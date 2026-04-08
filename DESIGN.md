@@ -6,7 +6,7 @@ This document provides an overview of the design and architecture of the AfterIm
 
 The library is designed around a few core concepts:
 
-- **ConversationGenerator & AsyncConversationGenerator**: The main entry points for generating conversations. `AsyncConversationGenerator` is the recommended high-performance engine for concurrent generation.
+- **ConversationGenerator**: The main entry point for generating conversations. 
 - **PersonaGenerator**: Analyzes documents to generate diverse user personas, enhancing dataset variety.
 - **LLMProvider**: An abstraction over different language model providers (Gemini, OpenAI compatible).
 - **DatasetStorage**: An abstraction for storing and loading generated conversations and documents. It supports JSONL and SQL backends.
@@ -32,12 +32,11 @@ The code is organized into the following directories and files:
 
 - `afterimage/`: The main source code for the library.
     - `__init__.py`: Exposes the main classes and functions.
-    - `async_conversation_generator.py`: **[NEW]** Asynchronous implementation of the conversation generator.
+    - `conversation_generator.py`: Conversation generator with multi-turn conversation support.
     - `base.py`: Base classes for generators and callbacks.
     - `callbacks.py`: Implements default callbacks for instructions and persona handling.
     - `common.py`: Common constants and data structures.
         It also holds provider-aware concurrency defaults.
-    - `conversation_generator.py`: Synchronous conversation generator (Legacy).
     - `evaluator.py`: Conversation evaluation logic.
     - `key_management.py`: Smart API key management with rate limiting.
     - `monitoring.py`: Monitoring system implementation.
@@ -74,7 +73,7 @@ The library uses several design patterns to achieve its goals:
 - **Callback Pattern**: Customizes generation flow via `InstructionGeneratorCallback` and `RespondentPromptModifier`.
 - **Composite Pattern**: `CompositeEvaluator` combines multiple evaluation metrics.
 - **Template Method Pattern**: `BaseGenerator` and callbacks define algorithmic skeletons with overridable steps.
-- **Async/Await Pattern**: `AsyncConversationGenerator` utilizes Python's `asyncio` for high-throughput concurrent generation.
+- **Async/Await Pattern**: All the generators utilizes Python's `asyncio` for high-throughput concurrent generation.
 
 ## Architecture
 
@@ -86,4 +85,4 @@ The monitoring system is also extensible. You can add new metric handlers by imp
 
 ## Scripts
 
-- `generate_qa.py`: QA dataset generation script that uses `AsyncConversationGenerator` with a **dynamic system prompt parts** feature. Before generating QA pairs, it makes a single LLM API call (using `google-genai` with Pydantic structured output) to analyze the input document and generate context-appropriate system prompt "parts" (a role description and an answering instruction). These parts are used as the respondent prompt and also saved to the output JSON alongside QA pairs and formatted samples (following the `format_sample` pattern with `input`/`output` fields).
+- `scripts/generate_qa.py`: QA dataset generation script that uses `AsyncConversationGenerator` with a **dynamic system prompt parts** feature. Before generating QA pairs, it makes a single LLM API call (using `google-genai` with Pydantic structured output) to analyze the input document and generate context-appropriate system prompt "parts" (a role description and an answering instruction). These parts are used as the respondent prompt and also saved to the output JSON alongside QA pairs and formatted samples (following the `format_sample` pattern with `input`/`output` fields).
