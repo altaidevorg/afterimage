@@ -43,6 +43,11 @@ project = "https://github.com/altaidevorg/afterimage"
 repository = "https://github.com/altaidevorg/afterimage"
 
 [project.optional-dependencies]
+# Local SentenceTransformer embeddings via ProcessEmbeddingProvider (also in core deps until optional migration)
+embeddings-local = [
+    "sentence-transformers",
+]
+
 server = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
