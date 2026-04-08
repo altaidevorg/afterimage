@@ -45,7 +45,7 @@ def default_embedding_provider_config(
         Config dict for :class:`~afterimage.providers.embedding_providers.EmbeddingProviderFactory`.
     """
     if model_provider_name == "gemini":
-        return {"type": "gemini", "model": "text-embedding-004"}
+        return {"type": "gemini", "model": "gemini-embedding-001"}
     if model_provider_name == "deepseek":
         return {
             "type": "process",
