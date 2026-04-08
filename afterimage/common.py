@@ -3,7 +3,7 @@ from typing import List
 
 default_model_name = "gemini-2.0-flash"
 default_max_concurrency = 4
-deepseek_default_max_concurrency = 8
+deepseek_default_max_concurrency = 16
 
 default_safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},

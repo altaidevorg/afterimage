@@ -375,12 +375,16 @@ class GenerationMonitor:
         if "model_name" in kwargs:
             token_meta["model_name"] = kwargs["model_name"]
         for metric in metrics_to_record:
-            if metric in kwargs:
-                self.record_metric(
-                    metric,
-                    kwargs[metric],
-                    token_meta if metric != "conversation_length" else {"timestamp": timestamp},
-                )
+            if metric not in kwargs:
+                continue
+            raw = kwargs[metric]
+            if raw is None:
+                continue
+            self.record_metric(
+                metric,
+                raw,
+                token_meta if metric != "conversation_length" else {"timestamp": timestamp},
+            )
 
         # Log complete metrics
         self._enqueue_log({"message": "Generation metrics", "data": metrics})
@@ -466,12 +470,16 @@ class GenerationMonitor:
             "completion_token_count",
             "total_token_count",
         ):
-            if token_metric in kwargs:
-                self.record_metric(
-                    token_metric,
-                    kwargs[token_metric],
-                    eval_token_meta,
-                )
+            if token_metric not in kwargs:
+                continue
+            raw = kwargs[token_metric]
+            if raw is None:
+                continue
+            self.record_metric(
+                token_metric,
+                raw,
+                eval_token_meta,
+            )
 
         # Log complete metrics
         self._enqueue_log({"message": "Evaluation metrics", "data": metrics})
@@ -562,9 +570,9 @@ class GenerationMonitor:
                             "completion_tokens": 0,
                             "total_tokens": 0,
                         }
-                    by_model[model_name][key] = (
-                        by_model[model_name][key] + int(entry["value"])
-                    )
+                    raw_val = entry.get("value")
+                    delta = int(raw_val) if raw_val is not None else 0
+                    by_model[model_name][key] = by_model[model_name][key] + delta
 
             total_prompt = total_completion = total_all = 0
             model_usages: list[ModelTokenUsage] = []
