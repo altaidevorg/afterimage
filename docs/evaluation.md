@@ -60,6 +60,10 @@ asyncio.run(main())
 
 Pass `auto_improve=True`. Optionally set `embedding_provider`, `embedding_provider_config`, or `judge_config` (:class:`~afterimage.evaluator.ConversationJudgeConfig`).
 
+### Runnable example
+
+See `examples/conversation_judge_demo.py` in the repository (requires `GEMINI_API_KEY`): it builds `ConversationJudge` with Gemini LLM + Gemini embeddings and scores two hand-written `ConversationWithContext` rows (one aligned with context, one weaker).
+
 ### Interpreting results
 
 *   **Per-metric scores**: `0.0`–`1.0` in `evaluation.*.score`.
