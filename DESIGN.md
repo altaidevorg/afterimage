@@ -9,7 +9,7 @@ The library is designed around a few core concepts:
 - **ConversationGenerator**: The main entry point for generating conversations. 
 - **PersonaGenerator**: Analyzes documents to generate diverse user personas, enhancing dataset variety.
 - **LLMProvider**: An abstraction over different language model providers (Gemini, OpenAI compatible).
-- **EmbeddingProvider**: Async-first text embeddings (`async def embed(texts) -> list[list[float]]`). API backends (`OpenAIEmbeddingProvider`, `GeminiEmbeddingProvider`) use each vendor’s async client and `SmartKeyPool`; `ProcessEmbeddingProvider` runs SentenceTransformer in a `ProcessPoolExecutor` so the asyncio loop is not blocked by local inference. Use `EmbeddingProviderFactory.create({...})` in `afterimage/providers/embedding_providers.py`.
+- **EmbeddingProvider**: Async-first text embeddings (`async def embed(texts) -> list[list[float]]`). API backends (`OpenAIEmbeddingProvider`, `GeminiEmbeddingProvider`) use each vendor’s async client and `SmartKeyPool`; `ProcessEmbeddingProvider` runs SentenceTransformer in a `ProcessPoolExecutor` so the asyncio loop is not blocked by local inference (install the `embeddings-local` extra for `sentence-transformers`). Use `EmbeddingProviderFactory.create({...})` in `afterimage/providers/embedding_providers.py`.
 - **DatasetStorage**: An abstraction for storing and loading generated conversations and documents. It supports JSONL and SQL backends.
 - **Callbacks**: These allow for customization of the generation process.
     - **InstructionGeneratorCallback**: Generates the initial questions or instructions (e.g., `PersonaInstructionGeneratorCallback`).
