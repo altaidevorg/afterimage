@@ -4,7 +4,7 @@ import random
 import time
 import traceback
 import warnings
-from typing import AsyncGenerator, Dict, List, Literal, Optional, Union
+from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Union
 
 from tqdm.asyncio import tqdm
 
@@ -20,11 +20,16 @@ from .common import (
     default_safety_settings,
     resolve_generation_max_concurrency,
 )
-from .evaluator import HybridSyntheticDatasetEvaluator, SimpleSyntheticDatasetEvaluator
+from .evaluator import (
+    ConversationJudge,
+    ConversationJudgeConfig,
+    default_embedding_provider_config,
+)
 from .key_management import SmartKeyPool
 from .monitoring import GenerationMonitor
 from .prompts import get_correspondent_instruction_generation_prompt
 from .providers import ChatSession, LLMFactory
+from .providers.embedding_providers import EmbeddingProvider
 from .storage import BaseStorage, JSONLStorage
 from .types import (
     Conversation,
@@ -50,8 +55,10 @@ class ConversationGenerator(BaseGenerator):
         model_name: Model name to use
         safety_settings: Safety settings for the model
         auto_improve: Whether to try to improve low-quality generations
-        evaluator_model_name: Model name for the evaluator when auto_improve is True
-        evaluator_method: method to be used for evaluation.
+        evaluator_model_name: Model name for the evaluator LLM when auto_improve is True.
+        embedding_provider: Optional shared :class:`~afterimage.providers.embedding_providers.EmbeddingProvider` for embedding metrics.
+        embedding_provider_config: JSON-style config for :class:`~afterimage.providers.embedding_providers.EmbeddingProviderFactory` when ``embedding_provider`` is omitted (defaults by chat provider).
+        judge_config: Optional :class:`~afterimage.evaluator.ConversationJudgeConfig` (aggregation and grade thresholds).
         model_provider_name: Provider used for accessing LLMs. Supported values are `"gemini"`, `"openai"`, and `"deepseek"`.
         storage: Storage implementation for saving conversations.
                 If `None`, creates JSONLStorage with datetime-based filename.
@@ -71,7 +78,9 @@ class ConversationGenerator(BaseGenerator):
         auto_improve: bool = False,
         evaluator_model_name: str | None = None,
         model_provider_name: Literal["gemini", "openai", "deepseek"] = "gemini",
-        evaluator_method: Literal["simple", "hybrid"] = "simple",
+        embedding_provider: EmbeddingProvider | None = None,
+        embedding_provider_config: dict[str, Any] | None = None,
+        judge_config: ConversationJudgeConfig | None = None,
         storage: Optional[BaseStorage] = None,
         monitor: Optional[GenerationMonitor] = None,
         instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
@@ -134,19 +143,32 @@ class ConversationGenerator(BaseGenerator):
                 if evaluator_model_name is not None
                 else self.model_name
             )
-            if evaluator_method == "simple":
-                self.evaluator = SimpleSyntheticDatasetEvaluator(
-                    api_key=self.key_pool,
-                    model_name=evaluator_model_name,
-                    safety_settings=self.safety_settings,
+            evaluator_llm = LLMFactory.create(
+                self.model_provider_name,
+                evaluator_model_name,
+                self.key_pool,
+                safety_settings=self.safety_settings,
+            )
+            if embedding_provider is not None:
+                self.evaluator = ConversationJudge(
+                    llm=evaluator_llm,
+                    embedding_provider=embedding_provider,
                     monitor=self.monitor,
+                    config=judge_config,
                 )
-            elif evaluator_method == "hybrid":
-                evaluator_llm = LLMFactory.create(
-                    self.model_provider_name, evaluator_model_name, self.key_pool
+            else:
+                embed_cfg = (
+                    embedding_provider_config
+                    if embedding_provider_config is not None
+                    else default_embedding_provider_config(self.model_provider_name)
                 )
-                self.evaluator = HybridSyntheticDatasetEvaluator(
-                    llm=evaluator_llm, monitor=self.monitor
+                self.evaluator = ConversationJudge.from_factory(
+                    evaluator_llm,
+                    key_pool=self.key_pool,
+                    model_provider_name=self.model_provider_name,
+                    embedding_provider_config=embed_cfg,
+                    monitor=self.monitor,
+                    config=judge_config,
                 )
 
         self.initiators = []
@@ -479,8 +501,8 @@ class ConversationGenerator(BaseGenerator):
                     GradeSchema.BAD,
                     GradeSchema.NEEDS_IMPROVEMENT,
                 ]:
-                    evaluated_conversation = await asyncio.to_thread(
-                        self.evaluator.evaluate_row, conversation_row
+                    evaluated_conversation = await self.evaluator.aevaluate_row(
+                        conversation_row
                     )
 
                     if evaluated_conversation.evaluation.overall_grade in [

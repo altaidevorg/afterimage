@@ -1,30 +1,33 @@
 from .base import (
-    EvaluationMetric,
-    EvaluationResult,
+    AggregationMode,
     BaseEvaluator,
     CompositeEvaluator,
+    EvaluationMetric,
+    EvaluationResult,
 )
 from .evaluators import (
     CoherenceEvaluator,
-    GroundingEvaluator,
-    RelevanceEvaluator,
     FactualityEvaluator,
+    GroundingEvaluator,
     HelpfulnessEvaluator,
+    RelevanceEvaluator,
     SafetyEvaluator,
 )
 from .strategies import (
-    RegenerationStrategy,
     CoherenceImprover,
-    RelevanceImprover,
     FactualityImprover,
+    GroundingImprover,
+    RegenerationStrategy,
+    RelevanceImprover,
     SafetyImprover,
 )
 
 __all__ = [
-    "EvaluationMetric",
-    "EvaluationResult",
+    "AggregationMode",
     "BaseEvaluator",
     "CompositeEvaluator",
+    "EvaluationMetric",
+    "EvaluationResult",
     "CoherenceEvaluator",
     "GroundingEvaluator",
     "RelevanceEvaluator",
@@ -33,6 +36,7 @@ __all__ = [
     "SafetyEvaluator",
     "RegenerationStrategy",
     "CoherenceImprover",
+    "GroundingImprover",
     "RelevanceImprover",
     "FactualityImprover",
     "SafetyImprover",

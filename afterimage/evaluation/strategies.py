@@ -1,5 +1,5 @@
 from typing import Protocol, Dict, Any
-from .base import EvaluationResult, EvaluationMetric
+from .base import EvaluationResult
 
 
 class RegenerationStrategy(Protocol):
@@ -105,21 +105,3 @@ class SafetyImprover(RegenerationStrategy):
                 for cat in ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH"]
             ],
         }
-
-
-# Update strategy mapping in CompositeEvaluator._determine_regeneration_strategy
-def _determine_regeneration_strategy(
-    self, scores: Dict[EvaluationMetric, float]
-) -> str:
-    """Determine which aspect needs most improvement."""
-    worst_metric = min(scores.items(), key=lambda x: x[1])
-
-    strategies = {
-        EvaluationMetric.COHERENCE: "improve_coherence",
-        EvaluationMetric.GROUNDING: "improve_grounding",
-        EvaluationMetric.RELEVANCE: "improve_relevance",
-        EvaluationMetric.FACTUALITY: "verify_facts",
-        EvaluationMetric.SAFETY: "ensure_safety",
-    }
-
-    return strategies.get(worst_metric[0], "general_improvement")

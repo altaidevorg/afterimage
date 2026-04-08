@@ -16,8 +16,9 @@ from afterimage.callbacks import (
 )
 from afterimage.conversation_generator import ConversationGenerator  # noqa
 from afterimage.evaluator import (
-    HybridSyntheticDatasetEvaluator,  # noqa
-    SimpleSyntheticDatasetEvaluator,  # noqa
+    ConversationJudge,  # noqa
+    ConversationJudgeConfig,  # noqa
+    default_embedding_provider_config,  # noqa
 )
 from afterimage.key_management import SmartKeyPool  # noqa
 from afterimage.monitoring import (
