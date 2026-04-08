@@ -27,7 +27,21 @@ def parse_args():
     parser.add_argument("--grad_accumulation", type=int, default=config.GRADIENT_ACCUMULATION_STEPS, help="Gradient accumulation steps")
     parser.add_argument("--test_size", type=float, default=config.TEST_SIZE, help="Test split ratio")
     parser.add_argument("--logging_steps", type=int, default=config.LOGGING_STEPS, help="Logging frequency")
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default=None,
+        help="Path to JSONL dataset (default: training_config.DATASET_FILE). Resolved relative to cwd when not absolute.",
+    )
     return parser.parse_args()
+
+
+def resolve_dataset_path(arg_path: str | None) -> str:
+    """Resolve dataset file path the same way as the default config entry."""
+    path = arg_path if arg_path else config.DATASET_FILE
+    if not os.path.isabs(path):
+        path = os.path.join(os.getcwd(), path)
+    return os.path.normpath(path)
 
 
 def validate_token():
@@ -39,13 +53,13 @@ def validate_token():
     print("[OK] HuggingFace token validated")
 
 
-def check_files():
+def check_files(dataset_file: str):
     """Check required files"""
-    if not os.path.exists(config.DATASET_FILE):
-        print(f"[ERROR] Dataset file not found: {config.DATASET_FILE}")
+    if not os.path.exists(dataset_file):
+        print(f"[ERROR] Dataset file not found: {dataset_file}")
         sys.exit(1)
     
-    print(f"[OK] Dataset: {config.DATASET_FILE}")
+    print(f"[OK] Dataset: {dataset_file}")
     
     if os.path.exists(config.TOOLS_FILE):
         print(f"[OK] Tools: {config.TOOLS_FILE}")
@@ -138,9 +152,13 @@ def main():
     print(f"  - Logging Steps: {args.logging_steps}")
     print()
     
+    dataset_file = resolve_dataset_path(args.dataset)
+    print(f"  - Dataset: {dataset_file}")
+    print()
+
     # 1. Preparation
     validate_token()
-    check_files()
+    check_files(dataset_file)
     clean_memory()
     
     # 2. Load model
@@ -149,7 +167,7 @@ def main():
     # 3. Prepare dataset (custom split: only tool call samples for test)
     tools_schema = load_tools_schema(config.TOOLS_FILE) if os.path.exists(config.TOOLS_FILE) else None
     split_dataset = prepare_dataset_with_tool_call_test(
-        config.DATASET_FILE,
+        dataset_file,
         tokenizer,
         tools_schema,
         test_size=args.test_size,

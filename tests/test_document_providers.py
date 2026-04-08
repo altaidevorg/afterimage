@@ -2,9 +2,14 @@ from pydantic import BaseModel
 import pytest
 
 from afterimage.async_conversation_generator import AsyncConversationGenerator
-from afterimage.callbacks import AndStoppingCallback, ContextCoverageStoppingCallback
+from afterimage.callbacks import (
+    AndStoppingCallback,
+    ContextCoverageStoppingCallback,
+    FixedNumberStoppingCallback,
+)
 from afterimage.callbacks.instruction_generator_callbacks import (
     ContextualInstructionGeneratorCallback,
+    PersonaInstructionGeneratorCallback,
 )
 from afterimage.common import (
     deepseek_default_max_concurrency,
@@ -231,6 +236,154 @@ def test_generator_does_not_override_explicit_target_usage_count():
     )
 
     assert provider.get_target_context_usage_count() == 2
+
+
+def test_generator_configures_persona_sampling_from_requested_rows():
+    provider = InMemoryDocumentProvider(
+        [
+            Document(id="doc1", text="Context 1"),
+            Document(id="doc2", text="Context 2"),
+        ]
+    )
+    callback = PersonaInstructionGeneratorCallback(
+        api_key="test_key",
+        documents=provider,
+        num_random_contexts=2,
+    )
+    generator = AsyncConversationGenerator(
+        respondent_prompt="You are a helpful assistant.",
+        correspondent_prompt="You are a curious user.",
+        api_key="test_key",
+        instruction_generator_callback=callback,
+    )
+
+    generator._configure_persona_sampling(callback, num_requested=7)
+
+    assert callback._persona_target_per_document == 4
+
+
+def test_generator_configures_persona_sampling_from_provider_target_usage():
+    provider = InMemoryDocumentProvider(
+        [
+            Document(id="doc1", text="Context 1"),
+            Document(id="doc2", text="Context 2"),
+        ],
+        target_context_usage_count=3,
+    )
+    callback = PersonaInstructionGeneratorCallback(
+        api_key="test_key",
+        documents=provider,
+        num_random_contexts=2,
+    )
+    generator = AsyncConversationGenerator(
+        respondent_prompt="You are a helpful assistant.",
+        correspondent_prompt="You are a curious user.",
+        api_key="test_key",
+        instruction_generator_callback=callback,
+    )
+
+    generator._configure_persona_sampling(callback, num_requested=50)
+
+    assert callback._persona_target_per_document == 2
+
+
+@pytest.mark.parametrize(
+    ("doc_count", "num_random_contexts", "num_requested", "expected_target"),
+    [
+        (1, 1, 1, 1),
+        (2, 1, 20, 10),
+        (2, 2, 20, 10),
+        (4, 1, 1000, 250),
+        (4, 2, 1000, 250),
+        (5, 1, 100000, 20000),
+        (5, 3, 100000, 20000),
+    ],
+)
+def test_persona_sampling_target_inference_matches_requested_dataset_shape(
+    doc_count,
+    num_random_contexts,
+    num_requested,
+    expected_target,
+):
+    provider = InMemoryDocumentProvider(
+        [Document(id=f"doc{i}", text=f"Context {i}") for i in range(doc_count)]
+    )
+    callback = PersonaInstructionGeneratorCallback(
+        api_key="test_key",
+        documents=provider,
+        num_random_contexts=num_random_contexts,
+    )
+
+    callback.configure_persona_sampling(num_requested=num_requested)
+
+    assert callback._persona_target_per_document == expected_target
+
+
+def test_persona_sampling_target_is_unset_when_requested_rows_are_unknown():
+    provider = InMemoryDocumentProvider(
+        [
+            Document(id="doc1", text="Context 1"),
+            Document(id="doc2", text="Context 2"),
+        ]
+    )
+    callback = PersonaInstructionGeneratorCallback(
+        api_key="test_key",
+        documents=provider,
+        num_random_contexts=2,
+    )
+
+    callback.configure_persona_sampling(num_requested=None)
+
+    assert callback._persona_target_per_document is None
+
+
+def test_persona_sampling_target_inference_uses_only_active_documents():
+    provider = InMemoryDocumentProvider(
+        [
+            Document(id="doc1", text="Context 1"),
+            Document(id="doc2", text="Context 2"),
+            Document(id="doc3", text="Context 3"),
+        ]
+    )
+    provider.get_all()
+    provider.mark_fully_covered("doc3")
+    callback = PersonaInstructionGeneratorCallback(
+        api_key="test_key",
+        documents=provider,
+        num_random_contexts=2,
+    )
+
+    callback.configure_persona_sampling(num_requested=12)
+
+    assert callback._persona_target_per_document == 6
+
+
+def test_generator_configures_persona_sampling_from_fixed_number_stopping_callback():
+    provider = InMemoryDocumentProvider(
+        [
+            Document(id="doc1", text="Context 1"),
+            Document(id="doc2", text="Context 2"),
+        ]
+    )
+    callback = PersonaInstructionGeneratorCallback(
+        api_key="test_key",
+        documents=provider,
+        num_random_contexts=2,
+    )
+    generator = AsyncConversationGenerator(
+        respondent_prompt="You are a helpful assistant.",
+        correspondent_prompt="You are a curious user.",
+        api_key="test_key",
+        instruction_generator_callback=callback,
+    )
+
+    generator._configure_persona_sampling(
+        callback,
+        num_requested=None,
+        stopping_criteria=[FixedNumberStoppingCallback(n=7)],
+    )
+
+    assert callback._persona_target_per_document == 4
 
 
 def test_record_context_usage_reports_all_context_ids_after_success():

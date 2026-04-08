@@ -83,7 +83,11 @@ async def run_generation_task(
     try:
         # Generate personas
         yield pd.DataFrame(), "### Status: Generating Personas...", None
-        persona_gen = PersonaGenerator(api_key=api_key)
+        persona_gen = PersonaGenerator(
+            api_key=api_key,
+            model_provider_name="deepseek",
+            model_name="deepseek-chat",
+        )
         await persona_gen.generate_from_documents(docs)
 
         # Create generator

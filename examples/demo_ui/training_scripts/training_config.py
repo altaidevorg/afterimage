@@ -1,7 +1,8 @@
 import os
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
-load_dotenv()
+# Resolve .env from cwd or a parent directory (e.g. repo root when cwd is training_scripts).
+load_dotenv(find_dotenv(usecwd=True))
 
 # ==========================================
 # TOKEN AND MODEL SETTINGS

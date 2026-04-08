@@ -69,6 +69,47 @@ class BaseGenerator:
                 provider_type=provider.__class__.__name__,
             )
 
+    def _configure_persona_sampling(
+        self,
+        instruction_generator_callback,
+        num_requested: int | None,
+        stopping_criteria=None,
+    ) -> None:
+        """Configure persona-aware callbacks with the effective request target."""
+        configure_persona_sampling = getattr(
+            instruction_generator_callback,
+            "configure_persona_sampling",
+            None,
+        )
+        if configure_persona_sampling is None:
+            return
+
+        inferred_num_requested = num_requested
+        if inferred_num_requested is None:
+            fixed_targets: list[int] = []
+            for callback in self._iter_stopping_callbacks(stopping_criteria):
+                callback_n = getattr(callback, "n", None)
+                if (
+                    callback.__class__.__name__ == "FixedNumberStoppingCallback"
+                    and isinstance(callback_n, int)
+                    and callback_n > 0
+                ):
+                    fixed_targets.append(callback_n)
+            inferred_num_requested = max(fixed_targets) if fixed_targets else None
+
+        configure_persona_sampling(num_requested=inferred_num_requested)
+
+        if getattr(self, "monitor", None) is not None:
+            self.monitor.log_info(
+                "Configured persona sampling target",
+                target_personas_per_document=getattr(
+                    instruction_generator_callback,
+                    "_persona_target_per_document",
+                    None,
+                ),
+                callback_type=instruction_generator_callback.__class__.__name__,
+            )
+
     def _record_context_usage(
         self,
         instruction_generator_callback,

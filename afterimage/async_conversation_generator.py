@@ -453,17 +453,25 @@ class AsyncConversationGenerator(BaseGenerator):
                     respondent_prompt=current_respondent_prompt,
                 )
 
-                conversation_row = ConversationWithContext(
-                    conversations=conversation,
-                    instruction_context=instruction_context,
-                    response_context=response_context,
-                    persona=persona,
-                    metadata={
-                        "context_id": gen_instructions.context_id,
-                        "context_ids": gen_instructions.context_ids,
-                        "persona_name": persona,
-                    },
-                )
+                def build_conversation_row(
+                    generated_conversation,
+                ) -> ConversationWithContext:
+                    return ConversationWithContext(
+                        conversations=generated_conversation,
+                        instruction_context=instruction_context,
+                        response_context=response_context,
+                        persona=persona,
+                        metadata={
+                            "context_id": gen_instructions.context_id,
+                            "context_ids": gen_instructions.context_ids,
+                            "persona_name": persona,
+                            "persona_generation_depth": (
+                                gen_instructions.persona_generation_depth
+                            ),
+                        },
+                    )
+
+                conversation_row = build_conversation_row(conversation)
 
                 evaluation_grade = GradeSchema.NOT_ACCEPTABLE
                 while self.evaluator and evaluation_grade in [
@@ -485,8 +493,9 @@ class AsyncConversationGenerator(BaseGenerator):
                             first_question=instruction,
                             check_for_near_duplicates=check_for_near_duplicates,
                             correspondent_prompt=correspondent_prompt,
-                            respondent_prompt=respondent_prompt,
+                            respondent_prompt=current_respondent_prompt,
                         )
+                        conversation_row = build_conversation_row(conversation)
                     else:
                         evaluation_grade = (
                             evaluated_conversation.evaluation.overall_grade
@@ -569,6 +578,11 @@ class AsyncConversationGenerator(BaseGenerator):
         self._configure_context_sampling(
             instruction_generator_callback,
             final_stopping_criteria,
+        )
+        self._configure_persona_sampling(
+            instruction_generator_callback,
+            num_requested=num_dialogs,
+            stopping_criteria=final_stopping_criteria,
         )
 
         state = GenerationState(
