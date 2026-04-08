@@ -1,8 +1,9 @@
 """Async embedding providers (API and process-based).
 
-All providers implement :class:`EmbeddingProvider` with ``async def embed(texts) -> list[list[float]]``.
-The asyncio event loop must not perform blocking local inference; use :class:`ProcessEmbeddingProvider`
-for SentenceTransformer models.
+This module defines a single async contract (:class:`EmbeddingProvider`) and
+concrete backends for OpenAI-compatible APIs, Google Gemini, and local
+SentenceTransformer models running in worker processes so the asyncio event
+loop is not blocked by CPU/GPU embedding work.
 """
 
 from __future__ import annotations
@@ -19,13 +20,29 @@ from ..key_management import SmartKeyPool
 
 
 def _chunk_list(items: Sequence[str], size: int) -> list[list[str]]:
+    """Split ``items`` into contiguous chunks of at most ``size`` elements.
+
+    Args:
+        items: Strings to partition.
+        size: Maximum chunk length; must be positive.
+
+    Returns:
+        List of chunks, each a list of strings. Empty ``items`` yields ``[]``.
+
+    Raises:
+        ValueError: If ``size`` is not positive.
+    """
     if size <= 0:
         raise ValueError("Batch size must be positive")
     return [list(items[i : i + size]) for i in range(0, len(items), size)]
 
 
 async def _aclose_genai_client(client: genai.Client) -> None:
-    """Close async resources held by a google-genai client (mirrors GeminiProvider)."""
+    """Best-effort shutdown of async HTTP resources on a google-genai client.
+
+    Args:
+        client: Client instance that may have opened aiohttp/httpx clients.
+    """
     try:
         if hasattr(client, "aio"):
             api_client = client.aio._api_client
@@ -45,28 +62,53 @@ async def _aclose_genai_client(client: genai.Client) -> None:
 
 @runtime_checkable
 class EmbeddingProvider(Protocol):
-    """Unified async interface for text embeddings."""
+    """Protocol for async text embedding backends.
+
+    Implementations return one dense vector per input string, preserve order,
+    and may batch requests internally. Call :meth:`aclose` when the provider
+    is no longer needed (required for process-based providers).
+    """
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        """Return one embedding vector per input string (same order).
+        """Embed each string into a floating-point vector.
 
-        Empty ``texts`` returns ``[]``. Implementations may batch internally;
-        callers should not assume a single HTTP request for large inputs.
+        Args:
+            texts: Input strings. Empty list returns ``[]``.
+
+        Returns:
+            Embeddings in the same order as ``texts``; each embedding is a
+            list of floats (dimension is model-specific).
+
+        Note:
+            Callers must not assume a single HTTP or IPC round trip; large
+            inputs may be split into batches by the implementation.
         """
         ...
 
     async def aclose(self) -> None:
-        """Release provider-held resources (pools, clients). Safe to call multiple times."""
+        """Release resources held by this provider (pools, clients).
+
+        Implementations should make this idempotent (safe to call multiple
+        times). API-only providers may use a no-op.
+        """
         ...
 
 
 class _NoOpAcloseMixin:
+    """Mixin adding a no-op :meth:`aclose` for stateless API providers."""
+
     async def aclose(self) -> None:
+        """See :meth:`EmbeddingProvider.aclose`."""
         return None
 
 
 class OpenAIEmbeddingProvider(_NoOpAcloseMixin):
-    """OpenAI (or OpenAI-compatible) embeddings via ``AsyncOpenAI.embeddings.create``."""
+    """Embeddings via the OpenAI async client (``embeddings.create``).
+
+    Supports OpenAI and OpenAI-compatible servers via ``base_url``. Uses
+    :class:`~afterimage.key_management.SmartKeyPool` for key rotation and error
+    reporting consistent with chat providers.
+    """
 
     def __init__(
         self,
@@ -77,6 +119,16 @@ class OpenAIEmbeddingProvider(_NoOpAcloseMixin):
         max_batch_size: int = 128,
         extra_create_kwargs: Optional[dict[str, Any]] = None,
     ):
+        """Initialize the OpenAI embedding provider.
+
+        Args:
+            api_key: A single API key or a :class:`~afterimage.key_management.SmartKeyPool`.
+            model: Embedding model id passed to ``embeddings.create``.
+            base_url: Optional base URL for compatible APIs (e.g. proxies).
+            max_batch_size: Maximum number of texts per ``embeddings.create`` call.
+            extra_create_kwargs: Additional keyword arguments forwarded to
+                ``embeddings.create`` (e.g. dimensions for matryoshka models).
+        """
         self.key_pool = (
             api_key
             if isinstance(api_key, SmartKeyPool)
@@ -88,6 +140,17 @@ class OpenAIEmbeddingProvider(_NoOpAcloseMixin):
         self._extra_create_kwargs = extra_create_kwargs or {}
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Compute embeddings for ``texts`` using the configured model.
+
+        Args:
+            texts: Non-empty list of strings to embed, or empty for no work.
+
+        Returns:
+            One embedding per input string, in order.
+
+        Raises:
+            Exception: Propagates API errors after reporting the key to the pool.
+        """
         if not texts:
             return []
 
@@ -110,7 +173,11 @@ class OpenAIEmbeddingProvider(_NoOpAcloseMixin):
 
 
 class GeminiEmbeddingProvider(_NoOpAcloseMixin):
-    """Google Gemini embeddings via ``client.aio.models.embed_content``."""
+    """Embeddings via Google Gemini ``client.aio.models.embed_content``.
+
+    Uses the async Gemini client, closes transient HTTP resources after each
+    :meth:`embed` call, and integrates with :class:`~afterimage.key_management.SmartKeyPool`.
+    """
 
     def __init__(
         self,
@@ -119,6 +186,13 @@ class GeminiEmbeddingProvider(_NoOpAcloseMixin):
         *,
         max_batch_size: int = 128,
     ):
+        """Initialize the Gemini embedding provider.
+
+        Args:
+            api_key: A single API key or a :class:`~afterimage.key_management.SmartKeyPool`.
+            model: Gemini embedding model resource name or id.
+            max_batch_size: Maximum number of strings per ``embed_content`` call.
+        """
         self.key_pool = (
             api_key
             if isinstance(api_key, SmartKeyPool)
@@ -128,6 +202,18 @@ class GeminiEmbeddingProvider(_NoOpAcloseMixin):
         self.max_batch_size = max_batch_size
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Compute embeddings for ``texts`` using the configured Gemini model.
+
+        Args:
+            texts: Non-empty list of strings to embed, or empty for no work.
+
+        Returns:
+            One embedding per input string, in order.
+
+        Raises:
+            ValueError: If the API returns an embedding without ``values``.
+            Exception: Propagates API errors after reporting the key to the pool.
+        """
         if not texts:
             return []
 
@@ -159,6 +245,14 @@ _worker_model: Any = None
 
 
 def _process_pool_init(model_name: str) -> None:
+    """Load ``SentenceTransformer`` once in each worker process.
+
+    Args:
+        model_name: HuggingFace model id or local path.
+
+    Raises:
+        ImportError: If ``sentence_transformers`` is not installed.
+    """
     global _worker_model
     try:
         from sentence_transformers import SentenceTransformer
@@ -172,6 +266,17 @@ def _process_pool_init(model_name: str) -> None:
 
 
 def _process_pool_embed_batch(texts: list[str]) -> list[list[float]]:
+    """Encode a batch in a worker process (must run after pool initializer).
+
+    Args:
+        texts: Batch of strings to encode.
+
+    Returns:
+        List of embedding vectors as plain Python floats.
+
+    Raises:
+        RuntimeError: If the worker model was not initialized.
+    """
     global _worker_model
     if _worker_model is None:
         raise RuntimeError("Embedding worker model not initialized")
@@ -184,7 +289,12 @@ def _process_pool_embed_batch(texts: list[str]) -> list[list[float]]:
 
 
 class ProcessEmbeddingProvider:
-    """Local embeddings in worker processes (no event-loop blocking)."""
+    """Local embeddings using SentenceTransformer in a process pool.
+
+    Inference runs in child processes so the host asyncio loop is not blocked.
+    The model is loaded once per worker via the pool initializer. Call
+    :meth:`aclose` to shut down workers when finished.
+    """
 
     def __init__(
         self,
@@ -193,6 +303,16 @@ class ProcessEmbeddingProvider:
         max_workers: int = 2,
         max_batch_size: int = 64,
     ):
+        """Initialize configuration; the process pool starts on first :meth:`embed`.
+
+        Args:
+            model_name: HuggingFace model id or path passed to SentenceTransformer.
+            max_workers: Number of worker processes.
+            max_batch_size: Maximum strings passed to each worker call.
+
+        Raises:
+            ValueError: If ``max_workers`` is less than 1.
+        """
         if max_workers < 1:
             raise ValueError("max_workers must be at least 1")
         self._model_name = model_name
@@ -202,6 +322,14 @@ class ProcessEmbeddingProvider:
         self._closed = False
 
     def _get_executor(self) -> ProcessPoolExecutor:
+        """Lazily create the process pool.
+
+        Returns:
+            Shared executor for this provider instance.
+
+        Raises:
+            RuntimeError: If :meth:`aclose` was already called.
+        """
         if self._closed:
             raise RuntimeError("ProcessEmbeddingProvider is closed")
         if self._executor is None:
@@ -213,6 +341,18 @@ class ProcessEmbeddingProvider:
         return self._executor
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Encode texts in worker processes via :func:`asyncio.loop.run_in_executor`.
+
+        Args:
+            texts: Non-empty list of strings to embed, or empty for no work.
+
+        Returns:
+            One embedding per input string, in order.
+
+        Raises:
+            RuntimeError: If the provider was closed before or during use.
+            ImportError: In workers if sentence-transformers is missing.
+        """
         if not texts:
             return []
 
@@ -229,6 +369,10 @@ class ProcessEmbeddingProvider:
         return out
 
     async def aclose(self) -> None:
+        """Shut down the process pool and mark this provider closed.
+
+        Waits for workers to finish. Idempotent after the first call.
+        """
         if self._executor is not None:
             self._executor.shutdown(wait=True)
             self._executor = None
@@ -236,7 +380,11 @@ class ProcessEmbeddingProvider:
 
 
 class EmbeddingProviderFactory:
-    """Build an :class:`EmbeddingProvider` from JSON-friendly config dicts."""
+    """Factory for constructing :class:`EmbeddingProvider` instances from config.
+
+    Config dictionaries are intended to be JSON-serializable (aside from
+    embedding-specific nested structures). Key names are matched case-insensitively.
+    """
 
     @staticmethod
     def create(
@@ -245,19 +393,30 @@ class EmbeddingProviderFactory:
         api_key: str | None = None,
         key_pool: SmartKeyPool | None = None,
     ) -> EmbeddingProvider:
-        """Instantiate a provider from ``config``.
+        """Build a provider from a configuration mapping.
 
-        Expected keys:
+        Args:
+            config: Must include ``type`` (``"openai"``, ``"gemini"``, or
+                ``"process"``). Optional keys:
 
-        - ``type`` (required): ``"openai"`` | ``"gemini"`` | ``"process"``.
-        - ``model`` (optional): embedding model id for API providers.
-        - ``model_path`` (optional): HuggingFace id or path for ``process`` (alias of ``model``).
-        - ``base_url`` (optional): OpenAI-compatible API base URL.
-        - ``workers`` (optional): process pool size for ``process`` (default 2).
-        - ``max_batch_size`` (optional): batch size for chunking (provider-specific default).
-        - ``api_key`` (optional): inline key; otherwise ``api_key`` argument or env vars.
+                * ``model`` — embedding model id for API providers.
+                * ``model_path`` — HuggingFace id or path for ``process`` (also
+                  ``model`` is accepted for process).
+                * ``base_url`` — OpenAI-compatible base URL.
+                * ``workers`` — process count for ``process`` (default ``2``).
+                * ``max_batch_size`` — chunk size for batched calls.
+                * ``api_key`` — inline secret when not using ``key_pool``.
 
-        Env fallbacks: ``OPENAI_API_KEY`` for openai, ``GEMINI_API_KEY`` for gemini.
+            api_key: Optional default API key when ``key_pool`` is omitted
+                (OpenAI/Gemini only).
+            key_pool: Optional shared pool; takes precedence over ``api_key``
+                and env vars for API providers.
+
+        Returns:
+            A concrete :class:`EmbeddingProvider`.
+
+        Raises:
+            ValueError: If ``type`` is missing, unknown, or required keys are absent.
         """
         cfg = {k.lower(): v for k, v in config.items()}
         provider_type = cfg.get("type")
