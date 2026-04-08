@@ -3,7 +3,12 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock
 
 from afterimage.async_conversation_generator import AsyncConversationGenerator
-from afterimage.providers.llm_providers import LLMResponse, ChatSession
+from afterimage.evaluation.evaluators import LLMJudgeStructuredOutput
+from afterimage.providers.llm_providers import (
+    LLMResponse,
+    ChatSession,
+    StructuredLLMResponse,
+)
 from afterimage.common import GeneratedInstructions
 from afterimage.types import (
     ConversationEntry,
@@ -59,6 +64,21 @@ class MockLLMProvider:
     async def agenerate_content(self, prompt, **kwargs) -> LLMResponse:
         return LLMResponse(
             text="mocked correspondent prompt",
+            prompt_token_count=10,
+            completion_token_count=5,
+            total_token_count=15,
+            finish_reason="stop",
+            model_name="mock_model",
+            raw_response=None,
+        )
+
+    async def agenerate_structured(self, prompt, schema, **kwargs):
+        parsed = LLMJudgeStructuredOutput(
+            scores=[0.9], feedback="ok", needs_improvement=False
+        )
+        return StructuredLLMResponse(
+            text="{}",
+            parsed=parsed,
             prompt_token_count=10,
             completion_token_count=5,
             total_token_count=15,
@@ -144,7 +164,7 @@ async def test_async_conversation_generator_rebuilds_row_after_evaluator_retry()
             def __init__(self):
                 self.seen_rows = []
 
-            def evaluate_row(self, row):
+            async def aevaluate_row(self, row):
                 self.seen_rows.append(row)
                 if len(self.seen_rows) == 1:
                     return EvaluatedConversationWithContext(
@@ -224,7 +244,7 @@ async def test_async_conversation_generator_retries_with_modified_respondent_pro
             def __init__(self):
                 self.calls = 0
 
-            def evaluate_row(self, row):
+            async def aevaluate_row(self, row):
                 self.calls += 1
                 grade = GradeSchema.BAD if self.calls == 1 else GradeSchema.GOOD
                 return EvaluatedConversationWithContext(
