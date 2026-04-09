@@ -1,14 +1,28 @@
-from typing import List, Dict, Any, Optional
-from collections import defaultdict
-import numpy as np
-from sentence_transformers import SentenceTransformer
-import matplotlib.pyplot as plt
-import seaborn as sns
-from pathlib import Path
-import langdetect
+from __future__ import annotations
 
-from .types import Role
+from collections import defaultdict
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
+import matplotlib.pyplot as plt
+import numpy as np
+import langdetect
+import seaborn as sns
+
 from .storage import DatasetStorage
+from .types import Role
+
+
+def _load_sentence_transformer(model_name: str):
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as e:
+        raise ImportError(
+            "QualityChecker embedding analysis requires sentence-transformers. "
+            'Install with pip install "afterimage[embeddings-local]" '
+            "or pip install sentence-transformers"
+        ) from e
+    return SentenceTransformer(model_name)
 
 
 class QualityChecker:
@@ -20,7 +34,7 @@ class QualityChecker:
         min_length: int = 50,
         max_length: int = 2000,
         language: Optional[str] = None,
-        embedding_model: str | SentenceTransformer = "altaidevorg/bge-m3-distill-8l",
+        embedding_model: Union[str, Any] = "altaidevorg/bge-m3-distill-8l",
     ):
         """Initialize quality checker.
 
@@ -29,19 +43,18 @@ class QualityChecker:
             min_length: Minimum acceptable response length
             max_length: Maximum acceptable response length
             language: Expected language code (e.g., 'tr', 'en')
-            embedding_model: Model name or instance for semantic analysis
+            embedding_model: HuggingFace model id or a loaded SentenceTransformer instance
+                (instance path requires ``embeddings-local`` / sentence-transformers installed).
         """
         self.storage = storage
         self.min_length = min_length
         self.max_length = max_length
         self.language = language
 
-        # Initialize embedding model
-        self.model = (
-            embedding_model
-            if isinstance(embedding_model, SentenceTransformer)
-            else SentenceTransformer(embedding_model)
-        )
+        if isinstance(embedding_model, str):
+            self.model = _load_sentence_transformer(embedding_model)
+        else:
+            self.model = embedding_model
 
     def check_length_distribution(self) -> Dict[str, Any]:
         """Analyze response length distribution."""

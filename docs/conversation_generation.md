@@ -2,27 +2,26 @@
 
 The core capability of Afterimage is generating rigorous synthetic conversations. This process involves simulating a dialogue between a **Correspondent** (User) and a **Respondent** (Assistant) to create training or evaluation data.
 
-## `AsyncConversationGenerator`
+## `ConversationGenerator`
 
-The `AsyncConversationGenerator` is the primary workhorse for this task. It orchestrates the multi-turn interaction, manages state, handles concurrency, and can even self-correct using an evaluator loop.
+The `ConversationGenerator` class is the primary workhorse for this task. It orchestrates the multi-turn interaction, manages state, handles concurrency, and can even self-correct using an evaluator loop.
 
 ### Initialization
 
 To start generating, you need to initialize the generator. The recommended pattern is to configure all strategy callbacks (for instructions and prompt modification) at initialization time.
 
 ```python
-from afterimage import AsyncConversationGenerator
+from afterimage import ConversationGenerator
 import os
 
-generator = AsyncConversationGenerator(
+generator = ConversationGenerator(
     respondent_prompt="You are a helpful assistant.",
     api_key=os.getenv("GEMINI_API_KEY"),
     model_name="gemini-2.0-flash",
     # Strategies are now passed here
     instruction_generator_callback=my_instruction_gen,
     respondent_prompt_modifier=my_prompt_modifier,
-    # Optional: Enable auto-improvement
-    auto_improve=True,
+    auto_improve=False,  # set to to True to enable auto-improvement
     evaluator_model_name="gemini-2.0-flash"
 )
 ```
@@ -46,7 +45,7 @@ from afterimage.callbacks import PersonaUsageStoppingCallback
 
 await generator.generate(
     num_dialogs=100,
-    max_turns=5,
+    max_turns=3,
     max_concurrency=4,
     stopping_criteria=[
         PersonaUsageStoppingCallback(n_personas=50) # Stop if 50 unique personas are used
@@ -86,7 +85,7 @@ Here is a full example showing how to generate a dataset for a technical support
 import asyncio
 import os
 from afterimage import (
-    AsyncConversationGenerator,
+    ConversationGenerator,
     ContextualInstructionGeneratorCallback,
     InMemoryDocumentProvider,
     WithContextRespondentPromptModifier
@@ -112,7 +111,7 @@ async def main():
     prompt_modifier = WithContextRespondentPromptModifier()
 
     # 4. Initialize Generator
-    generator = AsyncConversationGenerator(
+    generator = ConversationGenerator(
         respondent_prompt="You are a Tier 1 Technical Support agent.",
         api_key=api_key,
         instruction_generator_callback=instruction_gen,

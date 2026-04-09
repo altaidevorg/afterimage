@@ -1,11 +1,10 @@
 import asyncio
-import json
 import os
 from typing import List, Literal, Type, Union
 from pydantic import BaseModel, Field
 
 from afterimage import (
-    AsyncStructuredGenerator,
+    StructuredGenerator,
     PersonaGenerator,
     ToolCallingInstructionGeneratorCallback,
     InMemoryDocumentProvider,
@@ -219,7 +218,7 @@ async def main():
     - If no tool matches, return an empty list.
     """
 
-    generator = AsyncStructuredGenerator(
+    generator = StructuredGenerator(
         output_schema=ToolInvocation,
         respondent_prompt=respondent_prompt,
         api_key=api_key,
@@ -234,16 +233,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    tool_defs = tools_to_function_schemas(
-        [
-            TurnOnLight,
-            TurnOffLight,
-            SetThermostat,
-            PlayMusic,
-            LockDoor,
-            CheckWeather,
-        ]
-    )
-    with open("tools.json", "w", encoding="utf8") as f:
-        json.dump(tool_defs, f, indent=2)
     asyncio.run(main())

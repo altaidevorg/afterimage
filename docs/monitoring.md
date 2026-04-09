@@ -8,10 +8,10 @@ The central component is the `GenerationMonitor`. It collects metrics from the g
 
 ### Initialization
 
-You can attach a monitor to any generator (`AsyncConversationGenerator`, `PersonaGenerator`, etc.). The monitor uses background threads to process metrics without blocking the main generation loop.
+You can attach a monitor to any generator (`ConversationGenerator`, `PersonaGenerator`, etc.). The monitor uses background threads to process metrics without blocking the main generation loop.
 
 ```python
-from afterimage import AsyncConversationGenerator, GenerationMonitor
+from afterimage import ConversationGenerator, GenerationMonitor
 
 # 1. Initialize Monitor
 # This will save metrics to 'metrics.jsonl' and logs to 'afterimage.log' in the specified directory.
@@ -22,7 +22,7 @@ monitor = GenerationMonitor(
 )
 
 # 2. Attach to Generator
-generator = AsyncConversationGenerator(
+generator = ConversationGenerator(
     ...,
     monitor=monitor
 )

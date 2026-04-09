@@ -25,6 +25,16 @@ To get started with AfterImage, please refer to the **[Quickstart Guide](https:/
 pip install git+https://github.com/altaidevorg/afterimage.git
 ```
 
+Optional extras (see `pyproject.toml`):
+
+* **`embeddings-local`** — `sentence-transformers` for `ProcessEmbeddingProvider`, `QdrantRetriever` (by model name), and `QualityChecker` semantic checks.
+* **`server`** — FastAPI app (`afterimage-server`).
+* **`training`** — Torch/TRL stack for `examples/demo_ui/training_scripts/train.py`.
+
+```bash
+pip install "afterimage[embeddings-local]@git+https://github.com/altaidevorg/afterimage.git"
+```
+
 ## ✨ Key Features
 
 *   **Async-First**: High-performance parallel generation.

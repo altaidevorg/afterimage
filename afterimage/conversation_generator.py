@@ -1,43 +1,72 @@
-import traceback
+import asyncio
+import logging
 import random
-import warnings
-from concurrent.futures import (
-    CancelledError,
-    ThreadPoolExecutor,
-    as_completed,
-)
-from typing import Dict, List, Literal, Optional
 import time
+import traceback
+import warnings
+from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Union
 
-from tqdm import tqdm
+from tqdm.asyncio import tqdm
 
 from .base import (
     BaseGenerator,
     BaseInstructionGeneratorCallback,
     BaseRespondentPromptModifierCallback,
+    BaseStoppingCallback,
 )
-from .common import default_model_name, default_safety_settings
-from .evaluator import SimpleSyntheticDatasetEvaluator, HybridSyntheticDatasetEvaluator
+from .callbacks import FixedNumberStoppingCallback
+from .common import (
+    default_model_name,
+    default_safety_settings,
+    resolve_generation_max_concurrency,
+)
+from .evaluator import (
+    ConversationJudge,
+    ConversationJudgeConfig,
+    default_embedding_provider_config,
+)
+from .key_management import SmartKeyPool
+from .monitoring import GenerationMonitor
 from .prompts import get_correspondent_instruction_generation_prompt
+from .providers import ChatSession, LLMFactory
+from .providers.embedding_providers import EmbeddingProvider
+from .storage import BaseStorage, JSONLStorage
 from .types import (
-    ConversationEntry,
     Conversation,
+    ConversationEntry,
     ConversationWithContext,
     EvaluatedConversationWithContext,
+    GenerationState,
     GradeSchema,
     Role,
 )
-from .key_management import SmartKeyPool
-from .providers import ChatSession, LLMFactory
-from .monitoring import GenerationMonitor
-from .storage import BaseStorage, JSONLStorage
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationGenerator(BaseGenerator):
-    """Generates conversations between a correspondent (question generator) and a respondent (answer generator).
+    """Generates conversations between a correspondent (question generator) and a respondent (answer generator) asynchronously.
 
-    This class simulates multi-turn conversations and supports customization via callbacks for instruction generation
-    and prompt modification."""
+    Args:
+        respondent_prompt: System prompt to the respondent, e.g., assistant that you want you fine-tune on this dataset
+        api_key: Either a single API key string or a SmartKeyPool instance for LLM use
+        correspondent_prompt: System prompt to the correspondent, e.g., model that roleplays a user of the assistant
+            that you want to fine-tune on this dataset
+        model_name: Model name to use
+        safety_settings: Safety settings for the model
+        auto_improve: Whether to try to improve low-quality generations
+        evaluator_model_name: Model name for the evaluator LLM when auto_improve is True.
+        embedding_provider: Optional shared :class:`~afterimage.providers.embedding_providers.EmbeddingProvider` for embedding metrics.
+        embedding_provider_config: JSON-style config for :class:`~afterimage.providers.embedding_providers.EmbeddingProviderFactory` when ``embedding_provider`` is omitted (defaults by chat provider).
+        judge_config: Optional :class:`~afterimage.evaluator.ConversationJudgeConfig` (aggregation and grade thresholds).
+        model_provider_name: Provider used for accessing LLMs. Supported values are `"gemini"`, `"openai"`, and `"deepseek"`.
+        storage: Storage implementation for saving conversations.
+                If `None`, creates JSONLStorage with datetime-based filename.
+        monitor: GenerationMonitor instance for tracking generation metrics.
+            If  `None`, a default one is created.
+        instruction_generator_callback: Callback for instruction generation. Can also be passed to generate() method (deprecated).
+        respondent_prompt_modifier: Callback to modify respondent prompts. Can also be passed to generate() method (deprecated).
+    """
 
     def __init__(
         self,
@@ -46,39 +75,22 @@ class ConversationGenerator(BaseGenerator):
         correspondent_prompt: str | None = None,
         model_name: str | None = None,
         safety_settings: List[Dict[str, str]] | None = None,
-        auto_improve: bool = True,
+        auto_improve: bool = False,
         evaluator_model_name: str | None = None,
         model_provider_name: Literal["gemini", "openai", "deepseek"] = "gemini",
-        evaluator_method: Literal["simple", "hybrid"] = "simple",
+        embedding_provider: EmbeddingProvider | None = None,
+        embedding_provider_config: dict[str, Any] | None = None,
+        judge_config: ConversationJudgeConfig | None = None,
         storage: Optional[BaseStorage] = None,
         monitor: Optional[GenerationMonitor] = None,
         instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
         respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
     ):
-        """Initialize the generator with API key(s).
+        self.monitor: GenerationMonitor = (
+            monitor or GenerationMonitor()
+        )  # ensure it's always created
 
-        Args:
-            respondent_prompt: System prompt to the respondent, e.g., assistant that you want you fine-tune on this dataset
-            api_key: Either a single API key string or a SmartKeyPool instance
-            correspondent_prompt: System prompt to the correspondent, e.g., model that roleplays a user of the assistant
-                that you want to fine-tune on this dataset.
-            model_name: Model name to use
-            safety_settings: Safety settings for the model
-            auto_improve: Whether to try to improve low-quality generations
-            evaluator_model_name: Model name for the evaluator when auto_improve is True
-            evaluator_method: method to be used for evaluation.
-            model_provider_name: Provider used for accessing LLMs. Supported values are `"gemini"`, `"openai"`, and `"deepseek"`.
-            storage: Storage implementation for saving conversations
-                    If None, creates JSONLStorage with datetime-based filename
-            monitor: GenerationMonitor instance for tracking generation metrics
-            instruction_generator_callback: Callback for instruction generation. Can also be passed to generate() method (deprecated).
-            respondent_prompt_modifier: Callback to modify respondent prompts. Can also be passed to generate() method (deprecated).
-        """
-        warnings.warn(
-            "This synchronous implementation is deprecated and may be removed in the future. Consider using AsyncConversationGenerator class instead."
-        )
-        self.monitor = monitor
-        self.key_pool = (
+        self.key_pool: SmartKeyPool = (
             api_key
             if isinstance(api_key, SmartKeyPool)
             else SmartKeyPool.from_single_key(api_key)
@@ -86,6 +98,12 @@ class ConversationGenerator(BaseGenerator):
 
         self.model_provider_name = model_provider_name
         self.model_name = model_name if model_name is not None else default_model_name
+        self.monitor.log_info(
+            "Model info set",
+            model_provider=self.model_provider_name,
+            model_name=self.model_name,
+            num_api_keys=len(self.key_pool),
+        )
         self.safety_settings = (
             safety_settings if safety_settings is not None else default_safety_settings
         )
@@ -94,15 +112,25 @@ class ConversationGenerator(BaseGenerator):
         # if both are passed, the correspondent prompt will be used as is passed.
         # if neither are passed, raise an error.
         if correspondent_prompt is None and instruction_generator_callback is None:
-            raise ValueError(
+            error = ValueError(
                 "At least one of `correspondent_prompt` or `instruction_generator_callback` should be passed."
             )
-        if correspondent_prompt is None:
-            warnings.warn(
-                "A correspondent prompt will be automatically created because you did not pass one."
+            self.monitor.log_error(
+                "failed to initialize because correspondent prompt and instruction generator callback are both None",
+                error,
             )
+            raise error
+
+        if correspondent_prompt is None:
+            warning_msg = "A correspondent prompt will be automatically created because you did not pass one."
+            self.monitor.log_warning(warning_msg)
+            warnings.warn(warning_msg)
 
         self.respondent_prompt = respondent_prompt
+        self.monitor.log_info(
+            "Respondent prompt set",
+            respondent_prompt=respondent_prompt,
+        )
         self.correspondent_prompt = correspondent_prompt
 
         self.instruction_generator_callback = instruction_generator_callback
@@ -115,32 +143,52 @@ class ConversationGenerator(BaseGenerator):
                 if evaluator_model_name is not None
                 else self.model_name
             )
-            if evaluator_method == "simple":
-                self.evaluator = SimpleSyntheticDatasetEvaluator(
-                    api_key=self.key_pool,
-                    model_name=evaluator_model_name,
-                    safety_settings=self.safety_settings,
+            evaluator_llm = LLMFactory.create(
+                self.model_provider_name,
+                evaluator_model_name,
+                self.key_pool,
+                safety_settings=self.safety_settings,
+            )
+            if embedding_provider is not None:
+                self.evaluator = ConversationJudge(
+                    llm=evaluator_llm,
+                    embedding_provider=embedding_provider,
                     monitor=self.monitor,
+                    config=judge_config,
                 )
-            elif evaluator_method == "hybrid":
-                evaluator_llm = LLMFactory.create(
-                    self.model_provider_name, self.evaluator_model_name, self.key_pool
+            else:
+                embed_cfg = (
+                    embedding_provider_config
+                    if embedding_provider_config is not None
+                    else default_embedding_provider_config(self.model_provider_name)
                 )
-                self.evaluator = HybridSyntheticDatasetEvaluator(
-                    llm=evaluator_llm, monitor=self.monitor
+                self.evaluator = ConversationJudge.from_factory(
+                    evaluator_llm,
+                    key_pool=self.key_pool,
+                    model_provider_name=self.model_provider_name,
+                    embedding_provider_config=embed_cfg,
+                    monitor=self.monitor,
+                    config=judge_config,
                 )
 
         self.initiators = []
         self.storage = storage or JSONLStorage()
 
-    def create_correspondent_prompt(self, assistant_prompt: str) -> str:
+        if (
+            self.instruction_generator_callback
+            and self.instruction_generator_callback.monitor is None
+        ):
+            self.instruction_generator_callback.set_monitor(self.monitor)
+
+    async def create_correspondent_prompt(self, assistant_prompt: str) -> str:
         """Create a correspondent prompt based on the assistant prompt."""
         start_time = time.time()
+        api_key: str | None = None
         try:
             prompt = get_correspondent_instruction_generation_prompt(
                 assistant_prompt=assistant_prompt
             )
-            api_key = self.key_pool.get_next_key()
+            api_key = await self.key_pool.aget_next_key()
             model = LLMFactory.create(
                 self.model_provider_name,
                 self.model_name,
@@ -148,38 +196,47 @@ class ConversationGenerator(BaseGenerator):
                 safety_settings=self.safety_settings,
             )
 
-            response = model.generate_content(prompt=prompt, temperature=0.7)
+            response = await model.agenerate_content(prompt=prompt, temperature=0.7)
+            prompt = (
+                response.text.strip()
+                .lstrip("<user_system_prompt>")
+                .rstrip("</user_system_prompt>")
+                .strip()
+            )
 
             if self.monitor:
-                self.monitor.record_metric(
-                    "prompt_generation_time",
-                    time.time() - start_time,
-                    metadata={
-                        "prompt_type": "correspondent",
-                        "success": True,
-                    },
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=True,
+                    prompt_token_count=response.prompt_token_count,
+                    completion_token_count=response.completion_token_count,
+                    total_token_count=response.total_token_count,
+                    model_name=response.model_name,
+                    metadata={"operation": "correspondent_prompt_generation"},
                 )
 
-            return response.text
+            return prompt
         except Exception as e:
             if self.monitor:
-                self.monitor.record_metric(
-                    "prompt_generation_time",
-                    time.time() - start_time,
+                self.monitor.track_generation(
+                    duration=time.time() - start_time,
+                    success=False,
+                    error=str(e),
                     metadata={
-                        "prompt_type": "correspondent",
-                        "success": False,
-                        "error": str(e),
+                        "operation": "correspondent_prompt_generation",
+                        "error_type": e.__class__.__name__,
                     },
                 )
-            self.key_pool.report_error(api_key)
+            if api_key is not None:
+                await self.key_pool.areport_error(api_key)
             raise
 
-    def create_model(self, prompt: str) -> ChatSession:
+    async def create_model(self, prompt: str) -> ChatSession:
         """Creates and initializes a chat model with the given prompt."""
         start_time = time.time()
+        api_key: str | None = None
         try:
-            api_key = self.key_pool.get_next_key()
+            api_key = await self.key_pool.aget_next_key()
             model = LLMFactory.create(
                 self.model_provider_name,
                 self.model_name,
@@ -188,7 +245,7 @@ class ConversationGenerator(BaseGenerator):
                 safety_settings=self.safety_settings,
             )
 
-            chat = model.start_chat()
+            chat = await model.astart_chat()
 
             if self.monitor:
                 self.monitor.record_metric(
@@ -210,84 +267,87 @@ class ConversationGenerator(BaseGenerator):
                         "error_type": e.__class__.__name__,
                     },
                 )
-            self.key_pool.report_error(api_key)
+            if api_key is not None:
+                await self.key_pool.areport_error(api_key)
             raise
 
-    def ask(self, correspondent: ChatSession, answer: str | ConversationEntry) -> str:
+    async def ask(
+        self, correspondent: ChatSession, answer: str | ConversationEntry
+    ) -> str:
         """Generates a question from the correspondent based on the given answer."""
         start_time = time.time()
         try:
-            response = correspondent.send_message(answer)
+            response = await correspondent.asend_message(answer)
             question = response.text
 
-            if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=True,
-                    prompt_token_count=response.prompt_token_count,
-                    completion_token_count=response.completion_token_count,
-                    total_token_count=response.total_token_count,
-                    model_name=response.model_name,
-                    metadata={
-                        "operation": "question_generation",
-                        "answer_length": len(answer),
-                        "question_length": len(question),
-                    },
-                )
+            self.monitor.track_generation(
+                duration=time.time() - start_time,
+                success=True,
+                prompt_token_count=response.prompt_token_count,
+                completion_token_count=response.completion_token_count,
+                total_token_count=response.total_token_count,
+                finish_reason=response.finish_reason,
+                model_name=response.model_name,
+                metadata={
+                    "operation": "question_generation",
+                },
+            )
 
             return question
         except Exception as e:
-            if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=False,
-                    error=str(e),
-                    metadata={
-                        "operation": "question_generation",
-                        "error_type": e.__class__.__name__,
-                    },
-                )
+            self.monitor.track_generation(
+                duration=time.time() - start_time,
+                success=False,
+                error=str(e),
+                metadata={
+                    "operation": "question_generation",
+                    "error_type": e.__class__.__name__,
+                },
+            )
             raise
 
-    def answer(self, respondent: ChatSession, question: str | ConversationEntry) -> str:
+    async def answer(
+        self, respondent: ChatSession, question: str | ConversationEntry
+    ) -> ConversationEntry:
         """Generates an answer from the respondent based on the given question."""
         start_time = time.time()
         try:
-            response = respondent.send_message(question)
+            response = await respondent.asend_message(question)
             answer = response.text
 
-            if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=True,
-                    prompt_token_count=response.prompt_token_count,
-                    completion_token_count=response.completion_token_count,
-                    total_token_count=response.total_token_count,
-                    model_name=response.model_name,
-                    metadata={
-                        "operation": "answer_generation",
-                        "question_length": len(question),
-                        "answer_length": len(answer),
-                    },
-                )
+            self.monitor.track_generation(
+                duration=time.time() - start_time,
+                success=True,
+                prompt_token_count=response.prompt_token_count,
+                completion_token_count=response.completion_token_count,
+                total_token_count=response.total_token_count,
+                finish_reason=response.finish_reason,
+                model_name=response.model_name,
+                metadata={
+                    "operation": "answer_generation",
+                },
+            )
 
-            return answer
+            return ConversationEntry(
+                role=Role.ASSISTANT,
+                content=answer,
+                reasoning_content=response.reasoning_content,
+            )
         except Exception as e:
-            if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=False,
-                    error=str(e),
-                    metadata={
-                        "operation": "answer_generation",
-                        "error_type": e.__class__.__name__,
-                    },
-                )
+            self.monitor.track_generation(
+                duration=time.time() - start_time,
+                success=False,
+                error=str(e),
+                metadata={
+                    "operation": "answer_generation",
+                    "error_type": e.__class__.__name__,
+                },
+            )
             raise
 
-    def go(
+    async def go(
         self,
-        turns: int = 5,
+        turns: int = 1,
         first_question: str | None = None,
         check_for_near_duplicates: bool = False,
         correspondent_prompt: str | None = None,
@@ -295,7 +355,6 @@ class ConversationGenerator(BaseGenerator):
     ) -> List[ConversationEntry]:
         """Simulates a multi-turn conversation between the correspondent and respondent."""
         start_time = time.time()
-        total_tokens = 0
         conversation = []
 
         try:
@@ -303,151 +362,117 @@ class ConversationGenerator(BaseGenerator):
                 correspondent_prompt = self.correspondent_prompt
                 # If still None, create it using generator's method
                 if correspondent_prompt is None:
-                    correspondent_prompt = self.create_correspondent_prompt(
+                    correspondent_prompt = await self.create_correspondent_prompt(
                         self.respondent_prompt
                     )
 
             if respondent_prompt is None:
                 respondent_prompt = self.respondent_prompt
 
-            correspondent = self.create_model(correspondent_prompt)
-            respondent = self.create_model(respondent_prompt)
+            correspondent = await self.create_model(correspondent_prompt)
+            respondent = await self.create_model(respondent_prompt)
 
-            # Track token usage if available
-            if hasattr(correspondent, "token_count"):
-                total_tokens += correspondent.token_count
-            if hasattr(respondent, "token_count"):
-                total_tokens += respondent.token_count
-
-            question = first_question or self.ask(
+            question = first_question or await self.ask(
                 correspondent, "Ask your first question."
             )
             self.initiators.append(question)
             conversation.append(ConversationEntry(role=Role.USER, content=question))
 
             for turn in range(turns):
-                answer = self.answer(respondent, question)
-                if hasattr(respondent, "token_count"):
-                    total_tokens += respondent.token_count
-
-                conversation.append(
-                    ConversationEntry(role=Role.ASSISTANT, content=answer)
-                )
+                answer_entry = await self.answer(respondent, question)
+                conversation.append(answer_entry)
 
                 if (turn + 1) == turns:
                     break
                 else:
-                    question = self.ask(correspondent, answer)
-                    if hasattr(correspondent, "token_count"):
-                        total_tokens += correspondent.token_count
+                    question = await self.ask(correspondent, answer_entry)
 
                     conversation.append(
                         ConversationEntry(role=Role.USER, content=question)
                     )
                     self.initiators.append(question)
 
-            if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=True,
-                    tokens=total_tokens,
-                    turns=len(conversation) // 2,
-                    metadata={
-                        "operation": "conversation_generation",
-                        "planned_turns": turns,
-                        "actual_turns": len(conversation) // 2,
-                    },
-                )
+            self.monitor.track_generation(
+                duration=time.time() - start_time,
+                success=True,
+                conversation_length=len(conversation) // 2,
+                metadata={
+                    "operation": "conversation_generation",
+                    "planned_turns": turns,
+                    "actual_turns": len(conversation) // 2,
+                },
+            )
 
             return conversation
 
         except Exception as e:
-            if self.monitor:
-                self.monitor.track_generation(
-                    duration=time.time() - start_time,
-                    success=False,
-                    error=str(e),
-                    tokens=total_tokens,
-                    metadata={
-                        "operation": "conversation_generation",
-                        "error_type": e.__class__.__name__,
-                        "completed_turns": len(conversation) // 2,
-                    },
-                )
+            self.monitor.track_generation(
+                duration=time.time() - start_time,
+                success=False,
+                error=str(e),
+                metadata={
+                    "operation": "conversation_generation",
+                    "error_type": e.__class__.__name__,
+                    "completed_turns": len(conversation) // 2,
+                },
+            )
             raise
 
-    def generate_single(
+    async def generate_single(
         self,
-        i,
-        count,
-        max_turns,
-        seed_questions,
-        add_examples,
-        num_random_examples,
-        generation_examples_delay,
-        check_for_near_duplicates,
-        instruction_generator_callback,
-        respondent_prompt_modifier,
-    ) -> List[EvaluatedConversationWithContext] | List[Conversation]:
-        """Generates a single conversation session.
+        max_turns: int,
+        check_for_near_duplicates: bool = False,
+        instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
+        respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
+    ) -> AsyncGenerator[Union[EvaluatedConversationWithContext, Conversation], None]:
+        """Generates conversations for a single session and yields them."""
+        # ainitialize ensures correspondent_prompt is set
+        await self.ainitialize(instruction_generator_callback)
 
-        Args:
-            i (int): Index of the current conversation.
-            count (int): Total number of conversations to generate.
-            max_turns (int): Maximum number of turns per conversation.
-            seed_questions (List[str]): Seed questions to guide the conversation.
-            add_examples (bool): Whether to add seed questions as examples.
-            num_random_examples (int): Number of random examples to add.
-            generation_examples_delay (int): Delay before adding generated examples as seeds.
-            check_for_near_duplicates (bool): Whether to avoid duplicate questions.
-            instruction_generator_callback (callable): Callback to generate instructions.
-            respondent_prompt_modifier (callable): Callback to modify respondent prompts.
-
-        Returns:
-            List[EvaluatedConversationWithContext]: A list containing the generated conversations in this session and their metadata.
-        """
         correspondent_prompt = self.correspondent_prompt
         respondent_prompt = self.respondent_prompt
         turns = random.randint(1, max_turns)
-        conversations = []
 
         if instruction_generator_callback:
-            # If correspondent_prompt is None, try to create it using the callback
-            if correspondent_prompt is None:
-                created_prompt = (
-                    instruction_generator_callback.create_correspondent_prompt(
-                        respondent_prompt
-                    )
+            if hasattr(instruction_generator_callback, "acall"):
+                gen_instructions = await instruction_generator_callback.acall(
+                    correspondent_prompt
                 )
-                if created_prompt is not None:
-                    correspondent_prompt = created_prompt
-                else:
-                    # Fallback to generator's method if callback doesn't implement it
-                    correspondent_prompt = self.create_correspondent_prompt(
-                        respondent_prompt
-                    )
-
-            gen_instructions = instruction_generator_callback(correspondent_prompt)
+            else:
+                gen_instructions = await asyncio.to_thread(
+                    instruction_generator_callback, correspondent_prompt
+                )
 
             for instruction in gen_instructions.instructions:
                 instruction_context = gen_instructions.context
                 persona = gen_instructions.persona
                 response_context = None
+                current_respondent_prompt = respondent_prompt
                 if respondent_prompt_modifier:
-                    modified_respondent_prompt = respondent_prompt_modifier(
-                        self.respondent_prompt,
-                        context=instruction_context,
-                        instruction=instruction,
-                    )
-                    respondent_prompt = modified_respondent_prompt.prompt
+                    if hasattr(respondent_prompt_modifier, "acall"):
+                        modified_respondent_prompt = (
+                            await respondent_prompt_modifier.acall(
+                                respondent_prompt,
+                                context=instruction_context,
+                                instruction=instruction,
+                            )
+                        )
+                    else:
+                        modified_respondent_prompt = await asyncio.to_thread(
+                            respondent_prompt_modifier,
+                            respondent_prompt,
+                            context=instruction_context,
+                            instruction=instruction,
+                        )
+                    current_respondent_prompt = modified_respondent_prompt.prompt
                     response_context = modified_respondent_prompt.context
 
-                conversation = self.go(
+                conversation = await self.go(
                     turns=turns,
                     first_question=instruction,
                     check_for_near_duplicates=check_for_near_duplicates,
                     correspondent_prompt=correspondent_prompt,
-                    respondent_prompt=respondent_prompt,
+                    respondent_prompt=current_respondent_prompt,
                 )
 
                 def build_conversation_row(
@@ -476,7 +501,7 @@ class ConversationGenerator(BaseGenerator):
                     GradeSchema.BAD,
                     GradeSchema.NEEDS_IMPROVEMENT,
                 ]:
-                    evaluated_conversation = self.evaluator.evaluate_row(
+                    evaluated_conversation = await self.evaluator.aevaluate_row(
                         conversation_row
                     )
 
@@ -485,12 +510,12 @@ class ConversationGenerator(BaseGenerator):
                         GradeSchema.BAD,
                         GradeSchema.NEEDS_IMPROVEMENT,
                     ]:
-                        conversation = self.go(
+                        conversation = await self.go(
                             turns=turns,
                             first_question=instruction,
                             check_for_near_duplicates=check_for_near_duplicates,
                             correspondent_prompt=correspondent_prompt,
-                            respondent_prompt=respondent_prompt,
+                            respondent_prompt=current_respondent_prompt,
                         )
                         conversation_row = build_conversation_row(conversation)
                     else:
@@ -499,64 +524,35 @@ class ConversationGenerator(BaseGenerator):
                         )
                         conversation_row = evaluated_conversation
 
-                conversations.append(conversation_row)
-
-            return conversations
-
+                yield conversation_row
         else:
-            first_question = seed_questions[i] if seed_questions else None
-            # If correspondent_prompt is None and no callback, create it using generator's method
-            if correspondent_prompt is None:
-                correspondent_prompt = self.create_correspondent_prompt(
-                    respondent_prompt
-                )
+            raise ValueError("An `instruction_generator_callback` must be provided.")
 
-        conversation = self.go(
-            turns=turns,
-            first_question=first_question,
-            check_for_near_duplicates=check_for_near_duplicates,
-            correspondent_prompt=correspondent_prompt,
-            respondent_prompt=respondent_prompt,
-        )
-
-        conversations.append(Conversation(conversations=conversation))
-
-        return conversations
-
-    def generate(
+    async def generate(
         self,
-        num_dialogs: int = 5,
+        num_dialogs: int | None = None,
         max_turns: int = 1,
-        seed_instructions: List = [],
-        add_examples: bool = False,
-        num_random_examples: int = 3,
-        generation_examples_delay: int = 100,
-        check_for_near_duplicates: bool = False,
+        stopping_criteria: Optional[List[BaseStoppingCallback]] = None,
         instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
         respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
-        max_workers: int = 4,
+        max_concurrency: int | None = None,
     ) -> None:
-        """Generates multiple conversation dialogs and saves them to a file if specified.
+        """Generates multiple conversation dialogs until stopping criteria is met.
 
         Args:
-            num_dialogs (int, optional): Number of dialogs to generate. Defaults to 5.
-            max_turns (int, optional): Maximum number of turns per dialog. Actual number of turns is randomly sampled from 1 .. max_turns.
-            seed_instructions (List, optional): Seed instructions to guide question generation. Defaults to [].
-            add_examples (bool, optional): Whether to use seed instructions as examples. Defaults to False.
-            num_random_examples (int, optional): Number of random examples to use. Defaults to 3.
-            generation_examples_delay (int, optional): Delay before using generated examples. Defaults to 100.
-            check_for_near_duplicates (bool, optional): Avoid generating duplicate questions. Defaults to False.
-            instruction_generator_callback (callable, optional): Callback for instruction generation.
+            num_dialogs: Number of dialogs to generate. Defaults to 5 if no other stopping criteria is specified.
+            max_turns: Maximum number of turns per dialog. Actual number of turns is randomly sampled from 1 .. max_turns.
+            stopping_criteria: A list of callbacks to determine when to stop generation. If num_dialogs is specified, FixedNumberStoppingCallback is added to this list automatically.
+            instruction_generator_callback: Callback for instruction generation.
                 Deprecated: Pass this to the constructor instead. Defaults to None.
-            respondent_prompt_modifier (callable, optional): Callback to modify respondent prompts.
+            respondent_prompt_modifier: Callback to modify respondent prompts.
                 Deprecated: Pass this to the constructor instead. Defaults to None.
-            max_workers (int, optional): Number of threads for parallel execution. Defaults to 4.
+            max_concurrency: Number of concurrent generations. Defaults to 8 for
+                DeepSeek and 4 for other providers.
         """
-        # Use provided callbacks if given, otherwise use instance attributes
-        # Show deprecation warnings if callbacks are provided as arguments
         if instruction_generator_callback is not None:
             warnings.warn(
-                "Passing `instruction_generator_callback` to `generate()` is deprecated and may be removed in a future version. "
+                "Passing `instruction_generator_callback` to `generate()` is deprecated. "
                 "Please pass it to the constructor instead.",
                 DeprecationWarning,
                 stacklevel=2,
@@ -566,7 +562,7 @@ class ConversationGenerator(BaseGenerator):
 
         if respondent_prompt_modifier is not None:
             warnings.warn(
-                "Passing `respondent_prompt_modifier` to `generate()` is deprecated and may be removed in a future version. "
+                "Passing `respondent_prompt_modifier` to `generate()` is deprecated. "
                 "Please pass it to the constructor instead.",
                 DeprecationWarning,
                 stacklevel=2,
@@ -574,83 +570,142 @@ class ConversationGenerator(BaseGenerator):
         else:
             respondent_prompt_modifier = self.respondent_prompt_modifier
 
-        n_conversations = num_dialogs
+        if instruction_generator_callback is None:
+            error = ValueError("An `instruction_generator_callback` must be provided.")
+            self.monitor.log_error("No instruction generator callback set", error)
+            raise error
+        else:
+            self.monitor.log_info(
+                "Instruction generator callback set",
+                type=instruction_generator_callback.__class__.__name__,
+            )
 
-        if instruction_generator_callback is not None:
-            if add_examples:
-                warnings.warn(
-                    "You set `add_examples`, but `instruction_generator_callback` will take precedence, and examples will be ignored."
-                )
+        if instruction_generator_callback.monitor is None:
+            instruction_generator_callback.set_monitor(self.monitor)
 
-            if seed_instructions:
-                warnings.warn(
-                    "You set `seed_instructions`, but `instruction_generator_callback` will take precedence, and `seed_instructions`will be ignored."
-                )
+        if self.correspondent_prompt is None:
+            self.monitor.log_info("No correspondent prompt set, initializing...")
+            await self.ainitialize(instruction_generator_callback)
 
-            if seed_instructions and not add_examples:
-                n_conversations = len(seed_instructions)
-                warnings.warn(
-                    f"`num_dialogs` is set to {n_conversations} because you set {n_conversations} seed instructions"
-                )
+        # Handle stopping criteria
+        final_stopping_criteria = stopping_criteria or []
+        if num_dialogs is not None:
+            final_stopping_criteria.append(FixedNumberStoppingCallback(n=num_dialogs))
 
-        self.initialize(instruction_generator_callback)
+        # Default if nothing specified
+        if not final_stopping_criteria:
+            num_dialogs = 5
+            final_stopping_criteria.append(FixedNumberStoppingCallback(n=num_dialogs))
+
+        self._configure_context_sampling(
+            instruction_generator_callback,
+            final_stopping_criteria,
+        )
         self._configure_persona_sampling(
             instruction_generator_callback,
             num_requested=num_dialogs,
+            stopping_criteria=final_stopping_criteria,
         )
 
-        num_generated = 0
-        pbar = tqdm(total=n_conversations, desc="Generating...", unit="conversation")
+        state = GenerationState(
+            num_requested=num_dialogs or 0,
+            monitor=self.monitor,
+            stop_event=asyncio.Event(),
+        )
 
-        def save_conversations(conversations: List[ConversationWithContext]):
+        resolved_max_concurrency = self._resolve_max_concurrency(max_concurrency)
+        semaphore = asyncio.Semaphore(resolved_max_concurrency)
+
+        async def save_conversations(conversations: list[ConversationWithContext]):
             if conversations:
-                self.storage.save_conversations(conversations)
-
-        try:
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [
-                    executor.submit(
-                        self.generate_single,
-                        i,
-                        num_dialogs,
-                        max_turns,
-                        seed_instructions,
-                        add_examples,
-                        num_random_examples,
-                        generation_examples_delay,
-                        check_for_near_duplicates,
-                        instruction_generator_callback,
-                        respondent_prompt_modifier,
+                if hasattr(self.storage, "asave_conversations"):
+                    await self.storage.asave_conversations(conversations)
+                else:
+                    await asyncio.to_thread(
+                        self.storage.save_conversations, conversations
                     )
-                    for i in range(num_dialogs)
-                ]
 
-                for future in as_completed(futures):
+        async def worker_task():
+            while not state.stop_event.is_set():
+                async with semaphore:
+                    if state.stop_event.is_set():
+                        break
+
                     try:
-                        conversations = future.result()
-                    except Exception as e:
-                        if not isinstance(e, CancelledError):
-                            warnings.warn(f"Exception in future: {e}")
-                            traceback.print_exc()
-                    else:
-                        for conversation in conversations:
+                        async for conversation in self.generate_single(
+                            max_turns=max_turns,
+                            instruction_generator_callback=instruction_generator_callback,
+                            respondent_prompt_modifier=respondent_prompt_modifier,
+                        ):
+                            # Update state and check stopping criteria
+                            state.update(conversation)
                             self._record_context_usage(
                                 instruction_generator_callback,
                                 conversation,
                             )
-                        save_conversations(conversations)
-                        num_generated += len(conversations)
-                        pbar.update(len(conversations))
 
-                        if num_generated >= n_conversations:
-                            pbar.close()
-                            print("Done! Waiting for graceful shutdown...")
-                            for pending_future in futures:
-                                pending_future.cancel()
+                            for criteria in final_stopping_criteria:
+                                if await criteria.should_stop(state):
+                                    self.monitor.log_info(
+                                        "Stopping criteria met, stopping generation...",
+                                        criteria=criteria.__class__.__name__,
+                                    )
+                                    state.stop_event.set()
+                                    break
 
-        except KeyboardInterrupt:
-            pbar.close()
-            warnings.warn("Interrupted! Waiting for graceful shutdown...")
+                            await save_conversations([conversation])
 
+                            if state.stop_event.is_set():
+                                break
+
+                    except Exception as e:
+                        logger.error(f"Error in generation: {e}")
+                        traceback.print_exc()
+                        if self.monitor:
+                            self.monitor.record_metric("error_rate", 1.0)
+                        continue
+
+        pbar = tqdm(total=num_dialogs, desc="Generating...", unit="conversation")
+        tasks: list[asyncio.Task] = []
+
+        # Create initial set of tasks
+        for _ in range(resolved_max_concurrency):
+            tasks.append(asyncio.create_task(worker_task()))
+
+        last_count = 0
+        while not state.stop_event.is_set() or any(not t.done() for t in tasks):
+            # Update progress bar
+            if state.num_generated > last_count:
+                pbar.update(state.num_generated - last_count)
+                last_count = state.num_generated
+
+            if state.stop_event.is_set():
+                for t in tasks:
+                    if not t.done():
+                        t.cancel()
+                break
+
+            await asyncio.sleep(0.1)
+
+            if all(t.done() for t in tasks):
+                break
+
+        pbar.update(state.num_generated - last_count)
+        pbar.close()
+
+        # Wait for any remaining tasks to finish/cancel
+        try:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        except Exception as e:
+            self.monitor.log_error("Error while trying to finalize generation", error=e)
+            self.monitor.record_metric("error_rate", 1.0)
+            traceback.print_exc()
         finally:
-            pbar.close()
+            self.monitor.log_info("Generation complete")
+            self.monitor.visualize_metrics()
+
+    def _resolve_max_concurrency(self, max_concurrency: int | None) -> int:
+        return resolve_generation_max_concurrency(
+            self.model_provider_name,
+            max_concurrency,
+        )

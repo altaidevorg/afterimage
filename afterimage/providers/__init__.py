@@ -6,6 +6,13 @@ from .document_providers import (
     JSONLDocumentProvider,  # noqa
     QdrantDocumentProvider,  # noqa
 )
+from .embedding_providers import (
+    EmbeddingProvider,  # noqa
+    EmbeddingProviderFactory,  # noqa
+    GeminiEmbeddingProvider,  # noqa
+    OpenAIEmbeddingProvider,  # noqa
+    ProcessEmbeddingProvider,  # noqa
+)
 from .llm_providers import (
     AsyncGeminiChatSession, # noqa
     ChatSession, # noqa

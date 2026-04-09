@@ -6,14 +6,15 @@ This document provides an overview of the design and architecture of the AfterIm
 
 The library is designed around a few core concepts:
 
-- **ConversationGenerator & AsyncConversationGenerator**: The main entry points for generating conversations. `AsyncConversationGenerator` is the recommended high-performance engine for concurrent generation.
+- **ConversationGenerator**: The main entry point for generating conversations. 
 - **PersonaGenerator**: Analyzes documents to generate diverse user personas, enhancing dataset variety.
 - **LLMProvider**: An abstraction over different language model providers (Gemini, OpenAI compatible).
+- **EmbeddingProvider**: Async-first text embeddings (`async def embed(texts) -> list[list[float]]`). API backends (`OpenAIEmbeddingProvider`, `GeminiEmbeddingProvider`) use each vendor’s async client and `SmartKeyPool`; `ProcessEmbeddingProvider` runs SentenceTransformer in a `ProcessPoolExecutor` so the asyncio loop is not blocked by local inference (install the `embeddings-local` extra for `sentence-transformers`). Use `EmbeddingProviderFactory.create({...})` in `afterimage/providers/embedding_providers.py`.
 - **DatasetStorage**: An abstraction for storing and loading generated conversations and documents. It supports JSONL and SQL backends.
 - **Callbacks**: These allow for customization of the generation process.
     - **InstructionGeneratorCallback**: Generates the initial questions or instructions (e.g., `PersonaInstructionGeneratorCallback`).
     - **RespondentPromptModifier**: Modifies the prompt for the respondent based on context (e.g., `WithRAGRespondentPromptModifier`).
-- **Evaluation**: Flexible evaluation framework supporting Simple (LLM-as-judge) and Hybrid (Embedding + LLM) approaches.
+- **Evaluation**: Async `ConversationJudge` combines embedding metrics (via `EmbeddingProvider`) and LLM rubrics (`agenerate_structured`), with `CompositeEvaluator` aggregation (`MEAN`, `WEIGHTED_MEAN`, `MIN`). `ConversationGenerator(auto_improve=True)` builds a judge using `default_embedding_provider_config` when no embedding backend is passed explicitly.
 - **Monitoring**: Real-time tracking of generation metrics (time, tokens, errors) with alert support.
 - **Reasoning Capture**: OpenAI-compatible providers expose optional `reasoning_content`/`thinking` text; `AsyncConversationGenerator` persists assistant reasoning into `ConversationEntry.reasoning_content` when present.
 - **Adaptive Context Sampling**: Document providers now keep per-document usage counts and sampling weights so instruction generation can bias toward underused contexts. When a context coverage stopping callback is present, its `target_visits` is propagated into provider weights; otherwise providers fall back to a soft-decay weighting strategy (`1 / (usage + 1)`). Usage is recorded only after a final row is produced successfully, and all sampled context ids are carried through row metadata for coverage accounting across contextual, persona, and tool-calling instruction callbacks. Metadata-to-context-id extraction is centralized so usage reporting and coverage counting share the same semantics. If a provider target is set explicitly, generator-side inference does not overwrite it, and generated instruction payloads keep their `context_ids` in per-instance state.
@@ -32,13 +33,12 @@ The code is organized into the following directories and files:
 
 - `afterimage/`: The main source code for the library.
     - `__init__.py`: Exposes the main classes and functions.
-    - `async_conversation_generator.py`: **[NEW]** Asynchronous implementation of the conversation generator.
+    - `conversation_generator.py`: Conversation generator with multi-turn conversation support.
     - `base.py`: Base classes for generators and callbacks.
     - `callbacks.py`: Implements default callbacks for instructions and persona handling.
     - `common.py`: Common constants and data structures.
         It also holds provider-aware concurrency defaults.
-    - `conversation_generator.py`: Synchronous conversation generator (Legacy).
-    - `evaluator.py`: Conversation evaluation logic.
+    - `evaluator.py`: `ConversationJudge` and embedding defaults for auto-improve.
     - `key_management.py`: Smart API key management with rate limiting.
     - `monitoring.py`: Monitoring system implementation.
     - `persona_generator.py`: **[NEW]** Logic for generating personas from documents.
@@ -57,6 +57,7 @@ The code is organized into the following directories and files:
         - `document_providers.py`: Document source implementations (Memory, File, Directory, Qdrant).
             Providers expose weighted random sampling plus document usage reporting for context coverage management, with target usage counts inferred from stopping callbacks when available.
         - `llm_providers.py`: LLM provider abstractions.
+        - `embedding_providers.py`: Async embedding providers (OpenAI, Gemini, process pool) and factory.
 - `examples/demo_ui/`: Gradio demo application.
     - `README.md`: Page-by-page demo UI guide (routes, features, setup, troubleshooting).
     - `app.py`: Ensures the repository root is included in `sys.path` when the demo is run directly as `uv run examples/demo_ui/app.py`.
@@ -74,7 +75,7 @@ The library uses several design patterns to achieve its goals:
 - **Callback Pattern**: Customizes generation flow via `InstructionGeneratorCallback` and `RespondentPromptModifier`.
 - **Composite Pattern**: `CompositeEvaluator` combines multiple evaluation metrics.
 - **Template Method Pattern**: `BaseGenerator` and callbacks define algorithmic skeletons with overridable steps.
-- **Async/Await Pattern**: `AsyncConversationGenerator` utilizes Python's `asyncio` for high-throughput concurrent generation.
+- **Async/Await Pattern**: All the generators utilizes Python's `asyncio` for high-throughput concurrent generation.
 
 ## Architecture
 
@@ -86,4 +87,4 @@ The monitoring system is also extensible. You can add new metric handlers by imp
 
 ## Scripts
 
-- `generate_qa.py`: QA dataset generation script that uses `AsyncConversationGenerator` with a **dynamic system prompt parts** feature. Before generating QA pairs, it makes a single LLM API call (using `google-genai` with Pydantic structured output) to analyze the input document and generate context-appropriate system prompt "parts" (a role description and an answering instruction). These parts are used as the respondent prompt and also saved to the output JSON alongside QA pairs and formatted samples (following the `format_sample` pattern with `input`/`output` fields).
+- `scripts/generate_qa.py`: QA dataset generation script that uses `AsyncConversationGenerator` with a **dynamic system prompt parts** feature. Before generating QA pairs, it makes a single LLM API call (using `google-genai` with Pydantic structured output) to analyze the input document and generate context-appropriate system prompt "parts" (a role description and an answering instruction). These parts are used as the respondent prompt and also saved to the output JSON alongside QA pairs and formatted samples (following the `format_sample` pattern with `input`/`output` fields).

@@ -1,5 +1,5 @@
+import asyncio
 from typing import Optional
-
 
 from ..base import (
     BaseRespondentPromptModifierCallback,
@@ -65,7 +65,10 @@ class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
         self, respondent_prompt: str, context: str, instruction: str
     ) -> GeneratedResponsePrompt:
         """Generates a modified respondent prompt by injecting context and instructions asynchronously."""
-        additional_context = self._maybe_augment_context(instruction, context)
+        if hasattr(self, "augment_context_async"):
+            additional_context = await self.augment_context_async(instruction, context)
+        else:
+            additional_context = self._maybe_augment_context(instruction, context)
 
         if self.should_inject_prompt and self.should_inject_context:
             modified_prompt = self.prompt_template.format(
@@ -114,6 +117,23 @@ class WithRAGRespondentPromptModifier(WithContextRespondentPromptModifier):
             str: Combined context from both sources
         """
         rag_context = self.retriever.get_context(instruction)
+
+        if current_context:
+            return (
+                f"{current_context}\n\nAdditional relevant information:\n{rag_context}"
+            )
+        return rag_context
+
+    async def augment_context_async(
+        self, instruction: str, current_context: str
+    ) -> str:
+        """Async RAG augmentation; prefers ``retriever.aget_context`` when defined."""
+        if hasattr(self.retriever, "aget_context"):
+            rag_context = await self.retriever.aget_context(instruction)  # type: ignore[union-attr]
+        else:
+            rag_context = await asyncio.to_thread(
+                self.retriever.get_context, instruction
+            )
 
         if current_context:
             return (

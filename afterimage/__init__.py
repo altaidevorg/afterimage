@@ -16,8 +16,9 @@ from afterimage.callbacks import (
 )
 from afterimage.conversation_generator import ConversationGenerator  # noqa
 from afterimage.evaluator import (
-    HybridSyntheticDatasetEvaluator,  # noqa
-    SimpleSyntheticDatasetEvaluator,  # noqa
+    ConversationJudge,  # noqa
+    ConversationJudgeConfig,  # noqa
+    default_embedding_provider_config,  # noqa
 )
 from afterimage.key_management import SmartKeyPool  # noqa
 from afterimage.monitoring import (
@@ -30,16 +31,21 @@ from afterimage.providers import (
     ChatSession,  # noqa
     DirectoryDocumentProvider,  # noqa
     DocumentProvider,  # noqa
+    EmbeddingProvider,  # noqa
+    EmbeddingProviderFactory,  # noqa
     FileSystemDocumentProvider,  # noqa
     GeminiChatSession,  # noqa
+    GeminiEmbeddingProvider,  # noqa
     InMemoryDocumentProvider,  # noqa
     JSONLDocumentProvider,  # noqa
     LLMFactory,  # noqa
     LLMProvider,  # noqa
+    OpenAIEmbeddingProvider,  # noqa
+    ProcessEmbeddingProvider,  # noqa
     QdrantDocumentProvider,  # noqa
 )
 from afterimage.storage import BaseStorage, JSONLStorage, SQLStorage  # noqa
-from afterimage.structured_generator import AsyncStructuredGenerator  # noqa
+from afterimage.structured_generator import StructuredGenerator, AsyncStructuredGenerator  # noqa
 from afterimage.types import Document, PersonaEntry  # noqa
 
 try:

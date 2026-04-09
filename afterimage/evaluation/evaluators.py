@@ -1,36 +1,62 @@
-from sentence_transformers import SentenceTransformer
-import json
-from typing import Any, List, Optional, TypedDict
-from .base import BaseEvaluator, EvaluationMetric, EvaluationResult
+"""Async metric evaluators (embeddings + LLM-as-judge)."""
+
+from __future__ import annotations
+
+import math
+import time
+from typing import Any, List, Optional
+
+from pydantic import BaseModel, Field
+
 from ..monitoring import GenerationMonitor
 from ..providers import LLMProvider
+from ..providers.embedding_providers import EmbeddingProvider
 from ..types import ConversationWithContext, Role
-import time
-import numpy as np
+from .base import EvaluationMetric, EvaluationResult
 
 
-class EvaluationTypeHint(TypedDict):
-    feedback: str
-    scores: List[float]
-    needs_improvement: bool
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Cosine similarity for dense vectors (L2-normalized dot product)."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return dot / (na * nb)
 
 
-class CoherenceEvaluator(BaseEvaluator):
-    """Evaluates question-answer coherence."""
+class LLMJudgeStructuredOutput(BaseModel):
+    """Structured LLM judge response."""
+
+    scores: List[float] = Field(
+        ...,
+        description="One score in [0, 1] per evaluated item, in order.",
+    )
+    feedback: str = ""
+    needs_improvement: bool = False
+
+
+class CoherenceEvaluator:
+    """Question–answer semantic coherence via embedding cosine similarity."""
 
     def __init__(
         self,
-        embedding_model: str = "altaidevorg/bge-m3-distill-8l",
+        embedding: EmbeddingProvider,
         monitor: Optional[GenerationMonitor] = None,
+        coherence_threshold: float = 0.65,
     ):
-        self.model = SentenceTransformer(embedding_model)
+        self._embedding = embedding
         self.monitor = monitor
+        self._threshold = coherence_threshold
 
-    def evaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
-        start_time = time.time()
+    async def aevaluate(
+        self, conversation: ConversationWithContext
+    ) -> EvaluationResult:
+        start = time.time()
         try:
-            # Extract question-answer pairs
-            pairs = []
+            pairs: list[tuple[str, str]] = []
             for i in range(0, len(conversation.conversations), 2):
                 if i + 1 < len(conversation.conversations):
                     pairs.append(
@@ -41,284 +67,259 @@ class CoherenceEvaluator(BaseEvaluator):
                     )
 
             if not pairs:
-                result = self._create_result(
-                    0.0, "No question-answer pairs found", needs_regeneration=True
+                return self._result(
+                    0.0, "No question-answer pairs found", True, start
                 )
 
-                if self.monitor:
-                    self.monitor.track_evaluation(
-                        duration=time.time() - start_time,
-                        success=True,
-                        evaluator_type=self.__class__.__name__,
-                        scores=result.scores,
-                    )
-
-                return result
-
-            # Calculate coherence scores
-            coherence_scores = []
-            for question, answer in pairs:
-                embeddings = self.model.encode([question, answer])
-                score = float(
-                    self.model.similarity(embeddings[0], embeddings[1]).squeeze()
-                )
-                coherence_scores.append(score)
-
-            avg_coherence = sum(coherence_scores) / len(coherence_scores)
-            needs_regen = avg_coherence < 0.7
-
-            feedback = (
+            texts: list[str] = []
+            for q, a in pairs:
+                texts.extend([q, a])
+            vecs = await self._embedding.embed(texts)
+            sims: list[float] = []
+            for i in range(0, len(vecs), 2):
+                sims.append(_cosine_similarity(vecs[i], vecs[i + 1]))
+            avg = sum(sims) / len(sims)
+            ok = avg >= self._threshold
+            fb = (
                 "Good question-answer coherence"
-                if avg_coherence >= 0.7
+                if ok
                 else "Low coherence between questions and answers"
             )
-
-            result = self._create_result(
-                avg_coherence, feedback, needs_regeneration=needs_regen
-            )
-
+            return self._result(avg, fb, not ok, start)
+        except Exception:
             if self.monitor:
                 self.monitor.track_evaluation(
-                    duration=time.time() - start_time,
-                    success=True,
-                    evaluator_type=self.__class__.__name__,
-                    scores=result.scores,
-                )
-
-            return result
-
-        except Exception as e:
-            if self.monitor:
-                self.monitor.track_evaluation(
-                    duration=time.time() - start_time,
+                    duration=time.time() - start,
                     success=False,
                     evaluator_type=self.__class__.__name__,
                     scores={},
-                    error=str(e),
-                    error_type=e.__class__.__name__,
+                    error="coherence evaluation failed",
+                    error_type="Exception",
                 )
             raise
 
-    def _create_result(
-        self, score: float, feedback: str, needs_regeneration: bool
+    def _result(
+        self, score: float, feedback: str, needs_regen: bool, start: float
     ) -> EvaluationResult:
+        if self.monitor:
+            self.monitor.track_evaluation(
+                duration=time.time() - start,
+                success=True,
+                evaluator_type=self.__class__.__name__,
+                scores={EvaluationMetric.COHERENCE: score},
+            )
         return EvaluationResult(
             scores={EvaluationMetric.COHERENCE: score},
             feedback={EvaluationMetric.COHERENCE: feedback},
             overall_score=score,
-            needs_regeneration=needs_regeneration,
+            needs_regeneration=needs_regen,
         )
 
 
-class GroundingEvaluator(BaseEvaluator):
-    """Evaluates if answers are grounded in the provided context."""
+class GroundingEvaluator:
+    """How well assistant answers align with the response context embedding."""
 
     def __init__(
         self,
-        embedding_model: str = "altaidevorg/bge-m3-distill-8l",
+        embedding: EmbeddingProvider,
         monitor: Optional[GenerationMonitor] = None,
+        grounding_threshold: float = 0.55,
     ):
-        self.model = SentenceTransformer(embedding_model)
+        self._embedding = embedding
         self.monitor = monitor
+        self._threshold = grounding_threshold
 
-    def evaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
-        start_time = time.time()
+    async def aevaluate(
+        self, conversation: ConversationWithContext
+    ) -> EvaluationResult:
+        start = time.time()
         try:
-            if not conversation.response_context:
-                result = self._create_result(
-                    1.0, "No context provided", needs_regeneration=False
-                )
+            ctx = conversation.response_context
+            if not ctx:
+                return self._neutral("No context provided", start)
 
-                if self.monitor:
-                    self.monitor.track_evaluation(
-                        duration=time.time() - start_time,
-                        success=True,
-                        evaluator_type=self.__class__.__name__,
-                        scores=result.scores,
-                    )
-                return result
-
-            # Get context embedding
-            context_embedding = self.model.encode(conversation.response_context)
-
-            # Only evaluate assistant responses
             answers = [
-                turn.content
-                for turn in conversation.conversations
-                if turn.role == Role.ASSISTANT
+                t.content
+                for t in conversation.conversations
+                if t.role == Role.ASSISTANT
             ]
-
             if not answers:
-                result = self._create_result(
-                    0.0, "No answers found", needs_regeneration=True
-                )
+                return self._bad("No answers found", start)
 
-                if self.monitor:
-                    self.monitor.track_evaluation(
-                        duration=time.time() - start_time,
-                        success=True,
-                        evaluator_type=self.__class__.__name__,
-                        scores=result.scores,
-                    )
-                return result
-
-            # Calculate grounding scores
-            answer_embeddings = self.model.encode(answers)
-            grounding_scores = [
-                float(np.dot(context_embedding, ans_emb))
-                for ans_emb in answer_embeddings
-            ]
-
-            avg_grounding = sum(grounding_scores) / len(grounding_scores)
-            needs_regen = avg_grounding < 0.6
-
-            feedback = (
+            vecs = await self._embedding.embed([ctx] + answers)
+            ctx_vec, ans_vecs = vecs[0], vecs[1:]
+            sims = [_cosine_similarity(ctx_vec, av) for av in ans_vecs]
+            avg = sum(sims) / len(sims)
+            ok = avg >= self._threshold
+            fb = (
                 "Answers are well-grounded in context"
-                if avg_grounding >= 0.6
+                if ok
                 else "Answers show weak grounding in context"
             )
-
-            result = self._create_result(
-                avg_grounding, feedback, needs_regeneration=needs_regen
-            )
-
+            return self._scored(avg, fb, not ok, start)
+        except Exception:
             if self.monitor:
                 self.monitor.track_evaluation(
-                    duration=time.time() - start_time,
-                    success=True,
-                    evaluator_type=self.__class__.__name__,
-                    scores=result.scores,
-                )
-            return result
-
-        except Exception as e:
-            if self.monitor:
-                self.monitor.track_evaluation(
-                    duration=time.time() - start_time,
+                    duration=time.time() - start,
                     success=False,
                     evaluator_type=self.__class__.__name__,
                     scores={},
-                    error=str(e),
-                    error_type=e.__class__.__name__,
+                    error="grounding evaluation failed",
+                    error_type="Exception",
                 )
             raise
 
-    def _create_result(
-        self, score: float, feedback: str, needs_regeneration: bool
+    def _neutral(self, msg: str, start: float) -> EvaluationResult:
+        if self.monitor:
+            self.monitor.track_evaluation(
+                duration=time.time() - start,
+                success=True,
+                evaluator_type=self.__class__.__name__,
+                scores={EvaluationMetric.GROUNDING: 1.0},
+            )
+        return EvaluationResult(
+            scores={EvaluationMetric.GROUNDING: 1.0},
+            feedback={EvaluationMetric.GROUNDING: msg},
+            overall_score=1.0,
+            needs_regeneration=False,
+        )
+
+    def _bad(self, msg: str, start: float) -> EvaluationResult:
+        if self.monitor:
+            self.monitor.track_evaluation(
+                duration=time.time() - start,
+                success=True,
+                evaluator_type=self.__class__.__name__,
+                scores={EvaluationMetric.GROUNDING: 0.0},
+            )
+        return EvaluationResult(
+            scores={EvaluationMetric.GROUNDING: 0.0},
+            feedback={EvaluationMetric.GROUNDING: msg},
+            overall_score=0.0,
+            needs_regeneration=True,
+        )
+
+    def _scored(
+        self, score: float, feedback: str, needs_regen: bool, start: float
     ) -> EvaluationResult:
+        if self.monitor:
+            self.monitor.track_evaluation(
+                duration=time.time() - start,
+                success=True,
+                evaluator_type=self.__class__.__name__,
+                scores={EvaluationMetric.GROUNDING: score},
+            )
         return EvaluationResult(
             scores={EvaluationMetric.GROUNDING: score},
             feedback={EvaluationMetric.GROUNDING: feedback},
             overall_score=score,
-            needs_regeneration=needs_regeneration,
+            needs_regeneration=needs_regen,
         )
 
 
-class RelevanceEvaluator(BaseEvaluator):
-    """Evaluates if questions are relevant to the provided context."""
+class RelevanceEvaluator:
+    """How relevant user questions are to the instruction context."""
 
     def __init__(
         self,
-        embedding_model: str = "altaidevorg/bge-m3-distill-8l",
+        embedding: EmbeddingProvider,
         monitor: Optional[GenerationMonitor] = None,
+        relevance_threshold: float = 0.55,
     ):
-        self.model = SentenceTransformer(embedding_model)
+        self._embedding = embedding
         self.monitor = monitor
+        self._threshold = relevance_threshold
 
-    def evaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
-        start_time = time.time()
+    async def aevaluate(
+        self, conversation: ConversationWithContext
+    ) -> EvaluationResult:
+        start = time.time()
         try:
-            if not conversation.instruction_context:
-                result = self._create_result(
-                    1.0, "No context provided", needs_regeneration=False
-                )
+            ctx = conversation.instruction_context
+            if not ctx:
+                return self._neutral("No context provided", start)
 
-                if self.monitor:
-                    self.monitor.track_evaluation(
-                        duration=time.time() - start_time,
-                        success=True,
-                        evaluator_type=self.__class__.__name__,
-                        scores=result.scores,
-                    )
-                return result
-
-            # Get context embedding
-            context_embedding = self.model.encode(conversation.instruction_context)
-
-            # Only evaluate user questions
             questions = [
-                turn.content
-                for turn in conversation.conversations
-                if turn.role == Role.USER
+                t.content
+                for t in conversation.conversations
+                if t.role == Role.USER
             ]
-
             if not questions:
-                result = self._create_result(
-                    0.0, "No questions found", needs_regeneration=True
-                )
+                return self._bad("No questions found", start)
 
-                if self.monitor:
-                    self.monitor.track_evaluation(
-                        duration=time.time() - start_time,
-                        success=True,
-                        evaluator_type=self.__class__.__name__,
-                        scores=result.scores,
-                    )
-                return result
-
-            # Calculate relevance scores
-            question_embeddings = self.model.encode(questions)
-            relevance_scores = [
-                float(np.dot(context_embedding, q_emb)) for q_emb in question_embeddings
-            ]
-
-            avg_relevance = sum(relevance_scores) / len(relevance_scores)
-            needs_regen = avg_relevance < 0.6
-
-            feedback = (
+            vecs = await self._embedding.embed([ctx] + questions)
+            ctx_vec, q_vecs = vecs[0], vecs[1:]
+            sims = [_cosine_similarity(ctx_vec, qv) for qv in q_vecs]
+            avg = sum(sims) / len(sims)
+            ok = avg >= self._threshold
+            fb = (
                 "Questions are relevant to context"
-                if avg_relevance >= 0.6
+                if ok
                 else "Questions show weak relevance to context"
             )
-
-            result = self._create_result(
-                avg_relevance, feedback, needs_regeneration=needs_regen
-            )
-
+            return self._scored(avg, fb, not ok, start)
+        except Exception:
             if self.monitor:
                 self.monitor.track_evaluation(
-                    duration=time.time() - start_time,
-                    success=True,
-                    evaluator_type=self.__class__.__name__,
-                    scores=result.scores,
-                )
-            return result
-
-        except Exception as e:
-            if self.monitor:
-                self.monitor.track_evaluation(
-                    duration=time.time() - start_time,
+                    duration=time.time() - start,
                     success=False,
                     evaluator_type=self.__class__.__name__,
                     scores={},
-                    error=str(e),
-                    error_type=e.__class__.__name__,
+                    error="relevance evaluation failed",
+                    error_type="Exception",
                 )
             raise
 
-    def _create_result(
-        self, score: float, feedback: str, needs_regeneration: bool
+    def _neutral(self, msg: str, start: float) -> EvaluationResult:
+        if self.monitor:
+            self.monitor.track_evaluation(
+                duration=time.time() - start,
+                success=True,
+                evaluator_type=self.__class__.__name__,
+                scores={EvaluationMetric.RELEVANCE: 1.0},
+            )
+        return EvaluationResult(
+            scores={EvaluationMetric.RELEVANCE: 1.0},
+            feedback={EvaluationMetric.RELEVANCE: msg},
+            overall_score=1.0,
+            needs_regeneration=False,
+        )
+
+    def _bad(self, msg: str, start: float) -> EvaluationResult:
+        if self.monitor:
+            self.monitor.track_evaluation(
+                duration=time.time() - start,
+                success=True,
+                evaluator_type=self.__class__.__name__,
+                scores={EvaluationMetric.RELEVANCE: 0.0},
+            )
+        return EvaluationResult(
+            scores={EvaluationMetric.RELEVANCE: 0.0},
+            feedback={EvaluationMetric.RELEVANCE: msg},
+            overall_score=0.0,
+            needs_regeneration=True,
+        )
+
+    def _scored(
+        self, score: float, feedback: str, needs_regen: bool, start: float
     ) -> EvaluationResult:
+        if self.monitor:
+            self.monitor.track_evaluation(
+                duration=time.time() - start,
+                success=True,
+                evaluator_type=self.__class__.__name__,
+                scores={EvaluationMetric.RELEVANCE: score},
+            )
         return EvaluationResult(
             scores={EvaluationMetric.RELEVANCE: score},
             feedback={EvaluationMetric.RELEVANCE: feedback},
             overall_score=score,
-            needs_regeneration=needs_regeneration,
+            needs_regeneration=needs_regen,
         )
 
 
-class LLMBaseEvaluator(BaseEvaluator):
-    """Base class for LLM-based evaluators."""
+class AsyncLLMBaseEvaluator:
+    """Shared async LLM judge with structured output and monitoring."""
 
     def __init__(
         self,
@@ -330,231 +331,234 @@ class LLMBaseEvaluator(BaseEvaluator):
         self.max_retries = max_retries
         self.monitor = monitor
 
-    def _get_valid_json_response(self, prompt: str) -> tuple[dict, Any]:
-        """Get valid JSON response with retry mechanism. Returns (evaluation_dict, llm_response) for token tracking."""
-        last_error = None
-
+    async def _aget_structured(
+        self, prompt: str
+    ) -> tuple[LLMJudgeStructuredOutput, Any]:
+        last_err: Exception | None = None
         for attempt in range(self.max_retries):
+            temp = max(0.1, 0.35 - attempt * 0.08)
             try:
-                response = self.llm.generate_content(
-                    prompt=prompt,
-                    temperature=0.3 - (attempt * 0.1),  # Reduce temperature on retries
-                    max_tokens=500,
-                    response_mime_type="application/json",
-                    response_schema=EvaluationTypeHint,
+                resp = await self.llm.agenerate_structured(
+                    prompt,
+                    LLMJudgeStructuredOutput,
+                    temperature=temp,
                 )
-
-                evaluation = json.loads(response.text.strip())
-                if isinstance(evaluation, dict):
-                    if all(
-                        key in evaluation
-                        for key in ["scores", "feedback", "needs_improvement"]
-                    ):
-                        if (
-                            isinstance(evaluation["scores"], list)
-                            and evaluation["scores"]
-                        ):
-                            if all(
-                                isinstance(score, (int, float)) and 0 <= score <= 1
-                                for score in evaluation["scores"]
-                            ):
-                                return evaluation, response
-
+                parsed = resp.parsed
+                if parsed.scores and all(0.0 <= s <= 1.0 for s in parsed.scores):
+                    return parsed, resp
             except Exception as e:
-                last_error = e
+                last_err = e
                 continue
-
         raise ValueError(
-            f"Failed to get valid JSON response after {self.max_retries} attempts. Last error: {last_error}"
+            f"LLM judge failed after {self.max_retries} attempts: {last_err}"
         )
 
-    def evaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
-        start_time = time.time()
-        self._llm_responses: list[Any] = []
-        try:
-            result = self._evaluate_impl(conversation)
 
-            if self.monitor:
-                token_kw: dict[str, Any] = {}
-                if self._llm_responses:
-                    token_kw["prompt_token_count"] = sum(
-                        r.prompt_token_count for r in self._llm_responses
-                    )
-                    token_kw["completion_token_count"] = sum(
-                        r.completion_token_count for r in self._llm_responses
-                    )
-                    token_kw["total_token_count"] = sum(
-                        r.total_token_count for r in self._llm_responses
-                    )
-                    if self._llm_responses:
-                        token_kw["model_name"] = self._llm_responses[0].model_name
-                self.monitor.track_evaluation(
-                    duration=time.time() - start_time,
-                    success=True,
-                    evaluator_type=self.__class__.__name__,
-                    scores=result.scores,
-                    **token_kw,
+class FactualityEvaluator(AsyncLLMBaseEvaluator):
+    """LLM rubric for factual accuracy vs context."""
+
+    async def aevaluate(
+        self, conversation: ConversationWithContext
+    ) -> EvaluationResult:
+        start = time.time()
+        try:
+            responses = [
+                t.content
+                for t in conversation.conversations
+                if t.role == Role.ASSISTANT
+            ]
+            if not responses:
+                return self._finalize(
+                    EvaluationResult(
+                        scores={EvaluationMetric.FACTUALITY: 0.0},
+                        feedback={
+                            EvaluationMetric.FACTUALITY: "No responses to evaluate"
+                        },
+                        overall_score=0.0,
+                        needs_regeneration=True,
+                    ),
+                    start,
+                    [],
                 )
 
-            return result
+            prompt = f"""Evaluate the factual accuracy of the following responses in relation to the provided context.
+Rate each response on a scale of 0-1 and give concise feedback.
 
-        except Exception as e:
+Context:
+{conversation.response_context or conversation.instruction_context or ""}
+
+Responses:
+{"\n---\n".join(f"[{i + 1}] {r}" for i, r in enumerate(responses))}
+
+Return scores (one float per response, 0-1), feedback (short summary), and needs_improvement (true if any response is unreliable)."""
+
+            try:
+                parsed, resp = await self._aget_structured(prompt)
+                avg = sum(parsed.scores) / len(parsed.scores)
+                needs = parsed.needs_improvement or avg < 0.55
+                result = EvaluationResult(
+                    scores={EvaluationMetric.FACTUALITY: avg},
+                    feedback={EvaluationMetric.FACTUALITY: parsed.feedback},
+                    overall_score=avg,
+                    needs_regeneration=needs,
+                )
+                return self._finalize(result, start, [resp])
+            except Exception:
+                result = EvaluationResult(
+                    scores={EvaluationMetric.FACTUALITY: 0.5},
+                    feedback={
+                        EvaluationMetric.FACTUALITY: "Factuality evaluation inconclusive"
+                    },
+                    overall_score=0.5,
+                    needs_regeneration=False,
+                )
+                return self._finalize(result, start, [])
+        except Exception:
             if self.monitor:
-                token_kw = {}
-                if self._llm_responses:
-                    token_kw["prompt_token_count"] = sum(
-                        r.prompt_token_count for r in self._llm_responses
-                    )
-                    token_kw["completion_token_count"] = sum(
-                        r.completion_token_count for r in self._llm_responses
-                    )
-                    token_kw["total_token_count"] = sum(
-                        r.total_token_count for r in self._llm_responses
-                    )
-                    if self._llm_responses:
-                        token_kw["model_name"] = self._llm_responses[0].model_name
                 self.monitor.track_evaluation(
-                    duration=time.time() - start_time,
+                    duration=time.time() - start,
                     success=False,
                     evaluator_type=self.__class__.__name__,
                     scores={},
-                    error=str(e),
-                    error_type=e.__class__.__name__,
-                    **token_kw,
+                    error="factuality evaluation failed",
+                    error_type="Exception",
                 )
             raise
 
-
-class FactualityEvaluator(LLMBaseEvaluator):
-    """Evaluates factual accuracy using LLM."""
-
-    def evaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
-        responses = [
-            turn.content
-            for turn in conversation.conversations
-            if turn.role == Role.ASSISTANT
-        ]
-
-        if not responses:
-            return self._create_result(
-                0.0, "No responses to evaluate", needs_regeneration=True
-            )
-
-        prompt = f"""Evaluate the factual accuracy of the following responses in relation to the provided context.
-Rate each statement's factual accuracy and provide specific feedback.
-
-Context:
-{conversation.response_context or conversation.instruction_context}
-
-Responses to evaluate:
-{"\n---------\n\n".join(f"[{i + 1}] {resp}" for i, resp in enumerate(responses))}
-
-Evaluate each response's factual accuracy on a scale of 0-1, where:
-0.0-0.3: Contains significant factual errors or unsupported claims
-0.4-0.6: Contains minor factual errors or partially supported claims
-0.7-0.9: Mostly factually accurate with slight imprecisions
-1.0: Completely factually accurate and well-supported by context
-
-Provide your evaluation in JSON format."""
-
-        try:
-            evaluation, response = self._get_valid_json_response(prompt)
-            self._llm_responses.append(response)
-            avg_score = sum(evaluation["scores"]) / len(evaluation["scores"])
-            needs_regen = evaluation["needs_improvement"] or avg_score < 0.6
-
-            return self._create_result(
-                avg_score, evaluation["feedback"], needs_regeneration=needs_regen
-            )
-        except Exception as e:
-            # Return neutral score if evaluation fails after retries
-            return self._create_result(
-                0.5,
-                "Factuality evaluation inconclusive",
-                needs_regeneration=False,  # Don't trigger regeneration on evaluation failure
-            )
-
-    def _create_result(
-        self, score: float, feedback: str, needs_regeneration: bool
+    def _finalize(
+        self,
+        result: EvaluationResult,
+        start: float,
+        responses: list[Any],
     ) -> EvaluationResult:
-        return EvaluationResult(
-            scores={EvaluationMetric.FACTUALITY: score},
-            feedback={EvaluationMetric.FACTUALITY: feedback},
-            overall_score=score,
-            needs_regeneration=needs_regeneration,
-        )
+        if self.monitor:
+            tok: dict[str, Any] = {}
+            if responses:
+                tok["prompt_token_count"] = sum(
+                    r.prompt_token_count for r in responses
+                )
+                tok["completion_token_count"] = sum(
+                    r.completion_token_count for r in responses
+                )
+                tok["total_token_count"] = sum(r.total_token_count for r in responses)
+                tok["model_name"] = responses[0].model_name
+            self.monitor.track_evaluation(
+                duration=time.time() - start,
+                success=True,
+                evaluator_type=self.__class__.__name__,
+                scores=result.scores,
+                **tok,
+            )
+        return result
 
 
-class HelpfulnessEvaluator(LLMBaseEvaluator):
-    """Evaluates response helpfulness using LLM."""
+class HelpfulnessEvaluator(AsyncLLMBaseEvaluator):
+    """LLM rubric for answer helpfulness."""
 
-    def evaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
-        # Extract question-answer pairs
-        pairs = []
-        for i in range(0, len(conversation.conversations), 2):
-            if i + 1 < len(conversation.conversations):
-                pairs.append(
-                    (
-                        conversation.conversations[i].content,
-                        conversation.conversations[i + 1].content,
+    async def aevaluate(
+        self, conversation: ConversationWithContext
+    ) -> EvaluationResult:
+        start = time.time()
+        try:
+            pairs: list[tuple[str, str]] = []
+            for i in range(0, len(conversation.conversations), 2):
+                if i + 1 < len(conversation.conversations):
+                    pairs.append(
+                        (
+                            conversation.conversations[i].content,
+                            conversation.conversations[i + 1].content,
+                        )
                     )
+            if not pairs:
+                return self._finalize(
+                    EvaluationResult(
+                        scores={EvaluationMetric.HELPFULNESS: 0.0},
+                        feedback={
+                            EvaluationMetric.HELPFULNESS: "No Q/A pairs to evaluate"
+                        },
+                        overall_score=0.0,
+                        needs_regeneration=True,
+                    ),
+                    start,
+                    [],
                 )
 
-        if not pairs:
-            return self._create_result(
-                0.0, "No question-answer pairs to evaluate", needs_regeneration=True
-            )
+            prompt = f"""Evaluate how helpful each answer is for its question (0-1 each).
 
-        # Create evaluation prompt
-        prompt = f"""Evaluate how helpful and comprehensive the answers are in relation to their questions.
-Rate each answer's helpfulness and provide specific feedback.
+Context (reference):
+{conversation.response_context or conversation.instruction_context or ""}
 
-Context (for reference):
-{conversation.response_context or conversation.instruction_context}
+Pairs:
+{"\n---\n".join(f"[{i+1}] Q: {q}\nA: {a}" for i, (q, a) in enumerate(pairs))}
 
-Question-Answer pairs to evaluate:
-{"\n---------\n\n".join(f"[{i + 1}] Q: {q}\nA: {a}" for i, (q, a) in enumerate(pairs))}
+Return scores (one per pair), feedback, needs_improvement."""
 
-Evaluate each answer's helpfulness on a scale of 0-1, where:
-0.0-0.3: Unhelpful, irrelevant, or incomplete
-0.4-0.6: Partially helpful but missing key information
-0.7-0.9: Helpful with minor omissions
-1.0: Exceptionally helpful and comprehensive
+            try:
+                parsed, resp = await self._aget_structured(prompt)
+                avg = sum(parsed.scores) / len(parsed.scores)
+                needs = parsed.needs_improvement or avg < 0.55
+                result = EvaluationResult(
+                    scores={EvaluationMetric.HELPFULNESS: avg},
+                    feedback={EvaluationMetric.HELPFULNESS: parsed.feedback},
+                    overall_score=avg,
+                    needs_regeneration=needs,
+                )
+                return self._finalize(result, start, [resp])
+            except Exception as e:
+                result = EvaluationResult(
+                    scores={EvaluationMetric.HELPFULNESS: 0.0},
+                    feedback={
+                        EvaluationMetric.HELPFULNESS: f"Helpfulness evaluation failed: {e}"
+                    },
+                    overall_score=0.0,
+                    needs_regeneration=True,
+                )
+                return self._finalize(result, start, [])
+        except Exception:
+            if self.monitor:
+                self.monitor.track_evaluation(
+                    duration=time.time() - start,
+                    success=False,
+                    evaluator_type=self.__class__.__name__,
+                    scores={},
+                    error="helpfulness evaluation failed",
+                    error_type="Exception",
+                )
+            raise
 
-Provide your evaluation in JSON format."""
-
-        try:
-            evaluation, response = self._get_valid_json_response(prompt)
-            self._llm_responses.append(response)
-            avg_score = sum(evaluation["scores"]) / len(evaluation["scores"])
-            needs_regen = evaluation["needs_improvement"] or avg_score < 0.6
-
-            return self._create_result(
-                avg_score, evaluation["feedback"], needs_regeneration=needs_regen
-            )
-        except Exception as e:
-            return self._create_result(
-                0.0,
-                f"Failed to evaluate helpfulness: {str(e)}",
-                needs_regeneration=True,
-            )
-
-    def _create_result(
-        self, score: float, feedback: str, needs_regeneration: bool
+    def _finalize(
+        self,
+        result: EvaluationResult,
+        start: float,
+        responses: list[Any],
     ) -> EvaluationResult:
-        return EvaluationResult(
-            scores={EvaluationMetric.HELPFULNESS: score},
-            feedback={EvaluationMetric.HELPFULNESS: feedback},
-            overall_score=score,
-            needs_regeneration=needs_regeneration,
-        )
+        if self.monitor:
+            tok: dict[str, Any] = {}
+            if responses:
+                tok["prompt_token_count"] = sum(
+                    r.prompt_token_count for r in responses
+                )
+                tok["completion_token_count"] = sum(
+                    r.completion_token_count for r in responses
+                )
+                tok["total_token_count"] = sum(r.total_token_count for r in responses)
+                tok["model_name"] = responses[0].model_name
+            self.monitor.track_evaluation(
+                duration=time.time() - start,
+                success=True,
+                evaluator_type=self.__class__.__name__,
+                scores=result.scores,
+                **tok,
+            )
+        return result
 
 
-class SafetyEvaluator(BaseEvaluator):
-    """Evaluates content safety."""
+class SafetyEvaluator:
+    """Placeholder safety pass-through (always neutral-positive)."""
 
-    def evaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
-        # Placeholder for safety evaluation
+    async def aevaluate(
+        self, conversation: ConversationWithContext
+    ) -> EvaluationResult:
         return EvaluationResult(
             scores={EvaluationMetric.SAFETY: 1.0},
             feedback={EvaluationMetric.SAFETY: "Safety check not implemented"},

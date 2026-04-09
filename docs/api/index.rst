@@ -9,6 +9,7 @@ API Reference
    respondent_prompt_modifiers
    stopping_callbacks
    providers
+   evaluators
    storage
    monitoring
    base
