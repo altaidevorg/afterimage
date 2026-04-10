@@ -33,8 +33,6 @@ def build_generator(config: AfterImageConfig) -> ConversationGenerator:
 
     # Map config provider name to LLMFactory provider names
     provider_name = config.model.provider
-    if provider_name == "local":
-        provider_name = "local"
 
     # --- Document provider ---
     document_provider = None
@@ -116,11 +114,6 @@ def _build_document_provider(config: AfterImageConfig):
         return JSONLDocumentProvider(
             path_pattern=docs.path, content_key=docs.content_key
         )
-
-    if provider_type == "memory":
-        from .providers.document_providers import InMemoryDocumentProvider
-
-        return InMemoryDocumentProvider(texts=[])
 
     if provider_type == "qdrant":
         from .providers.document_providers import QdrantDocumentProvider

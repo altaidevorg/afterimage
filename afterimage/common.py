@@ -1,8 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import List
 
-default_model_name = "gemini-2.0-flash"
-default_max_concurrency = 4
+default_model_name = "gemini-2.5-flash"
+default_max_concurrency = 2
 deepseek_default_max_concurrency = 16
 
 default_safety_settings = [

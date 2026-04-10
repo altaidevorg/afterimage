@@ -83,7 +83,7 @@ async def main():
     # The 'persona' field in the output will indicate which persona was used.
     await conv_gen.generate(
         num_dialogs=4,
-        max_turns=2,
+        max_turns=1,
         max_concurrency=2,
     )
 
