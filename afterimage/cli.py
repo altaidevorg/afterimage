@@ -1,0 +1,802 @@
+"""AfterImage command-line interface.
+
+Provides ``generate``, ``validate``, and ``export`` subcommands for
+working with AfterImage datasets without writing Python code.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from pathlib import Path
+
+import click
+
+from .config import AfterImageConfig, load_config, resolve_api_key
+
+
+@click.group()
+@click.version_option(package_name="afterimage")
+def main():
+    """AfterImage -- synthetic conversation dataset generator."""
+
+
+# ---------------------------------------------------------------------------
+# generate
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.option(
+    "-c", "--config", "config_path",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to YAML config file.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Validate config and print plan without generating.",
+)
+def generate(config_path: str, dry_run: bool):
+    """Generate synthetic conversation dataset from config."""
+    try:
+        cfg = load_config(config_path)
+    except (FileNotFoundError, ValueError) as exc:
+        click.secho(f"Config error: {exc}", fg="red", err=True)
+        raise SystemExit(1)
+
+    if dry_run:
+        _print_plan(cfg)
+        return
+
+    # Resolve API key early for clear error messages
+    try:
+        resolve_api_key(cfg)
+    except ValueError as exc:
+        click.secho(str(exc), fg="red", err=True)
+        raise SystemExit(1)
+
+    click.echo(f"Generating {cfg.generation.num_dialogs} dialogs...")
+    start = time.time()
+
+    try:
+        from .config_to_generator import build_generator
+
+        gen = build_generator(cfg)
+        asyncio.run(
+            gen.generate(
+                num_dialogs=cfg.generation.num_dialogs,
+                max_turns=cfg.generation.max_turns,
+                max_concurrency=cfg.generation.max_concurrency,
+            )
+        )
+    except ConnectionRefusedError:
+        base_url = cfg.model.base_url or "the configured endpoint"
+        click.secho(
+            f"Connection refused to {base_url}. Is your model server running?",
+            fg="red",
+            err=True,
+        )
+        raise SystemExit(1)
+    except Exception as exc:
+        _handle_generation_error(exc, cfg)
+        raise SystemExit(1)
+
+    elapsed = time.time() - start
+    click.secho(
+        f"Done! Generated {cfg.generation.num_dialogs} dialogs in {elapsed:.1f}s",
+        fg="green",
+    )
+    click.echo(f"Output: {cfg.output.path}")
+
+    # Post-generation hooks (fail-safe: never block generation)
+    if cfg.output.export and cfg.output.export.formats:
+        _run_auto_export(cfg)
+    if cfg.analytics.auto_analyze:
+        _run_auto_analyze(cfg)
+
+
+def _print_plan(cfg: AfterImageConfig) -> None:
+    """Display a summary of what generation would do."""
+    click.echo("=== Generation Plan ===")
+    click.echo(f"  Model:          {cfg.model.provider} / {cfg.model.model_name}")
+    if cfg.model.base_url:
+        click.echo(f"  Base URL:       {cfg.model.base_url}")
+    click.echo(f"  Dialogs:        {cfg.generation.num_dialogs}")
+    click.echo(f"  Max turns:      {cfg.generation.max_turns}")
+    conc = cfg.generation.max_concurrency or "provider default"
+    click.echo(f"  Concurrency:    {conc}")
+    if cfg.documents:
+        click.echo(f"  Documents:      {cfg.documents.provider} @ {cfg.documents.path or cfg.documents.collection}")
+    else:
+        click.echo("  Documents:      none")
+    click.echo(f"  Personas:       {'enabled' if cfg.personas.enabled else 'disabled'}")
+    click.echo(f"  Auto-improve:   {'enabled' if cfg.quality.auto_improve else 'disabled'}")
+    click.echo(f"  Output:         {cfg.output.path}")
+
+
+def _handle_generation_error(exc: Exception, cfg: AfterImageConfig) -> None:
+    """Translate common exceptions into user-friendly messages."""
+    msg = str(exc)
+    lower = msg.lower()
+
+    if "api key" in lower or "authentication" in lower or "unauthorized" in lower:
+        env_var = cfg.model.api_key_env or "your API key environment variable"
+        click.secho(
+            f"Authentication failed. Check that {env_var} is set correctly.",
+            fg="red",
+            err=True,
+        )
+    elif "rate limit" in lower or "429" in msg:
+        click.secho(
+            "Rate limited by provider. Try lowering max_concurrency in your config.",
+            fg="red",
+            err=True,
+        )
+    elif "connection" in lower or "connect" in lower:
+        base_url = cfg.model.base_url or "the API endpoint"
+        click.secho(
+            f"Connection error to {base_url}. Is the server running?",
+            fg="red",
+            err=True,
+        )
+    else:
+        click.secho(f"Generation failed: {exc}", fg="red", err=True)
+
+
+# ---------------------------------------------------------------------------
+# validate
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.option(
+    "-c", "--config", "config_path",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to YAML config file.",
+)
+def validate(config_path: str):
+    """Validate config file without running generation."""
+    all_ok = True
+
+    # 1. Parse config
+    try:
+        cfg = load_config(config_path)
+        _check_ok("Config syntax")
+    except Exception as exc:
+        _check_fail("Config syntax", str(exc))
+        raise SystemExit(1)
+
+    # 2. API key
+    if cfg.model.provider != "local":
+        try:
+            resolve_api_key(cfg)
+            _check_ok("API key")
+        except ValueError as exc:
+            _check_fail("API key", str(exc))
+            all_ok = False
+    else:
+        _check_ok("API key (not required for local)")
+
+    # 3. Document paths
+    if cfg.documents and cfg.documents.path:
+        p = Path(cfg.documents.path)
+        if p.exists():
+            _check_ok(f"Documents path ({p})")
+        else:
+            _check_fail("Documents path", f"{p} does not exist")
+            all_ok = False
+    else:
+        _check_ok("Documents (none configured)")
+
+    # 4. Output directory writable
+    output_dir = Path(cfg.output.path).parent
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        _check_ok(f"Output directory ({output_dir})")
+    except OSError as exc:
+        _check_fail("Output directory", str(exc))
+        all_ok = False
+
+    # 5. Local model connectivity
+    if cfg.model.provider == "local" and cfg.model.base_url:
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                cfg.model.base_url.rstrip("/") + "/models",
+                method="GET",
+            )
+            urllib.request.urlopen(req, timeout=5)
+            _check_ok(f"Local server ({cfg.model.base_url})")
+        except Exception:
+            _check_fail(
+                "Local server",
+                f"Cannot reach {cfg.model.base_url}. Is the model server running?",
+            )
+            all_ok = False
+
+    if all_ok:
+        click.secho("\nAll checks passed!", fg="green")
+    else:
+        click.secho("\nSome checks failed.", fg="red")
+        raise SystemExit(1)
+
+
+def _check_ok(label: str) -> None:
+    click.echo(click.style("  [OK] ", fg="green") + label)
+
+
+def _check_fail(label: str, reason: str) -> None:
+    click.echo(click.style("  [FAIL] ", fg="red") + f"{label}: {reason}")
+
+
+# ---------------------------------------------------------------------------
+# export
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.option(
+    "-i", "--input", "input_path",
+    type=click.Path(exists=True),
+    default=None,
+    help="Path to AfterImage JSONL dataset.",
+)
+@click.option(
+    "-f", "--format", "formats",
+    multiple=True,
+    help="Target format(s). Repeat for multiple: -f sharegpt -f alpaca",
+)
+@click.option(
+    "--all", "export_all",
+    is_flag=True,
+    help="Export to all available formats.",
+)
+@click.option(
+    "-o", "--output-dir", "output_dir",
+    default=None,
+    type=click.Path(),
+    help="Output directory (default: same as input file).",
+)
+@click.option(
+    "--split",
+    default=None,
+    type=float,
+    help="Train/val split ratio, e.g. 0.1 for 10%% validation.",
+)
+@click.option(
+    "--shuffle/--no-shuffle",
+    default=True,
+    help="Shuffle before splitting (default: shuffle).",
+)
+@click.option(
+    "--seed",
+    default=42,
+    type=int,
+    help="Random seed for reproducible splits.",
+)
+@click.option(
+    "--system-prompt",
+    default=None,
+    type=str,
+    help="System prompt to prepend to exported conversations.",
+)
+@click.option(
+    "--list-formats",
+    is_flag=True,
+    help="Show all available export formats.",
+)
+def export(input_path, formats, export_all, output_dir, split, shuffle, seed,
+           system_prompt, list_formats):
+    """Convert AfterImage dataset to training tool formats."""
+    from .integrations import get_exporter, list_formats as _list_fmts
+
+    if list_formats:
+        _print_formats_table(_list_fmts())
+        return
+
+    if input_path is None:
+        click.secho("Error: -i/--input is required.", fg="red", err=True)
+        raise SystemExit(1)
+
+    if not formats and not export_all:
+        click.secho("Specify at least one -f FORMAT or use --all.", fg="red", err=True)
+        raise SystemExit(1)
+
+    if export_all:
+        formats = tuple(f["name"] for f in _list_fmts())
+
+    inp = Path(input_path)
+    out_dir = Path(output_dir) if output_dir else inp.parent
+
+    results = []
+    for fmt in formats:
+        try:
+            exporter = get_exporter(fmt)
+        except ValueError as exc:
+            click.secho(str(exc), fg="red", err=True)
+            raise SystemExit(1)
+
+        if split is not None:
+            r = _export_with_split(
+                exporter, inp, out_dir, fmt, split, shuffle, seed,
+                system_prompt=system_prompt,
+            )
+            results.append(r)
+        else:
+            out_path = out_dir / f"{inp.stem}_{fmt}.jsonl"
+            r = exporter.export_file(inp, out_path, system_prompt=system_prompt)
+            results.append(r)
+            if r.warnings and r.total_output == 0:
+                click.secho(f"  ! {fmt}: {r.warnings[0]}", fg="yellow")
+            else:
+                click.secho(
+                    f"  {fmt}: {r.total_input:,} conversations -> "
+                    f"{r.total_output:,} rows -> {r.output_path}",
+                    fg="green",
+                )
+
+    # Summary table
+    if len(results) > 1:
+        click.echo("\nExport complete:")
+        click.echo(f"{'Format':<16} {'Rows':>8} {'Skipped':>8} {'Warnings':>9}  Output")
+        click.echo("-" * 72)
+        for r in results:
+            click.echo(
+                f"{r.format_name:<16} {r.total_output:>8,} {r.skipped:>8,} "
+                f"{len(r.warnings):>9}  {Path(r.output_path).name}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# analyze
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.option(
+    "-i", "--input", "input_path",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to AfterImage JSONL dataset.",
+)
+@click.option(
+    "-o", "--output", "output_path",
+    default=None,
+    type=click.Path(),
+    help="Output HTML report path. Default: input path with .html extension.",
+)
+def analyze(input_path: str, output_path: str | None):
+    """Generate an analytics report for a dataset."""
+    from .analytics import DatasetAnalyzer, generate_report
+
+    if output_path is None:
+        output_path = str(Path(input_path).with_suffix(".html"))
+
+    try:
+        report = DatasetAnalyzer.from_jsonl(input_path)
+        generate_report(report, output_path)
+        click.secho(f"Report saved to {output_path}", fg="green")
+    except Exception as exc:
+        click.secho(f"Analysis failed: {exc}", fg="red", err=True)
+        raise SystemExit(1)
+
+
+# ---------------------------------------------------------------------------
+# push
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.option(
+    "-i", "--input", "input_path",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to AfterImage JSONL dataset.",
+)
+@click.option(
+    "-f", "--format", "fmt",
+    default="messages",
+    help="Export format before pushing (default: messages).",
+)
+@click.option(
+    "--repo",
+    required=True,
+    help="HuggingFace repo: username/dataset-name",
+)
+@click.option(
+    "--private",
+    is_flag=True,
+    help="Create as private dataset.",
+)
+@click.option(
+    "--split",
+    default=0.1,
+    type=float,
+    help="Train/val split ratio (default: 0.1).",
+)
+def push(input_path, fmt, repo, private, split):
+    """Export and push dataset to HuggingFace Hub."""
+    try:
+        from huggingface_hub import HfApi
+    except ImportError:
+        click.secho(
+            "Install hub extra: pip install 'afterimage[hub]'",
+            fg="red", err=True,
+        )
+        raise SystemExit(1)
+
+    import json
+    import random
+    import tempfile
+    from .integrations import get_exporter
+
+    try:
+        exporter = get_exporter(fmt)
+    except ValueError as exc:
+        click.secho(str(exc), fg="red", err=True)
+        raise SystemExit(1)
+
+    inp = Path(input_path)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        r = _export_with_split(
+            exporter, inp, tmp_dir, fmt, split, shuffle=True, seed=42,
+        )
+
+        train_path = tmp_dir / f"{inp.stem}_{fmt}_train.jsonl"
+        val_path = tmp_dir / f"{inp.stem}_{fmt}_val.jsonl"
+
+        api = HfApi()
+        api.create_repo(repo, repo_type="dataset", private=private, exist_ok=True)
+
+        api.upload_file(
+            path_or_fileobj=str(train_path),
+            path_in_repo="train.jsonl",
+            repo_id=repo,
+            repo_type="dataset",
+        )
+        api.upload_file(
+            path_or_fileobj=str(val_path),
+            path_in_repo="val.jsonl",
+            repo_id=repo,
+            repo_type="dataset",
+        )
+
+        # Dataset card
+        first_row = ""
+        with open(train_path) as f:
+            line = f.readline().strip()
+            if line:
+                first_row = json.dumps(json.loads(line), indent=2)
+
+        n_train = sum(1 for _ in open(train_path))
+        n_val = sum(1 for _ in open(val_path))
+
+        import importlib.metadata
+        try:
+            version = importlib.metadata.version("afterimage")
+        except importlib.metadata.PackageNotFoundError:
+            version = "0.0.0"
+
+        from datetime import date
+        card = (
+            "---\nlicense: apache-2.0\ntask_categories:\n  - conversational\n"
+            "tags:\n  - synthetic\n  - afterimage\n---\n"
+            f"# {repo.split('/')[-1]}\n\n"
+            f"Generated with [AfterImage](https://github.com/altaidevorg/afterimage) v{version}\n\n"
+            f"## Dataset details\n- Format: {fmt}\n- Train samples: {n_train}\n"
+            f"- Validation samples: {n_val}\n- Generated: {date.today()}\n\n"
+            f"## Sample\n```json\n{first_row}\n```\n\n"
+            f"## Usage\n```python\nfrom datasets import load_dataset\n"
+            f'ds = load_dataset("{repo}")\n```\n'
+        )
+
+        readme_path = tmp_dir / "README.md"
+        readme_path.write_text(card)
+        api.upload_file(
+            path_or_fileobj=str(readme_path),
+            path_in_repo="README.md",
+            repo_id=repo,
+            repo_type="dataset",
+        )
+
+        click.secho(f"Pushed to https://huggingface.co/datasets/{repo}", fg="green")
+
+
+# ---------------------------------------------------------------------------
+# preference
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.option(
+    "-c", "--config", "config_path",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to YAML config file.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Validate config and print plan without generating.",
+)
+@click.option(
+    "--num-pairs",
+    default=None,
+    type=int,
+    help="Override config preference.num_pairs.",
+)
+@click.option(
+    "--format", "output_format",
+    default=None,
+    type=click.Choice(["dpo", "chat_dpo", "ultrafeedback", "anthropic_hh", "orpo"]),
+    help="Override output format.",
+)
+@click.option(
+    "-o", "--output", "output_path",
+    default=None,
+    type=click.Path(),
+    help="Override output file path.",
+)
+@click.option(
+    "--save-log",
+    is_flag=True,
+    default=False,
+    help="Save full generation log with all scored responses.",
+)
+def preference(config_path: str, dry_run: bool, num_pairs, output_format, output_path, save_log):
+    """Generate DPO/RLHF preference pairs from a config file."""
+    try:
+        cfg = load_config(config_path)
+    except (FileNotFoundError, ValueError) as exc:
+        click.secho(f"Config error: {exc}", fg="red", err=True)
+        raise SystemExit(1)
+
+    # Build PreferenceConfig from YAML + CLI overrides
+    from .preference.types import PreferenceConfig
+
+    pref_cfg_dict = {}
+    if cfg.preference is not None:
+        pref_cfg_dict = cfg.preference.model_dump()
+
+    if num_pairs is not None:
+        pref_cfg_dict["num_pairs"] = num_pairs
+    if output_format is not None:
+        pref_cfg_dict["output_format"] = output_format
+    if output_path is not None:
+        pref_cfg_dict["output_path"] = output_path
+    if save_log:
+        pref_cfg_dict["save_log"] = True
+
+    pref_config = PreferenceConfig(**pref_cfg_dict)
+
+    if dry_run:
+        _print_preference_plan(cfg, pref_config)
+        return
+
+    try:
+        resolve_api_key(cfg)
+    except ValueError as exc:
+        click.secho(str(exc), fg="red", err=True)
+        raise SystemExit(1)
+
+    click.echo(f"Generating {pref_config.num_pairs} preference pairs...")
+    start = time.time()
+
+    try:
+        import asyncio
+
+        from .config_to_generator import build_generator
+        from .evaluator import ConversationJudge
+        from .key_management import SmartKeyPool
+        from .providers import LLMFactory
+
+        api_key = resolve_api_key(cfg)
+        if api_key is None and cfg.model.provider == "local":
+            api_key = "not-needed"
+
+        gen = build_generator(cfg)
+
+        key_pool = (
+            SmartKeyPool.from_single_key(api_key)
+            if isinstance(api_key, str)
+            else api_key
+        )
+        judge_llm = LLMFactory.create(
+            cfg.model.provider if cfg.model.provider != "local" else "local",
+            cfg.model.model_name,
+            api_key=key_pool,
+        )
+        from .evaluator import default_embedding_provider_config
+
+        embed_cfg = default_embedding_provider_config(
+            cfg.model.provider if cfg.model.provider != "local" else "openai"
+        )
+        judge = ConversationJudge.from_factory(
+            judge_llm,
+            key_pool=key_pool,
+            model_provider_name=(
+                cfg.model.provider if cfg.model.provider != "local" else "openai"
+            ),
+            embedding_provider_config=embed_cfg,
+        )
+
+        pref_gen = gen.to_preference_generator(judge=judge, config=pref_config)
+
+        pairs, analytics = asyncio.run(pref_gen.generate())
+        pref_gen.save_pairs(pairs, analytics)
+
+    except Exception as exc:
+        click.secho(f"Preference generation failed: {exc}", fg="red", err=True)
+        raise SystemExit(1)
+
+    elapsed = time.time() - start
+    click.secho(
+        f"Done! Generated {len(pairs)} preference pairs in {elapsed:.1f}s",
+        fg="green",
+    )
+    click.echo(f"Output: {pref_config.output_path}")
+
+    # Print stats
+    if analytics.total_attempted > 0:
+        click.echo(f"  Attempted:    {analytics.total_attempted}")
+        click.echo(f"  Valid pairs:  {analytics.total_valid}")
+        click.echo(f"  Discarded:    {analytics.total_discarded} "
+                   f"({analytics.discard_rate:.1%} discard rate)")
+    for warning in analytics.warnings:
+        click.secho(f"  Warning: {warning}", fg="yellow")
+
+
+def _print_preference_plan(cfg: AfterImageConfig, pref_config) -> None:
+    """Print what preference generation would do."""
+    click.echo("=== Preference Generation Plan ===")
+    click.echo(f"  Model:          {cfg.model.provider} / {cfg.model.model_name}")
+    click.echo(f"  Target pairs:   {pref_config.num_pairs}")
+    click.echo(f"  Responses/prompt: {pref_config.num_responses}")
+    click.echo(f"  Strategy:       {pref_config.strategy}")
+    click.echo(f"  Min score gap:  {pref_config.min_score_gap}")
+    click.echo(f"  Multi-turn:     {'yes' if pref_config.multi_turn else 'no'}")
+    click.echo(f"  Output format:  {pref_config.output_format}")
+    click.echo(f"  Output path:    {pref_config.output_path}")
+    click.echo(f"  Save log:       {'yes' if pref_config.save_log else 'no'}")
+    if cfg.documents:
+        click.echo(f"  Documents:      {cfg.documents.provider} @ {cfg.documents.path or cfg.documents.collection}")
+    else:
+        click.echo("  Documents:      none")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _run_auto_analyze(cfg: AfterImageConfig) -> None:
+    """Run analytics after generation. Never raises — errors are logged."""
+    try:
+        from .analytics import DatasetAnalyzer, generate_report
+
+        output_path = cfg.analytics.output_path
+        if output_path is None:
+            output_path = str(Path(cfg.output.path).with_suffix(".html"))
+
+        report = DatasetAnalyzer.from_jsonl(cfg.output.path)
+        generate_report(report, output_path)
+        click.secho(f"Analytics report: {output_path}", fg="cyan")
+    except Exception as exc:
+        click.secho(f"Analytics failed (non-blocking): {exc}", fg="yellow", err=True)
+
+
+def _run_auto_export(cfg: AfterImageConfig) -> None:
+    """Run auto-export after generation. Never raises — errors are logged."""
+    try:
+        from .integrations import get_exporter
+
+        export_cfg = cfg.output.export
+        if export_cfg is None:
+            return
+
+        inp = Path(cfg.output.path)
+        out_dir = Path(export_cfg.output_dir) if export_cfg.output_dir else inp.parent
+
+        for fmt in export_cfg.formats:
+            exporter = get_exporter(fmt)
+            if export_cfg.split is not None:
+                _export_with_split(
+                    exporter, inp, out_dir, fmt,
+                    export_cfg.split, export_cfg.shuffle, export_cfg.seed,
+                )
+            else:
+                out_path = out_dir / f"{inp.stem}_{fmt}.jsonl"
+                exporter.export_file(inp, out_path)
+            click.secho(f"  Auto-exported: {fmt}", fg="cyan")
+    except Exception as exc:
+        click.secho(f"Auto-export failed (non-blocking): {exc}", fg="yellow", err=True)
+
+
+def _print_formats_table(formats: list[dict]) -> None:
+    """Print a formatted table of available export formats."""
+    click.echo("Available export formats:")
+    click.echo("-" * 72)
+    click.echo(
+        f"{'Name':<16} {'Multi-turn':<12} {'System':<8} {'Tools':<8} Used by"
+    )
+    click.echo("-" * 72)
+    for f in formats:
+        mt = "yes" if f["multi_turn"] else "-"
+        sp = "yes" if f["system_prompt"] else "-"
+        tc = "yes" if f["tool_calls"] else "-"
+        click.echo(f"{f['name']:<16} {mt:<12} {sp:<8} {tc:<8} {f['used_by']}")
+    click.echo("-" * 72)
+
+
+def _export_with_split(
+    exporter,
+    input_path: Path,
+    output_dir: Path,
+    fmt: str,
+    split_ratio: float,
+    shuffle: bool,
+    seed: int,
+    *,
+    system_prompt: str | None = None,
+):
+    """Export with train/val split. Returns the ExportResult for train."""
+    import json
+    import random
+
+    from .integrations.base import ExportResult
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Read all lines (needed for split)
+    lines: list[str] = []
+    with open(input_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                lines.append(line)
+
+    if shuffle:
+        rng = random.Random(seed)
+        rng.shuffle(lines)
+
+    n_val = max(1, int(len(lines) * split_ratio)) if lines else 0
+    val_lines = lines[:n_val]
+    train_lines = lines[n_val:]
+
+    train_path = output_dir / f"{input_path.stem}_{fmt}_train.jsonl"
+    val_path = output_dir / f"{input_path.stem}_{fmt}_val.jsonl"
+
+    result = ExportResult(
+        format_name=fmt,
+        input_path=str(input_path),
+        output_path=str(train_path),
+    )
+    result.total_input = len(lines)
+
+    for out_path, subset in [(train_path, train_lines), (val_path, val_lines)]:
+        with open(out_path, "w", encoding="utf-8") as fout:
+            for raw_line in subset:
+                try:
+                    row = json.loads(raw_line)
+                    converted = exporter.convert_conversation(
+                        row, system_prompt=system_prompt,
+                    )
+                    for out_row in converted:
+                        fout.write(json.dumps(out_row, ensure_ascii=False) + "\n")
+                        result.total_output += 1
+                except Exception as exc:
+                    result.skipped += 1
+                    result.warnings.append(str(exc))
+
+    click.secho(
+        f"  {fmt}: {len(train_lines)} train + {len(val_lines)} val "
+        f"-> {train_path.name}, {val_path.name}",
+        fg="green",
+    )
+
+    return result

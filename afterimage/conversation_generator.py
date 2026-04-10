@@ -1,12 +1,17 @@
+"""Conversation generator — thin facade over Orchestrator, SamplingStrategy, and QualityGate.
+
+Maintains the exact same public API as before the refactoring. Internally
+delegates concurrency to :class:`~afterimage.orchestrator.Orchestrator`,
+sampling configuration to :class:`~afterimage.sampling.SamplingStrategy`,
+and quality evaluation to :class:`~afterimage.quality_gate.QualityGate`.
+"""
+
 import asyncio
 import logging
 import random
 import time
-import traceback
 import warnings
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Union
-
-from tqdm.asyncio import tqdm
 
 from .base import (
     BaseGenerator,
@@ -27,17 +32,18 @@ from .evaluator import (
 )
 from .key_management import SmartKeyPool
 from .monitoring import GenerationMonitor
+from .orchestrator import Orchestrator
 from .prompts import get_correspondent_instruction_generation_prompt
 from .providers import ChatSession, LLMFactory
 from .providers.embedding_providers import EmbeddingProvider
+from .quality_gate import QualityGate
+from .sampling import SamplingStrategy
 from .storage import BaseStorage, JSONLStorage
 from .types import (
     Conversation,
     ConversationEntry,
     ConversationWithContext,
     EvaluatedConversationWithContext,
-    GenerationState,
-    GradeSchema,
     Role,
 )
 
@@ -67,6 +73,22 @@ class ConversationGenerator(BaseGenerator):
         instruction_generator_callback: Callback for instruction generation. Can also be passed to generate() method (deprecated).
         respondent_prompt_modifier: Callback to modify respondent prompts. Can also be passed to generate() method (deprecated).
     """
+
+    @property
+    def evaluator(self):
+        """The conversation evaluator (ConversationJudge or None).
+
+        Setting this also updates the internal QualityGate so that
+        generate_single() uses the new evaluator for retry decisions.
+        """
+        return self._evaluator
+
+    @evaluator.setter
+    def evaluator(self, value):
+        self._evaluator = value
+        # Keep the quality gate in sync when evaluator is set after init
+        if hasattr(self, "_quality_gate"):
+            self._quality_gate._evaluator = value
 
     def __init__(
         self,
@@ -136,6 +158,8 @@ class ConversationGenerator(BaseGenerator):
         self.instruction_generator_callback = instruction_generator_callback
         self.respondent_prompt_modifier = respondent_prompt_modifier
 
+        # --- Quality gate (wraps evaluator) ---
+        self._quality_gate = QualityGate(evaluator=None)
         self.evaluator = None
         if auto_improve:
             evaluator_model_name = (
@@ -171,7 +195,18 @@ class ConversationGenerator(BaseGenerator):
                     config=judge_config,
                 )
 
+        # --- Sampling strategy ---
+        self._sampling_strategy = SamplingStrategy(monitor=self.monitor)
+
+        # --- Orchestrator ---
+        self._orchestrator = Orchestrator(
+            sampling_strategy=self._sampling_strategy,
+            quality_gate=self._quality_gate,
+            monitor=self.monitor,
+        )
+
         self.initiators = []
+        self._factory_kwargs: dict = {}  # extra kwargs for LLMFactory.create (e.g. base_url)
         self.storage = storage or JSONLStorage()
 
         if (
@@ -194,6 +229,7 @@ class ConversationGenerator(BaseGenerator):
                 self.model_name,
                 api_key=api_key,
                 safety_settings=self.safety_settings,
+                **self._factory_kwargs,
             )
 
             response = await model.agenerate_content(prompt=prompt, temperature=0.7)
@@ -243,6 +279,7 @@ class ConversationGenerator(BaseGenerator):
                 api_key=api_key,
                 system_instruction=prompt,
                 safety_settings=self.safety_settings,
+                **self._factory_kwargs,
             )
 
             chat = await model.astart_chat()
@@ -495,36 +532,20 @@ class ConversationGenerator(BaseGenerator):
 
                 conversation_row = build_conversation_row(conversation)
 
-                evaluation_grade = GradeSchema.NOT_ACCEPTABLE
-                while self.evaluator and evaluation_grade in [
-                    GradeSchema.NOT_ACCEPTABLE,
-                    GradeSchema.BAD,
-                    GradeSchema.NEEDS_IMPROVEMENT,
-                ]:
-                    evaluated_conversation = await self.evaluator.aevaluate_row(
-                        conversation_row
+                # --- Quality gate: evaluate and retry if needed ---
+                result = await self._quality_gate.evaluate(conversation_row)
+                while QualityGate.should_retry(result):
+                    conversation = await self.go(
+                        turns=turns,
+                        first_question=instruction,
+                        check_for_near_duplicates=check_for_near_duplicates,
+                        correspondent_prompt=correspondent_prompt,
+                        respondent_prompt=current_respondent_prompt,
                     )
+                    conversation_row = build_conversation_row(conversation)
+                    result = await self._quality_gate.evaluate(conversation_row)
 
-                    if evaluated_conversation.evaluation.overall_grade in [
-                        GradeSchema.NOT_ACCEPTABLE,
-                        GradeSchema.BAD,
-                        GradeSchema.NEEDS_IMPROVEMENT,
-                    ]:
-                        conversation = await self.go(
-                            turns=turns,
-                            first_question=instruction,
-                            check_for_near_duplicates=check_for_near_duplicates,
-                            correspondent_prompt=correspondent_prompt,
-                            respondent_prompt=current_respondent_prompt,
-                        )
-                        conversation_row = build_conversation_row(conversation)
-                    else:
-                        evaluation_grade = (
-                            evaluated_conversation.evaluation.overall_grade
-                        )
-                        conversation_row = evaluated_conversation
-
-                yield conversation_row
+                yield result.conversation_row
         else:
             raise ValueError("An `instruction_generator_callback` must be provided.")
 
@@ -597,115 +618,46 @@ class ConversationGenerator(BaseGenerator):
             num_dialogs = 5
             final_stopping_criteria.append(FixedNumberStoppingCallback(n=num_dialogs))
 
-        self._configure_context_sampling(
-            instruction_generator_callback,
-            final_stopping_criteria,
-        )
-        self._configure_persona_sampling(
-            instruction_generator_callback,
+        # Delegate to orchestrator
+        await self._orchestrator.run(
+            generator=self,
             num_requested=num_dialogs,
+            max_turns=max_turns,
             stopping_criteria=final_stopping_criteria,
+            instruction_generator_callback=instruction_generator_callback,
+            respondent_prompt_modifier=respondent_prompt_modifier,
+            storage=self.storage,
+            model_provider_name=self.model_provider_name,
+            max_concurrency=max_concurrency,
         )
-
-        state = GenerationState(
-            num_requested=num_dialogs or 0,
-            monitor=self.monitor,
-            stop_event=asyncio.Event(),
-        )
-
-        resolved_max_concurrency = self._resolve_max_concurrency(max_concurrency)
-        semaphore = asyncio.Semaphore(resolved_max_concurrency)
-
-        async def save_conversations(conversations: list[ConversationWithContext]):
-            if conversations:
-                if hasattr(self.storage, "asave_conversations"):
-                    await self.storage.asave_conversations(conversations)
-                else:
-                    await asyncio.to_thread(
-                        self.storage.save_conversations, conversations
-                    )
-
-        async def worker_task():
-            while not state.stop_event.is_set():
-                async with semaphore:
-                    if state.stop_event.is_set():
-                        break
-
-                    try:
-                        async for conversation in self.generate_single(
-                            max_turns=max_turns,
-                            instruction_generator_callback=instruction_generator_callback,
-                            respondent_prompt_modifier=respondent_prompt_modifier,
-                        ):
-                            # Update state and check stopping criteria
-                            state.update(conversation)
-                            self._record_context_usage(
-                                instruction_generator_callback,
-                                conversation,
-                            )
-
-                            for criteria in final_stopping_criteria:
-                                if await criteria.should_stop(state):
-                                    self.monitor.log_info(
-                                        "Stopping criteria met, stopping generation...",
-                                        criteria=criteria.__class__.__name__,
-                                    )
-                                    state.stop_event.set()
-                                    break
-
-                            await save_conversations([conversation])
-
-                            if state.stop_event.is_set():
-                                break
-
-                    except Exception as e:
-                        logger.error(f"Error in generation: {e}")
-                        traceback.print_exc()
-                        if self.monitor:
-                            self.monitor.record_metric("error_rate", 1.0)
-                        continue
-
-        pbar = tqdm(total=num_dialogs, desc="Generating...", unit="conversation")
-        tasks: list[asyncio.Task] = []
-
-        # Create initial set of tasks
-        for _ in range(resolved_max_concurrency):
-            tasks.append(asyncio.create_task(worker_task()))
-
-        last_count = 0
-        while not state.stop_event.is_set() or any(not t.done() for t in tasks):
-            # Update progress bar
-            if state.num_generated > last_count:
-                pbar.update(state.num_generated - last_count)
-                last_count = state.num_generated
-
-            if state.stop_event.is_set():
-                for t in tasks:
-                    if not t.done():
-                        t.cancel()
-                break
-
-            await asyncio.sleep(0.1)
-
-            if all(t.done() for t in tasks):
-                break
-
-        pbar.update(state.num_generated - last_count)
-        pbar.close()
-
-        # Wait for any remaining tasks to finish/cancel
-        try:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        except Exception as e:
-            self.monitor.log_error("Error while trying to finalize generation", error=e)
-            self.monitor.record_metric("error_rate", 1.0)
-            traceback.print_exc()
-        finally:
-            self.monitor.log_info("Generation complete")
-            self.monitor.visualize_metrics()
 
     def _resolve_max_concurrency(self, max_concurrency: int | None) -> int:
         return resolve_generation_max_concurrency(
             self.model_provider_name,
             max_concurrency,
+        )
+
+    def to_preference_generator(
+        self,
+        judge,
+        config=None,
+        secondary_llm_provider=None,
+    ):
+        """Create a :class:`~afterimage.preference.PreferenceGenerator` from this generator.
+
+        Args:
+            judge: :class:`~afterimage.evaluator.ConversationJudge` for scoring responses.
+            config: :class:`~afterimage.preference.PreferenceConfig` (optional).
+            secondary_llm_provider: Secondary LLM for model-variation strategy (optional).
+
+        Returns:
+            Configured :class:`~afterimage.preference.PreferenceGenerator`.
+        """
+        from .preference.generator import PreferenceGenerator
+
+        return PreferenceGenerator(
+            conversation_generator=self,
+            judge=judge,
+            config=config,
+            secondary_llm_provider=secondary_llm_provider,
         )

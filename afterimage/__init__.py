@@ -21,6 +21,9 @@ from afterimage.evaluator import (
     default_embedding_provider_config,  # noqa
 )
 from afterimage.key_management import SmartKeyPool  # noqa
+from afterimage.orchestrator import Orchestrator  # noqa
+from afterimage.quality_gate import QualityGate, QualityResult  # noqa
+from afterimage.sampling import SamplingStrategy  # noqa
 from afterimage.monitoring import (
     GenerationMonitor,  # noqa
     ModelTokenUsage,  # noqa

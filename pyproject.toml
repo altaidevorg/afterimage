@@ -17,6 +17,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "click>=8.0.0",
     "filelock",
     "fastmcp>=3.2.0",
     "google-genai==1.38.0",
@@ -31,6 +32,7 @@ dependencies = [
     "pyarrow>=14.0.1",
     "pydantic>=2.10.4",
     "python-docx>=1.2.0",
+    "pyyaml>=6.0",
     "qdrant-client",
     "seaborn>=0.12.0",
     "striprtf>=0.0.29",
@@ -46,6 +48,10 @@ repository = "https://github.com/altaidevorg/afterimage"
 # ProcessEmbeddingProvider; QdrantRetriever; QualityChecker (local embedding model)
 embeddings-local = [
     "sentence-transformers>=3.0.0",
+]
+
+hub = [
+    "huggingface_hub>=0.20.0",
 ]
 
 server = [
@@ -70,6 +76,7 @@ training = [
 ]
 
 [project.scripts]
+afterimage = "afterimage.cli:main"
 afterimage-server = "afterimage.server:main"
 
 [tool.setuptools.packages.find]

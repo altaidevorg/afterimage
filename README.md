@@ -40,6 +40,27 @@ pip install "afterimage[embeddings-local]@git+https://github.com/altaidevorg/aft
 *   **Async-First**: High-performance parallel generation.
 *   **Persona Simulation**: Realistic user diversity.
 *   **Context-Aware**: Grounds conversations in your documents (RAG).
+*   **DPO/RLHF Preference Data**: Generate (chosen, rejected) pairs for reward model training — no manual labeling.
 *   **Multi-Modal**: Support for text and potentially other modalities in future.
 *   **Monitoring**: Real-time generation metrics and alerts.
+
+## 🎯 Generating Preference Data (DPO/RLHF)
+
+AfterImage can generate preference pairs directly from your documents:
+
+```bash
+afterimage preference -c config.yaml
+```
+
+Add a `preference` block to your config:
+
+```yaml
+preference:
+  num_pairs: 100
+  strategy: temperature    # temperature | prompt | model | combined
+  output_format: dpo       # dpo | chat_dpo | ultrafeedback | anthropic_hh | orpo
+  output_path: ./preferences.jsonl
+```
+
+See [docs/PREFERENCE_DATA.md](docs/PREFERENCE_DATA.md) for the full guide including multi-turn preferences, training tool integrations, and Python API.
 

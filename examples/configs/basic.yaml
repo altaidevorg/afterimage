@@ -1,0 +1,33 @@
+# Minimal AfterImage config
+# Generates simple Q&A conversations using Gemini
+#
+# Set your API key first:
+#   export GEMINI_API_KEY=your-key
+#
+# Run:
+#   afterimage generate -c examples/configs/basic.yaml
+
+generation:
+  # Number of conversations to generate
+  num_dialogs: 10
+  # Each conversation is a single turn (one question, one answer)
+  max_turns: 1
+
+model:
+  # LLM provider: gemini, openai, deepseek, or local
+  provider: gemini
+  # Model identifier (provider-specific)
+  model_name: gemini-2.0-flash
+  # Environment variable holding the API key
+  api_key_env: GEMINI_API_KEY
+
+respondent:
+  # System prompt for the assistant being fine-tuned
+  system_prompt: |
+    You are a helpful AI assistant. Answer questions clearly and concisely.
+
+output:
+  # Where to save the generated dataset
+  path: ./output/basic_dataset.jsonl
+  # Storage format: jsonl or sql
+  storage: jsonl
