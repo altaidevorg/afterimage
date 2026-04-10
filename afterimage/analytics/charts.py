@@ -14,22 +14,28 @@ def _esc(text: str) -> str:
 # Metric card
 # ------------------------------------------------------------------
 
+
 def metric_card(label: str, value: str, subtitle: str = "") -> str:
     """Render a single metric as an SVG card."""
-    sub = f'<text x="60" y="72" text-anchor="middle" font-size="11" fill="var(--text-muted)">{_esc(subtitle)}</text>' if subtitle else ""
+    sub = (
+        f'<text x="60" y="72" text-anchor="middle" font-size="11" fill="var(--text-muted)">{_esc(subtitle)}</text>'
+        if subtitle
+        else ""
+    )
     return (
         f'<svg width="120" height="80" viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">'
         f'<rect width="120" height="80" rx="8" fill="var(--card-bg)" stroke="var(--border)" stroke-width="1"/>'
         f'<text x="60" y="36" text-anchor="middle" font-size="22" font-weight="bold" fill="var(--accent)">{_esc(value)}</text>'
         f'<text x="60" y="54" text-anchor="middle" font-size="11" fill="var(--text-muted)">{_esc(label)}</text>'
-        f'{sub}'
-        f'</svg>'
+        f"{sub}"
+        f"</svg>"
     )
 
 
 # ------------------------------------------------------------------
 # Bar chart
 # ------------------------------------------------------------------
+
 
 def bar_chart(
     data: Dict[str, int | float],
@@ -55,7 +61,9 @@ def bar_chart(
     ]
     y_offset = 0
     if title:
-        lines.append(f'<text x="{width // 2}" y="18" text-anchor="middle" font-size="13" font-weight="bold" fill="var(--text)">{_esc(title)}</text>')
+        lines.append(
+            f'<text x="{width // 2}" y="18" text-anchor="middle" font-size="13" font-weight="bold" fill="var(--text)">{_esc(title)}</text>'
+        )
         y_offset = 30
 
     for i, (label, val) in enumerate(items):
@@ -75,13 +83,14 @@ def bar_chart(
             f'font-size="10" fill="var(--text-muted)">{_format_num(val)}</text>'
         )
 
-    lines.append('</svg>')
-    return '\n'.join(lines)
+    lines.append("</svg>")
+    return "\n".join(lines)
 
 
 # ------------------------------------------------------------------
 # Histogram
 # ------------------------------------------------------------------
+
 
 def histogram(
     counts: List[int],
@@ -110,7 +119,9 @@ def histogram(
     ]
 
     if title:
-        lines.append(f'<text x="{width // 2}" y="18" text-anchor="middle" font-size="13" font-weight="bold" fill="var(--text)">{_esc(title)}</text>')
+        lines.append(
+            f'<text x="{width // 2}" y="18" text-anchor="middle" font-size="13" font-weight="bold" fill="var(--text)">{_esc(title)}</text>'
+        )
 
     # Bars
     for i, cnt in enumerate(counts):
@@ -141,13 +152,14 @@ def histogram(
         f'stroke="var(--border)" stroke-width="1"/>'
     )
 
-    lines.append('</svg>')
-    return '\n'.join(lines)
+    lines.append("</svg>")
+    return "\n".join(lines)
 
 
 # ------------------------------------------------------------------
 # Donut chart
 # ------------------------------------------------------------------
+
 
 def donut_chart(
     data: Dict[str, int],
@@ -160,8 +172,14 @@ def donut_chart(
         return ""
 
     default_colors = [
-        "#4f8cff", "#34d399", "#fbbf24", "#f87171",
-        "#a78bfa", "#fb923c", "#38bdf8", "#e879f9",
+        "#4f8cff",
+        "#34d399",
+        "#fbbf24",
+        "#f87171",
+        "#a78bfa",
+        "#fb923c",
+        "#38bdf8",
+        "#e879f9",
     ]
     palette = colors or default_colors
     total = sum(data.values())
@@ -232,16 +250,17 @@ def donut_chart(
         truncated = label[:16] + ".." if len(str(label)) > 16 else str(label)
         lines.append(
             f'<text x="{size + 22}" y="{ly + 10}" font-size="11" fill="var(--text-muted)">'
-            f'{_esc(truncated)} ({val})</text>'
+            f"{_esc(truncated)} ({val})</text>"
         )
 
-    lines.append('</svg>')
-    return '\n'.join(lines)
+    lines.append("</svg>")
+    return "\n".join(lines)
 
 
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
 
 def _format_num(val: int | float) -> str:
     if isinstance(val, float):

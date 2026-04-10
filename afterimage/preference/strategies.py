@@ -76,9 +76,7 @@ async def temperature_strategy(
 
     messages = _make_messages(system_prompt, history, user_turn)
 
-    tasks = [
-        _generate_single_response(llm, messages, temp) for temp in temperatures
-    ]
+    tasks = [_generate_single_response(llm, messages, temp) for temp in temperatures]
     contents = await asyncio.gather(*tasks, return_exceptions=True)
 
     results = []
@@ -109,7 +107,8 @@ async def prompt_strategy(
         + "\n\nThink step by step. Provide a detailed, well-structured answer with examples where helpful."
     )
     degraded_prompt = (
-        system_prompt + "\n\nAnswer very briefly. Keep your response as short as possible."
+        system_prompt
+        + "\n\nAnswer very briefly. Keep your response as short as possible."
     )
 
     prompts_and_labels = [
@@ -192,7 +191,8 @@ async def combined_strategy(
         + "\n\nThink step by step. Provide a detailed, well-structured answer."
     )
     degraded_prompt = (
-        system_prompt + "\n\nAnswer very briefly. Keep your response as short as possible."
+        system_prompt
+        + "\n\nAnswer very briefly. Keep your response as short as possible."
     )
 
     configs = [
@@ -200,9 +200,7 @@ async def combined_strategy(
         (primary_llm, degraded_prompt, 0.9, "combined_degraded_high_temp"),
     ]
     if secondary_llm is not None:
-        configs.append(
-            (secondary_llm, system_prompt, 0.7, "combined_secondary_model")
-        )
+        configs.append((secondary_llm, system_prompt, 0.7, "combined_secondary_model"))
     # Fill up if more needed
     extra_temps = [0.4, 0.6, 0.8]
     idx = 0

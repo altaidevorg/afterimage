@@ -11,8 +11,12 @@ from afterimage.preference.types import PreferencePair, ScoredResponse
 def _make_pair(chosen_score=0.9, rejected_score=0.2, chosen_label="temperature_0.10"):
     return PreferencePair(
         prompt="Test prompt",
-        chosen=ScoredResponse(content="chosen", score=chosen_score, variation_label=chosen_label),
-        rejected=ScoredResponse(content="rejected", score=rejected_score, variation_label="temperature_0.90"),
+        chosen=ScoredResponse(
+            content="chosen", score=chosen_score, variation_label=chosen_label
+        ),
+        rejected=ScoredResponse(
+            content="rejected", score=rejected_score, variation_label="temperature_0.90"
+        ),
     )
 
 

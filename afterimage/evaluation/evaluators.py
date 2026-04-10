@@ -67,9 +67,7 @@ class CoherenceEvaluator:
                     )
 
             if not pairs:
-                return self._result(
-                    0.0, "No question-answer pairs found", True, start
-                )
+                return self._result(0.0, "No question-answer pairs found", True, start)
 
             texts: list[str] = []
             for q, a in pairs:
@@ -240,9 +238,7 @@ class RelevanceEvaluator:
                 return self._neutral("No context provided", start)
 
             questions = [
-                t.content
-                for t in conversation.conversations
-                if t.role == Role.USER
+                t.content for t in conversation.conversations if t.role == Role.USER
             ]
             if not questions:
                 return self._bad("No questions found", start)
@@ -434,9 +430,7 @@ Return scores (one float per response, 0-1), feedback (short summary), and needs
         if self.monitor:
             tok: dict[str, Any] = {}
             if responses:
-                tok["prompt_token_count"] = sum(
-                    r.prompt_token_count for r in responses
-                )
+                tok["prompt_token_count"] = sum(r.prompt_token_count for r in responses)
                 tok["completion_token_count"] = sum(
                     r.completion_token_count for r in responses
                 )
@@ -489,7 +483,7 @@ Context (reference):
 {conversation.response_context or conversation.instruction_context or ""}
 
 Pairs:
-{"\n---\n".join(f"[{i+1}] Q: {q}\nA: {a}" for i, (q, a) in enumerate(pairs))}
+{"\n---\n".join(f"[{i + 1}] Q: {q}\nA: {a}" for i, (q, a) in enumerate(pairs))}
 
 Return scores (one per pair), feedback, needs_improvement."""
 
@@ -535,9 +529,7 @@ Return scores (one per pair), feedback, needs_improvement."""
         if self.monitor:
             tok: dict[str, Any] = {}
             if responses:
-                tok["prompt_token_count"] = sum(
-                    r.prompt_token_count for r in responses
-                )
+                tok["prompt_token_count"] = sum(r.prompt_token_count for r in responses)
                 tok["completion_token_count"] = sum(
                     r.completion_token_count for r in responses
                 )

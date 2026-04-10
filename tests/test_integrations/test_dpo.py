@@ -45,10 +45,13 @@ class TestDPO:
 
     def test_without_scores(self, exporter, tmp_path):
         rows = [
-            {"conversations": [
-                {"role": "user", "content": "Q"},
-                {"role": "assistant", "content": "A"},
-            ], "metadata": {}},
+            {
+                "conversations": [
+                    {"role": "user", "content": "Q"},
+                    {"role": "assistant", "content": "A"},
+                ],
+                "metadata": {},
+            },
         ]
         inp = tmp_path / "in.jsonl"
         out = tmp_path / "out.jsonl"

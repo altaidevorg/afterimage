@@ -175,7 +175,13 @@ class DatasetAnalyzer:
             if grade:
                 grade_counter[grade] += 1
 
-            for metric in ("coherence", "factuality", "grounding", "helpfulness", "relevance"):
+            for metric in (
+                "coherence",
+                "factuality",
+                "grounding",
+                "helpfulness",
+                "relevance",
+            ):
                 entry = ev.get(metric)
                 if entry and "score" in entry:
                     s = float(entry["score"])
@@ -224,9 +230,7 @@ class DatasetAnalyzer:
         )
 
         # Bigram repetition rate
-        bigrams = [
-            (all_words[i], all_words[i + 1]) for i in range(len(all_words) - 1)
-        ]
+        bigrams = [(all_words[i], all_words[i + 1]) for i in range(len(all_words) - 1)]
         if bigrams:
             bigram_freq = Counter(bigrams)
             repeated = sum(c for c in bigram_freq.values() if c > 1)

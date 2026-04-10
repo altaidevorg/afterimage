@@ -232,7 +232,10 @@ class PersonaGenerator:
                 None,
             )
 
-        if isinstance(target_context_usage_count, int) and target_context_usage_count > 0:
+        if (
+            isinstance(target_context_usage_count, int)
+            and target_context_usage_count > 0
+        ):
             contexts_per_row = max(int(num_random_contexts), 1)
             return max(math.ceil(target_context_usage_count / contexts_per_row), 1)
 
@@ -294,7 +297,9 @@ class PersonaGenerator:
                 "Resolved persona generation iterations",
                 n_iterations=resolved_iterations,
                 target_per_document=target_per_document,
-                active_doc_count=self._resolve_active_doc_count(docs_to_process, provider),
+                active_doc_count=self._resolve_active_doc_count(
+                    docs_to_process, provider
+                ),
             )
 
         return resolved_iterations

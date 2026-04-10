@@ -8,7 +8,10 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from ..base import BaseInstructionGeneratorCallback, BaseRespondentPromptModifierCallback
+from ..base import (
+    BaseInstructionGeneratorCallback,
+    BaseRespondentPromptModifierCallback,
+)
 from ..evaluator import ConversationJudge
 from ..providers import LLMFactory
 from ..types import ConversationEntry, ConversationWithContext, Role
@@ -90,8 +93,7 @@ class PreferenceGenerator:
         max_concurrency = cfg.max_concurrency or _DEFAULT_MAX_CONCURRENCY
 
         callback = (
-            instruction_generator_callback
-            or self._gen.instruction_generator_callback
+            instruction_generator_callback or self._gen.instruction_generator_callback
         )
         modifier = respondent_prompt_modifier or self._gen.respondent_prompt_modifier
 
@@ -145,7 +147,9 @@ class PreferenceGenerator:
             logger.warning(
                 "Only generated %d/%d pairs after %d batches. "
                 "Consider lowering min_score_gap or increasing num_responses.",
-                len(pairs), target, batches,
+                len(pairs),
+                target,
+                batches,
             )
 
         # Trim to exact count
@@ -266,7 +270,11 @@ class PreferenceGenerator:
                 "instruction_context": gen_instructions.context,
                 "response_context": response_context,
                 "all_scores": [
-                    {"content": r.content[:100], "score": r.score, "label": r.variation_label}
+                    {
+                        "content": r.content[:100],
+                        "score": r.score,
+                        "label": r.variation_label,
+                    }
                     for r in scored
                 ],
             },
@@ -450,7 +458,8 @@ class PreferenceGenerator:
 
                 f.write(
                     json.dumps(
-                        {"_analytics": dataclasses.asdict(analytics)}, ensure_ascii=False
+                        {"_analytics": dataclasses.asdict(analytics)},
+                        ensure_ascii=False,
                     )
                     + "\n"
                 )
@@ -501,5 +510,3 @@ def _build_chat_messages(
     msgs.append({"role": "user", "content": user_turn})
     msgs.append({"role": "assistant", "content": assistant_response})
     return msgs
-
-

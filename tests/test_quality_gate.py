@@ -122,7 +122,5 @@ class TestShouldRetry:
         assert QualityGate.should_retry(result) is True
 
     def test_should_not_retry_when_accepted(self):
-        result = QualityResult(
-            conversation_row=_make_conversation_row(), accepted=True
-        )
+        result = QualityResult(conversation_row=_make_conversation_row(), accepted=True)
         assert QualityGate.should_retry(result) is False

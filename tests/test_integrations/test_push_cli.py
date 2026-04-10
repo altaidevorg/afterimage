@@ -36,9 +36,16 @@ class TestPush:
     def test_missing_hub_extra(self, runner, sample_jsonl):
         """When huggingface_hub is not installed, show clear message."""
         with patch.dict("sys.modules", {"huggingface_hub": None}):
-            result = runner.invoke(main, [
-                "push", "-i", str(sample_jsonl), "--repo", "user/test",
-            ])
+            result = runner.invoke(
+                main,
+                [
+                    "push",
+                    "-i",
+                    str(sample_jsonl),
+                    "--repo",
+                    "user/test",
+                ],
+            )
             # The import will fail with a different error since we patched it
             # Just verify it doesn't crash silently
             assert result.exit_code != 0

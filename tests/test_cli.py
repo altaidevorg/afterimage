@@ -19,7 +19,9 @@ def runner():
 def basic_config(tmp_path):
     """Write a basic config file and return its path."""
     cfg = tmp_path / "config.yaml"
-    cfg.write_text(textwrap.dedent("""
+    cfg.write_text(
+        textwrap.dedent(
+            """
         generation:
           num_dialogs: 5
           max_turns: 1
@@ -31,7 +33,10 @@ def basic_config(tmp_path):
           system_prompt: "You are a helpful assistant."
         output:
           path: {output}
-    """.format(output=str(tmp_path / "out.jsonl"))), encoding="utf-8")
+    """.format(output=str(tmp_path / "out.jsonl"))
+        ),
+        encoding="utf-8",
+    )
     return cfg
 
 
@@ -39,7 +44,9 @@ def basic_config(tmp_path):
 def local_config(tmp_path):
     """Write a local model config file."""
     cfg = tmp_path / "local.yaml"
-    cfg.write_text(textwrap.dedent("""
+    cfg.write_text(
+        textwrap.dedent(
+            """
         model:
           provider: local
           base_url: http://localhost:9999/v1
@@ -48,7 +55,10 @@ def local_config(tmp_path):
           system_prompt: "You are helpful."
         output:
           path: {output}
-    """.format(output=str(tmp_path / "out.jsonl"))), encoding="utf-8")
+    """.format(output=str(tmp_path / "out.jsonl"))
+        ),
+        encoding="utf-8",
+    )
     return cfg
 
 
@@ -112,7 +122,8 @@ class TestExport:
         out_dir = tmp_path / "out"
         out_dir.mkdir()
         result = runner.invoke(
-            main, ["export", "-i", str(sample_jsonl), "-f", "sharegpt", "-o", str(out_dir)]
+            main,
+            ["export", "-i", str(sample_jsonl), "-f", "sharegpt", "-o", str(out_dir)],
         )
         assert result.exit_code == 0
         out = out_dir / "input_sharegpt.jsonl"
@@ -125,7 +136,8 @@ class TestExport:
         out_dir = tmp_path / "out"
         out_dir.mkdir()
         result = runner.invoke(
-            main, ["export", "-i", str(sample_jsonl), "-f", "alpaca", "-o", str(out_dir)]
+            main,
+            ["export", "-i", str(sample_jsonl), "-f", "alpaca", "-o", str(out_dir)],
         )
         assert result.exit_code == 0
         out = out_dir / "input_alpaca.jsonl"
@@ -139,7 +151,8 @@ class TestExport:
         out_dir = tmp_path / "out"
         out_dir.mkdir()
         result = runner.invoke(
-            main, ["export", "-i", str(sample_jsonl), "-f", "messages", "-o", str(out_dir)]
+            main,
+            ["export", "-i", str(sample_jsonl), "-f", "messages", "-o", str(out_dir)],
         )
         assert result.exit_code == 0
         out = out_dir / "input_messages.jsonl"

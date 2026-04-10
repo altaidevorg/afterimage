@@ -113,9 +113,7 @@ class Orchestrator:
                 if hasattr(storage, "asave_conversations"):
                     await storage.asave_conversations(conversations)
                 else:
-                    await asyncio.to_thread(
-                        storage.save_conversations, conversations
-                    )
+                    await asyncio.to_thread(storage.save_conversations, conversations)
 
         async def worker_task():
             while not state.stop_event.is_set():

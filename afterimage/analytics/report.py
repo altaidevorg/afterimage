@@ -96,7 +96,7 @@ def generate_report(
     sections: list[str] = []
 
     # -- Header --
-    sections.append(f'<h1>AfterImage Dataset Report</h1>')
+    sections.append(f"<h1>AfterImage Dataset Report</h1>")
     sections.append(f'<p class="subtitle">{html.escape(report.dataset_path)}</p>')
 
     # -- Summary metrics --
@@ -109,86 +109,117 @@ def generate_report(
     sections.append(metric_card("Avg Words/Turn", f"{s.avg_words_per_turn:.1f}"))
     sections.append(metric_card("Personas", f"{s.unique_personas:,}"))
     sections.append(metric_card("Contexts", f"{s.unique_contexts:,}"))
-    sections.append('</div>')
+    sections.append("</div>")
 
     # -- Personas --
     if report.personas.persona_counts:
         sections.append('<div class="section">')
-        sections.append('<h2>Persona Distribution</h2>')
+        sections.append("<h2>Persona Distribution</h2>")
         sections.append('<div class="chart-row">')
-        sections.append(bar_chart(report.personas.persona_counts, title="Conversations per Persona"))
+        sections.append(
+            bar_chart(report.personas.persona_counts, title="Conversations per Persona")
+        )
         if report.personas.depth_distribution:
-            sections.append(donut_chart(report.personas.depth_distribution, title="Persona Depth"))
-        sections.append('</div>')
-        sections.append('</div>')
+            sections.append(
+                donut_chart(report.personas.depth_distribution, title="Persona Depth")
+            )
+        sections.append("</div>")
+        sections.append("</div>")
 
     # -- Coverage --
     if report.coverage.context_counts:
         sections.append('<div class="section">')
-        sections.append('<h2>Context Coverage</h2>')
+        sections.append("<h2>Context Coverage</h2>")
         sections.append('<div class="metrics-row">')
-        sections.append(metric_card("Unique Contexts", str(len(report.coverage.context_counts))))
-        sections.append(metric_card("Used Once", str(report.coverage.contexts_used_once)))
-        sections.append(metric_card("Used 2+", str(report.coverage.contexts_used_multiple)))
-        sections.append('</div>')
+        sections.append(
+            metric_card("Unique Contexts", str(len(report.coverage.context_counts)))
+        )
+        sections.append(
+            metric_card("Used Once", str(report.coverage.contexts_used_once))
+        )
+        sections.append(
+            metric_card("Used 2+", str(report.coverage.contexts_used_multiple))
+        )
+        sections.append("</div>")
         # Show top contexts
         top = dict(list(report.coverage.context_counts.items())[:15])
-        sections.append(bar_chart(top, title="Top Contexts by Usage", color="var(--accent2)"))
-        sections.append('</div>')
+        sections.append(
+            bar_chart(top, title="Top Contexts by Usage", color="var(--accent2)")
+        )
+        sections.append("</div>")
 
     # -- Quality --
     q = report.quality
     if q.has_evaluations:
         sections.append('<div class="section">')
-        sections.append('<h2>Quality Evaluation</h2>')
+        sections.append("<h2>Quality Evaluation</h2>")
         sections.append('<div class="chart-row">')
         sections.append(donut_chart(q.grade_counts, title="Grade Distribution"))
         if q.avg_scores:
-            sections.append(bar_chart(
-                {k: round(v, 3) for k, v in q.avg_scores.items()},
-                title="Average Metric Scores",
-            ))
-        sections.append('</div>')
+            sections.append(
+                bar_chart(
+                    {k: round(v, 3) for k, v in q.avg_scores.items()},
+                    title="Average Metric Scores",
+                )
+            )
+        sections.append("</div>")
         if q.score_histogram and q.score_bins:
-            sections.append(histogram(q.score_histogram, q.score_bins, title="Score Distribution"))
-        sections.append('</div>')
+            sections.append(
+                histogram(q.score_histogram, q.score_bins, title="Score Distribution")
+            )
+        sections.append("</div>")
     else:
         sections.append('<div class="section">')
-        sections.append('<h2>Quality Evaluation</h2>')
-        sections.append('<p class="empty-note">No evaluations found. Enable auto_improve to get quality metrics.</p>')
-        sections.append('</div>')
+        sections.append("<h2>Quality Evaluation</h2>")
+        sections.append(
+            '<p class="empty-note">No evaluations found. Enable auto_improve to get quality metrics.</p>'
+        )
+        sections.append("</div>")
 
     # -- Diversity --
     d = report.diversity
     if d.vocabulary_size > 0:
         sections.append('<div class="section">')
-        sections.append('<h2>Text Diversity</h2>')
+        sections.append("<h2>Text Diversity</h2>")
         sections.append('<div class="metrics-row">')
         sections.append(metric_card("Vocabulary", f"{d.vocabulary_size:,}"))
         sections.append(metric_card("Type-Token", f"{d.type_token_ratio:.3f}"))
         sections.append(metric_card("Entropy", f"{d.shannon_entropy:.2f}", "bits"))
         sections.append(metric_card("Bigram Rep.", f"{d.bigram_repetition_rate:.3f}"))
-        sections.append('</div>')
-        sections.append('</div>')
+        sections.append("</div>")
+        sections.append("</div>")
 
     # -- Lengths --
     le = report.lengths
     if le.user_lengths or le.assistant_lengths:
         sections.append('<div class="section">')
-        sections.append('<h2>Message Lengths (words)</h2>')
+        sections.append("<h2>Message Lengths (words)</h2>")
         sections.append('<div class="metrics-row">')
         sections.append(metric_card("Avg User", f"{le.avg_user_length:.1f}"))
         sections.append(metric_card("Avg Assistant", f"{le.avg_assistant_length:.1f}"))
-        sections.append('</div>')
+        sections.append("</div>")
         sections.append('<div class="chart-row">')
         if le.user_length_histogram and le.length_bins:
-            sections.append(histogram(le.user_length_histogram, le.length_bins, title="User Message Lengths"))
+            sections.append(
+                histogram(
+                    le.user_length_histogram,
+                    le.length_bins,
+                    title="User Message Lengths",
+                )
+            )
         if le.assistant_length_histogram and le.length_bins:
-            sections.append(histogram(le.assistant_length_histogram, le.length_bins, title="Assistant Message Lengths", color="var(--accent2)"))
-        sections.append('</div>')
-        sections.append('</div>')
+            sections.append(
+                histogram(
+                    le.assistant_length_histogram,
+                    le.length_bins,
+                    title="Assistant Message Lengths",
+                    color="var(--accent2)",
+                )
+            )
+        sections.append("</div>")
+        sections.append("</div>")
 
-    body = '\n'.join(sections)
+    body = "\n".join(sections)
 
     doc = f"""<!DOCTYPE html>
 <html lang="en">

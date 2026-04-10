@@ -21,7 +21,9 @@ from afterimage import (
 )
 
 
-GenerationMode = Literal["Structured Generation", "Tool Calling Generation", "Generic Conversation"]
+GenerationMode = Literal[
+    "Structured Generation", "Tool Calling Generation", "Generic Conversation"
+]
 
 
 def get_selected_tools(
@@ -29,22 +31,22 @@ def get_selected_tools(
 ) -> List:
     """
     Get the list of tools to use for generation.
-    
+
     Args:
         tool_names: List of selected tool names
-        
+
     Returns:
         List of tool definitions (OpenAI schema dicts)
     """
     tools = []
-    
+
     if tool_names:
         db = get_tools_db()
         for name in tool_names:
             parsed = db.get_tool(name)
             if parsed:
                 tools.append(function_to_openai_schema(parsed.definition))
-    
+
     return tools
 
 
@@ -60,7 +62,7 @@ def create_generator(
 ):
     """
     Create a generator based on the specified mode.
-    
+
     Args:
         mode: The generation mode
         api_key: API key for the LLM
@@ -70,7 +72,7 @@ def create_generator(
         model_name: Name of the model to use
         model_provider_name: Provider to use for LLM
         selected_tools: List of tools to use for Tool Calling mode
-    
+
     Returns:
         Configured generator instance
     """
@@ -82,7 +84,7 @@ def create_generator(
         model_name=model_name,
         model_provider_name=model_provider_name,
     )
-    
+
     if mode == "Structured Generation":
         return AsyncStructuredGenerator(
             output_schema=CustomerSupportInteraction,
@@ -93,11 +95,11 @@ def create_generator(
             instruction_generator_callback=instruction_callback,
             storage=storage,
         )
-    
+
     elif mode == "Tool Calling Generation":
         # Use selected tools or default to all available
         tools_to_use = selected_tools if selected_tools else list(AVAILABLE_TOOLS)
-        
+
         tool_instruction_callback = ToolCallingInstructionGeneratorCallback(
             api_key=api_key,
             tools=tools_to_use,
@@ -106,10 +108,10 @@ def create_generator(
             model_name=model_name,
             model_provider_name=model_provider_name,
         )
-        
+
         # Create dynamic schema including custom tools
         dynamic_schema = create_dynamic_tool_invocation_schema(tools_to_use)
-        
+
         return AsyncStructuredGenerator(
             output_schema=dynamic_schema,
             respondent_prompt=respondent_prompt,
@@ -119,7 +121,7 @@ def create_generator(
             instruction_generator_callback=tool_instruction_callback,
             storage=storage,
         )
-    
+
     else:  # Generic Conversation
         return AsyncConversationGenerator(
             respondent_prompt=respondent_prompt,
@@ -139,12 +141,12 @@ def create_generation_task(
 ) -> asyncio.Task:
     """
     Create an async task for generation.
-    
+
     Args:
         generator: The configured generator
         num_samples: Number of samples to generate
         mode: The generation mode (determines which method to call)
-    
+
     Returns:
         An asyncio Task
     """

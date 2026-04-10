@@ -28,7 +28,9 @@ class JobRecord:
     result: JobResult | None = None
     error: str | None = None
     # In-memory cancel event — not persisted
-    _cancel_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False, compare=False)
+    _cancel_event: asyncio.Event = field(
+        default_factory=asyncio.Event, repr=False, compare=False
+    )
 
 
 _CREATE_TABLE = """
@@ -90,7 +92,9 @@ class JobStore:
         if job_id in self._cache:
             return self._cache[job_id]
         async with aiosqlite.connect(self._db_path) as db:
-            async with db.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)) as cur:
+            async with db.execute(
+                "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
+            ) as cur:
                 row = await cur.fetchone()
         if row is None:
             return None
@@ -123,7 +127,9 @@ class JobStore:
         if record:
             record.progress = progress
             record.updated_at = datetime.utcnow()
-            asyncio.create_task(self._persist_progress(job_id, progress, record.updated_at))
+            asyncio.create_task(
+                self._persist_progress(job_id, progress, record.updated_at)
+            )
 
     async def _persist_progress(
         self, job_id: str, progress: JobProgress, updated_at: datetime

@@ -44,10 +44,12 @@ def to_sharegpt(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         turns = []
         for entry in convs:
             role = entry.get("role", "user")
-            turns.append({
-                "from": _ROLE_MAP_SHAREGPT.get(role, role),
-                "value": entry.get("content", ""),
-            })
+            turns.append(
+                {
+                    "from": _ROLE_MAP_SHAREGPT.get(role, role),
+                    "value": entry.get("content", ""),
+                }
+            )
         out.append({"conversations": turns})
     return out
 
@@ -67,11 +69,13 @@ def to_alpaca(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 assistant_msg = entry.get("content", "")
             if user_msg and assistant_msg:
                 break
-        out.append({
-            "instruction": user_msg,
-            "input": "",
-            "output": assistant_msg,
-        })
+        out.append(
+            {
+                "instruction": user_msg,
+                "input": "",
+                "output": assistant_msg,
+            }
+        )
     return out
 
 
@@ -83,10 +87,12 @@ def to_messages(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         messages = []
         for entry in convs:
             role = entry.get("role", "user")
-            messages.append({
-                "role": _ROLE_MAP_MESSAGES.get(role, role),
-                "content": entry.get("content", ""),
-            })
+            messages.append(
+                {
+                    "role": _ROLE_MAP_MESSAGES.get(role, role),
+                    "content": entry.get("content", ""),
+                }
+            )
         out.append({"messages": messages})
     return out
 
@@ -115,7 +121,9 @@ def export_dataset(
     """
     converter = CONVERTERS.get(format_name)
     if converter is None:
-        raise ValueError(f"Unknown format: {format_name!r}. Choose from {list(CONVERTERS)}")
+        raise ValueError(
+            f"Unknown format: {format_name!r}. Choose from {list(CONVERTERS)}"
+        )
 
     rows = _load_jsonl(input_path)
     converted = converter(rows)

@@ -9,6 +9,7 @@ from afterimage.integrations.base import BaseExporter, ExportResult
 
 class EchoExporter(BaseExporter):
     """Minimal exporter for testing base class."""
+
     format_name = "echo"
 
     def convert_conversation(self, conversation, *, system_prompt=None):
@@ -17,6 +18,7 @@ class EchoExporter(BaseExporter):
 
 class SkipExporter(BaseExporter):
     """Exporter that skips everything."""
+
     format_name = "skip"
 
     def convert_conversation(self, conversation, *, system_prompt=None):
@@ -25,6 +27,7 @@ class SkipExporter(BaseExporter):
 
 class ErrorExporter(BaseExporter):
     """Exporter that raises on every row."""
+
     format_name = "error"
 
     def convert_conversation(self, conversation, *, system_prompt=None):
@@ -36,8 +39,7 @@ class TestBaseExporter:
         inp = tmp_path / "in.jsonl"
         out = tmp_path / "out.jsonl"
         rows = [
-            {"conversations": [{"role": "user", "content": f"Q{i}"}]}
-            for i in range(5)
+            {"conversations": [{"role": "user", "content": f"Q{i}"}]} for i in range(5)
         ]
         with open(inp, "w") as f:
             for r in rows:
@@ -51,7 +53,9 @@ class TestBaseExporter:
     def test_export_file_skips_empty(self, tmp_path):
         inp = tmp_path / "in.jsonl"
         out = tmp_path / "out.jsonl"
-        inp.write_text(json.dumps({"conversations": [{"role": "user", "content": "Q"}]}) + "\n")
+        inp.write_text(
+            json.dumps({"conversations": [{"role": "user", "content": "Q"}]}) + "\n"
+        )
 
         result = SkipExporter().export_file(inp, out)
         assert result.total_input == 1

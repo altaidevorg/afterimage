@@ -37,9 +37,7 @@ class TestMessages:
         assert msgs[1]["role"] == "user"
 
     def test_validates_has_assistant(self, exporter):
-        row = {
-            "conversations": [{"role": "user", "content": "Hello?"}]
-        }
+        row = {"conversations": [{"role": "user", "content": "Hello?"}]}
         result = exporter.convert_conversation(row)
         assert result == []
 
@@ -57,7 +55,12 @@ class TestMessages:
         assert len(msgs) == 4
 
     def test_validate_output(self, exporter):
-        good = {"messages": [{"role": "user", "content": "Q"}, {"role": "assistant", "content": "A"}]}
+        good = {
+            "messages": [
+                {"role": "user", "content": "Q"},
+                {"role": "assistant", "content": "A"},
+            ]
+        }
         assert exporter.validate_output(good) == []
         no_asst = {"messages": [{"role": "user", "content": "Q"}]}
         assert len(exporter.validate_output(no_asst)) > 0

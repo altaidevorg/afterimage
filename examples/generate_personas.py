@@ -1,6 +1,12 @@
 import asyncio
 import os
-from afterimage import GenerationMonitor, JSONLStorage, InMemoryDocumentProvider, PersonaGenerator
+from afterimage import (
+    GenerationMonitor,
+    JSONLStorage,
+    InMemoryDocumentProvider,
+    PersonaGenerator,
+)
+
 
 async def main():
     api_key = os.getenv("GEMINI_API_KEY")
@@ -11,7 +17,7 @@ async def main():
     texts = [
         "The new quantum computing chip allows for unprecedented calculations, breaking current encryption standards. This technological leap promises to revolutionize various fields, from medicine to finance, by solving problems currently intractable for classical computers. However, it also poses significant challenges to cybersecurity, necessitating the development of new, quantum-resistant cryptographic algorithms to protect sensitive data in the future.",
         "A guide to baking sourdough bread at home, focusing on starter maintenance and baking techniques. This ancient craft involves cultivating a wild yeast starter, which imparts a unique tangy flavor and chewy texture to the bread. Mastering sourdough requires patience and attention to detail, from understanding the nuances of different flour types to perfecting the fermentation process and achieving that coveted crispy crust and open crumb structure.",
-        "Analysis of the latest trends in sustainable fashion, including biodegradable fabrics and circular economy models. The fashion industry is a major contributor to environmental pollution, from water consumption and chemical use in production to textile waste. Sustainable fashion aims to mitigate these impacts by promoting ethical sourcing, eco-friendly materials, and production processes that minimize waste and maximize resource efficiency. This shift requires innovation across the supply chain, from design to consumer behavior, to create a truly circular and responsible industry."
+        "Analysis of the latest trends in sustainable fashion, including biodegradable fabrics and circular economy models. The fashion industry is a major contributor to environmental pollution, from water consumption and chemical use in production to textile waste. Sustainable fashion aims to mitigate these impacts by promoting ethical sourcing, eco-friendly materials, and production processes that minimize waste and maximize resource efficiency. This shift requires innovation across the supply chain, from design to consumer behavior, to create a truly circular and responsible industry.",
     ]
 
     # Initialize monitor and storage
@@ -44,6 +50,7 @@ async def main():
 
     # Shutdown monitor
     monitor.shutdown()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

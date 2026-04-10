@@ -108,7 +108,7 @@ class GenerationMonitor:
     def __init__(
         self,
         log_dir: str | Path | None = None,
-        metric_handlers: list[MetricHandler]|None = None,
+        metric_handlers: list[MetricHandler] | None = None,
         log_handlers: list[LogHandler] | None = None,
         alert_handlers: list[Callable[[Alert], None]] | None = None,
         metrics_interval: int = 60,  # seconds
@@ -159,13 +159,35 @@ class GenerationMonitor:
         self.shutdown_timeout = shutdown_timeout
 
         # Alert thresholds (None = use default)
-        self._alert_min_success_rate = 0.8 if alert_min_success_rate is None else alert_min_success_rate
-        self._alert_max_generation_time_seconds = 30.0 if alert_max_generation_time_seconds is None else alert_max_generation_time_seconds
-        self._alert_max_error_rate = 0.2 if alert_max_error_rate is None else alert_max_error_rate
-        self._alert_max_prompt_token_mean = 4096.0 if alert_max_prompt_token_mean is None else alert_max_prompt_token_mean
-        self._alert_max_completion_token_mean = 4096.0 if alert_max_completion_token_mean is None else alert_max_completion_token_mean
-        self._alert_max_total_token_mean = 8192.0 if alert_max_total_token_mean is None else alert_max_total_token_mean
-        self._alert_max_conversation_length_mean = 2.0 if alert_max_conversation_length_mean is None else alert_max_conversation_length_mean
+        self._alert_min_success_rate = (
+            0.8 if alert_min_success_rate is None else alert_min_success_rate
+        )
+        self._alert_max_generation_time_seconds = (
+            30.0
+            if alert_max_generation_time_seconds is None
+            else alert_max_generation_time_seconds
+        )
+        self._alert_max_error_rate = (
+            0.2 if alert_max_error_rate is None else alert_max_error_rate
+        )
+        self._alert_max_prompt_token_mean = (
+            4096.0
+            if alert_max_prompt_token_mean is None
+            else alert_max_prompt_token_mean
+        )
+        self._alert_max_completion_token_mean = (
+            4096.0
+            if alert_max_completion_token_mean is None
+            else alert_max_completion_token_mean
+        )
+        self._alert_max_total_token_mean = (
+            8192.0 if alert_max_total_token_mean is None else alert_max_total_token_mean
+        )
+        self._alert_max_conversation_length_mean = (
+            2.0
+            if alert_max_conversation_length_mean is None
+            else alert_max_conversation_length_mean
+        )
 
         self._token_usage_callback = token_usage_callback
         self._token_usage_callback_interval = token_usage_callback_interval_seconds
@@ -298,12 +320,10 @@ class GenerationMonitor:
         self._enqueue_log({"message": message, **error_data, **data}, "error")
 
     def record_metric(
-        self, metric_name: str, value: float, metadata: dict[str, Any]|None = None
+        self, metric_name: str, value: float, metadata: dict[str, Any] | None = None
     ):
         """Record metric using queue."""
-        timestamp = (
-            (metadata.get("timestamp") if metadata else None) or datetime.now()
-        )
+        timestamp = (metadata.get("timestamp") if metadata else None) or datetime.now()
         meta = dict(metadata) if metadata else {}
         meta.setdefault("timestamp", timestamp)
 
@@ -383,7 +403,9 @@ class GenerationMonitor:
             self.record_metric(
                 metric,
                 raw,
-                token_meta if metric != "conversation_length" else {"timestamp": timestamp},
+                token_meta
+                if metric != "conversation_length"
+                else {"timestamp": timestamp},
             )
 
         # Log complete metrics
@@ -613,7 +635,10 @@ class GenerationMonitor:
 
         # Check generation time
         recent_time = self.get_metrics("generation_time", timedelta(minutes=5))
-        if recent_time and recent_time["mean"] > self._alert_max_generation_time_seconds:
+        if (
+            recent_time
+            and recent_time["mean"] > self._alert_max_generation_time_seconds
+        ):
             self._send_alert(
                 Alert(
                     name="high_generation_time",
@@ -650,7 +675,10 @@ class GenerationMonitor:
                 )
             )
         recent_tokens = self.get_metrics("completion_token_count", timedelta(minutes=5))
-        if recent_tokens and recent_tokens["mean"] > self._alert_max_completion_token_mean:
+        if (
+            recent_tokens
+            and recent_tokens["mean"] > self._alert_max_completion_token_mean
+        ):
             self._send_alert(
                 Alert(
                     name="high_token_usage:completion",
@@ -674,7 +702,10 @@ class GenerationMonitor:
 
         # Check for long conversations
         recent_turns = self.get_metrics("conversation_length", timedelta(minutes=5))
-        if recent_turns and recent_turns["mean"] > self._alert_max_conversation_length_mean:
+        if (
+            recent_turns
+            and recent_turns["mean"] > self._alert_max_conversation_length_mean
+        ):
             self._send_alert(
                 Alert(
                     name="long_conversations",

@@ -125,10 +125,7 @@ def test_resolve_generation_max_concurrency_uses_deepseek_default():
         resolve_generation_max_concurrency("deepseek", None)
         == deepseek_default_max_concurrency
     )
-    assert (
-        resolve_generation_max_concurrency("gemini", None)
-        == default_max_concurrency
-    )
+    assert resolve_generation_max_concurrency("gemini", None) == default_max_concurrency
     assert resolve_generation_max_concurrency("deepseek", 3) == 3
 
     with pytest.raises(ValueError):

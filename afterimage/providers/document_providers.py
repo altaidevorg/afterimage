@@ -89,7 +89,9 @@ class DocumentProvider(Protocol):
         sampled_docs: list[Document] = []
 
         while remaining_docs and len(sampled_docs) < k:
-            weights = [self._doc_sampling_weights.get(doc.id, 0.0) for doc in remaining_docs]
+            weights = [
+                self._doc_sampling_weights.get(doc.id, 0.0) for doc in remaining_docs
+            ]
             if not any(weight > 0 for weight in weights):
                 break
 
@@ -149,7 +151,9 @@ class DocumentProvider(Protocol):
     ) -> None:
         """Update the target usage count used by weight calculation."""
         self.target_context_usage_count = target_context_usage_count
-        self._target_context_usage_count_explicit = target_context_usage_count is not None
+        self._target_context_usage_count_explicit = (
+            target_context_usage_count is not None
+        )
         docs = self.get_all()
         self._recalculate_sampling_weights(docs)
 

@@ -49,7 +49,9 @@ async def test_openai_embedding_provider_embed_batches():
         "afterimage.providers.embedding_providers.AsyncOpenAI",
         return_value=mock_client_instance,
     ):
-        p = OpenAIEmbeddingProvider(api_key=pool, model="text-embedding-3-small", max_batch_size=10)
+        p = OpenAIEmbeddingProvider(
+            api_key=pool, model="text-embedding-3-small", max_batch_size=10
+        )
         out = await p.embed(["hello", "world"])
 
     assert len(out) == 2
@@ -86,12 +88,15 @@ async def test_gemini_embedding_provider_embed():
     mock_client_instance = MagicMock()
     mock_client_instance.aio = mock_aio
 
-    with patch(
-        "afterimage.providers.embedding_providers.genai.Client",
-        return_value=mock_client_instance,
-    ), patch(
-        "afterimage.providers.embedding_providers._aclose_genai_client",
-        new_callable=AsyncMock,
+    with (
+        patch(
+            "afterimage.providers.embedding_providers.genai.Client",
+            return_value=mock_client_instance,
+        ),
+        patch(
+            "afterimage.providers.embedding_providers._aclose_genai_client",
+            new_callable=AsyncMock,
+        ),
     ):
         p = GeminiEmbeddingProvider(api_key=pool, model="text-embedding-004")
         out = await p.embed(["a", "b"])
@@ -126,7 +131,9 @@ def test_embedding_provider_factory_unknown_type():
 
 def test_embedding_provider_factory_openai_with_pool():
     pool = SmartKeyPool.from_single_key("sk-x")
-    p = EmbeddingProviderFactory.create({"type": "openai", "model": "text-embedding-3-small"}, key_pool=pool)
+    p = EmbeddingProviderFactory.create(
+        {"type": "openai", "model": "text-embedding-3-small"}, key_pool=pool
+    )
     assert isinstance(p, OpenAIEmbeddingProvider)
 
 
@@ -138,14 +145,20 @@ def test_embedding_provider_factory_gemini_with_pool():
 
 def test_embedding_provider_factory_process():
     p = EmbeddingProviderFactory.create(
-        {"type": "process", "model_path": "sentence-transformers/all-MiniLM-L6-v2", "workers": 1},
+        {
+            "type": "process",
+            "model_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "workers": 1,
+        },
     )
     assert isinstance(p, ProcessEmbeddingProvider)
 
 
 @pytest.mark.asyncio
 async def test_process_embedding_provider_aclose_without_embed():
-    p = ProcessEmbeddingProvider("sentence-transformers/all-MiniLM-L6-v2", max_workers=1)
+    p = ProcessEmbeddingProvider(
+        "sentence-transformers/all-MiniLM-L6-v2", max_workers=1
+    )
     await p.aclose()
 
 

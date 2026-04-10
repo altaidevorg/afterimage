@@ -72,7 +72,10 @@ class AlpacaExporter(BaseExporter):
             user_entry = entries[i]
             asst_entry = entries[i + 1]
 
-            if user_entry.get("role") != "user" or asst_entry.get("role") != "assistant":
+            if (
+                user_entry.get("role") != "user"
+                or asst_entry.get("role") != "assistant"
+            ):
                 i += 1
                 continue
 
@@ -85,17 +88,17 @@ class AlpacaExporter(BaseExporter):
                 for hu, ha in history:
                     hist_lines.append(f"User: {hu}")
                     hist_lines.append(f"Assistant: {ha}")
-                input_parts.append(
-                    "Previous conversation:\n" + "\n".join(hist_lines)
-                )
+                input_parts.append("Previous conversation:\n" + "\n".join(hist_lines))
             if context:
                 input_parts.append(f"Context: {context}")
 
-            rows.append({
-                "instruction": user_msg,
-                "input": "\n\n".join(input_parts),
-                "output": asst_msg,
-            })
+            rows.append(
+                {
+                    "instruction": user_msg,
+                    "input": "\n\n".join(input_parts),
+                    "output": asst_msg,
+                }
+            )
 
             history.append((user_msg, asst_msg))
             i += 2

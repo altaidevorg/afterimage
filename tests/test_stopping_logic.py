@@ -1,4 +1,5 @@
 """Integration tests for stopping callbacks (require GEMINI_API_KEY)."""
+
 import os
 
 import pytest

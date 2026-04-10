@@ -10,7 +10,11 @@ MOCK_ROWS = [
     {
         "conversations": [
             {"role": "user", "content": "What is Python?", "reasoning_content": None},
-            {"role": "assistant", "content": "Python is a high-level programming language.", "reasoning_content": None},
+            {
+                "role": "assistant",
+                "content": "Python is a high-level programming language.",
+                "reasoning_content": None,
+            },
         ],
         "metadata": {},
         "instruction_context": None,
@@ -20,8 +24,16 @@ MOCK_ROWS = [
     # 2. Single-turn with document context
     {
         "conversations": [
-            {"role": "user", "content": "Summarize this document.", "reasoning_content": None},
-            {"role": "assistant", "content": "The document discusses machine learning basics.", "reasoning_content": None},
+            {
+                "role": "user",
+                "content": "Summarize this document.",
+                "reasoning_content": None,
+            },
+            {
+                "role": "assistant",
+                "content": "The document discusses machine learning basics.",
+                "reasoning_content": None,
+            },
         ],
         "metadata": {"context_id": "doc1", "context_ids": ["doc1"]},
         "instruction_context": "Machine learning is a subset of artificial intelligence.",
@@ -32,11 +44,31 @@ MOCK_ROWS = [
     {
         "conversations": [
             {"role": "user", "content": "What is OOP?", "reasoning_content": None},
-            {"role": "assistant", "content": "OOP stands for Object-Oriented Programming.", "reasoning_content": None},
-            {"role": "user", "content": "Give me an example.", "reasoning_content": None},
-            {"role": "assistant", "content": "A class Dog with methods bark() and fetch().", "reasoning_content": None},
-            {"role": "user", "content": "What about inheritance?", "reasoning_content": None},
-            {"role": "assistant", "content": "Inheritance lets a class extend another class.", "reasoning_content": None},
+            {
+                "role": "assistant",
+                "content": "OOP stands for Object-Oriented Programming.",
+                "reasoning_content": None,
+            },
+            {
+                "role": "user",
+                "content": "Give me an example.",
+                "reasoning_content": None,
+            },
+            {
+                "role": "assistant",
+                "content": "A class Dog with methods bark() and fetch().",
+                "reasoning_content": None,
+            },
+            {
+                "role": "user",
+                "content": "What about inheritance?",
+                "reasoning_content": None,
+            },
+            {
+                "role": "assistant",
+                "content": "Inheritance lets a class extend another class.",
+                "reasoning_content": None,
+            },
         ],
         "metadata": {"persona_name": "CS Student", "persona_generation_depth": 0},
         "instruction_context": "",
@@ -46,8 +78,16 @@ MOCK_ROWS = [
     # 4. Single-turn with quality scores (for DPO)
     {
         "conversations": [
-            {"role": "user", "content": "Explain REST APIs.", "reasoning_content": None},
-            {"role": "assistant", "content": "REST is an architectural style for web services.", "reasoning_content": None},
+            {
+                "role": "user",
+                "content": "Explain REST APIs.",
+                "reasoning_content": None,
+            },
+            {
+                "role": "assistant",
+                "content": "REST is an architectural style for web services.",
+                "reasoning_content": None,
+            },
         ],
         "metadata": {"context_id": "doc2"},
         "instruction_context": "",
@@ -66,8 +106,16 @@ MOCK_ROWS = [
     # 5. Another response for same prompt (different quality — for DPO pairing)
     {
         "conversations": [
-            {"role": "user", "content": "Explain REST APIs.", "reasoning_content": None},
-            {"role": "assistant", "content": "It's a thing for websites.", "reasoning_content": None},
+            {
+                "role": "user",
+                "content": "Explain REST APIs.",
+                "reasoning_content": None,
+            },
+            {
+                "role": "assistant",
+                "content": "It's a thing for websites.",
+                "reasoning_content": None,
+            },
         ],
         "metadata": {"context_id": "doc2"},
         "instruction_context": "",
@@ -97,8 +145,16 @@ MOCK_ROWS = [
     # 7. Edge: unicode, emoji, special chars
     {
         "conversations": [
-            {"role": "user", "content": "Qu'est-ce que c'est? \u00e9\u00e8\u00ea \ud83d\ude80", "reasoning_content": None},
-            {"role": "assistant", "content": 'It means "What is it?" in French.\nLine2\n"quotes" & <tags>', "reasoning_content": None},
+            {
+                "role": "user",
+                "content": "Qu'est-ce que c'est? \u00e9\u00e8\u00ea \ud83d\ude80",
+                "reasoning_content": None,
+            },
+            {
+                "role": "assistant",
+                "content": 'It means "What is it?" in French.\nLine2\n"quotes" & <tags>',
+                "reasoning_content": None,
+            },
         ],
         "metadata": {},
         "instruction_context": None,

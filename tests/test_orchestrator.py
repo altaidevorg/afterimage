@@ -8,7 +8,11 @@ from afterimage.orchestrator import Orchestrator
 from afterimage.sampling import SamplingStrategy
 from afterimage.quality_gate import QualityGate
 from afterimage.common import GeneratedInstructions
-from afterimage.providers.llm_providers import LLMResponse, ChatSession, StructuredLLMResponse
+from afterimage.providers.llm_providers import (
+    LLMResponse,
+    ChatSession,
+    StructuredLLMResponse,
+)
 from afterimage.types import ConversationEntry, Role
 
 
@@ -70,6 +74,7 @@ class TestConversationGeneratorWiring:
 
     def test_has_orchestrator(self):
         from afterimage.providers import llm_providers
+
         original = llm_providers.LLMFactory.create
         llm_providers.LLMFactory.create = MagicMock(return_value=MockLLMProvider())
         try:
@@ -84,6 +89,7 @@ class TestConversationGeneratorWiring:
 
     def test_has_sampling_strategy(self):
         from afterimage.providers import llm_providers
+
         original = llm_providers.LLMFactory.create
         llm_providers.LLMFactory.create = MagicMock(return_value=MockLLMProvider())
         try:
@@ -99,6 +105,7 @@ class TestConversationGeneratorWiring:
 
     def test_has_quality_gate(self):
         from afterimage.providers import llm_providers
+
         original = llm_providers.LLMFactory.create
         llm_providers.LLMFactory.create = MagicMock(return_value=MockLLMProvider())
         try:
@@ -115,6 +122,7 @@ class TestConversationGeneratorWiring:
 
     def test_evaluator_syncs_with_quality_gate(self):
         from afterimage.providers import llm_providers
+
         original = llm_providers.LLMFactory.create
         llm_providers.LLMFactory.create = MagicMock(return_value=MockLLMProvider())
         try:
@@ -138,6 +146,7 @@ class TestConversationGeneratorWiring:
     @pytest.mark.asyncio
     async def test_generate_delegates_to_orchestrator(self):
         from afterimage.providers import llm_providers
+
         original = llm_providers.LLMFactory.create
         llm_providers.LLMFactory.create = MagicMock(return_value=MockLLMProvider())
         try:

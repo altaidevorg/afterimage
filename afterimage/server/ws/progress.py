@@ -52,7 +52,9 @@ async def sse_progress_generator(
     try:
         while True:
             try:
-                payload = await asyncio.wait_for(queue.get(), timeout=heartbeat_interval)
+                payload = await asyncio.wait_for(
+                    queue.get(), timeout=heartbeat_interval
+                )
             except asyncio.TimeoutError:
                 # Send heartbeat to keep connection alive
                 yield {"event": "heartbeat", "data": "{}"}

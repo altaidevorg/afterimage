@@ -136,7 +136,9 @@ def create_output_section(headers, label="Generated Data"):
             wrap=True,
         )
         # Hidden download component (still needed for logic but hidden from UI)
-        download_output = gr.File(label="Download JSONL Dataset", interactive=False, visible=False)
+        download_output = gr.File(
+            label="Download JSONL Dataset", interactive=False, visible=False
+        )
 
     return status_output, results_output, download_output
 

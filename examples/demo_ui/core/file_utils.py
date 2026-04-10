@@ -1,6 +1,7 @@
 """
 File operation utilities for the demo UI.
 """
+
 import os
 import shutil
 import zipfile
@@ -16,9 +17,10 @@ from afterimage.providers import JSONLDocumentProvider
 
 # --- Text Processing Classes ---
 
+
 class HTMLTextExtractor(HTMLParser):
     """Extract plain text from HTML content."""
-    
+
     def __init__(self):
         super().__init__()
         self.result = []
@@ -33,7 +35,7 @@ class HTMLTextExtractor(HTMLParser):
 
 class SimpleTextSplitter:
     """Simple text chunking with overlap."""
-    
+
     def __init__(self, chunk_size: int = 1000, overlap: int = 100):
         self.chunk_size = chunk_size
         self.overlap = overlap
@@ -63,47 +65,54 @@ class SimpleTextSplitter:
 
 # --- File Operations ---
 
-def merge_dataset_files(source_files: List[Union[str, Any]], dest_dir: str, filename: str = "toolcalldataset.jsonl") -> str:
+
+def merge_dataset_files(
+    source_files: List[Union[str, Any]],
+    dest_dir: str,
+    filename: str = "toolcalldataset.jsonl",
+) -> str:
     """
     Merge multiple dataset files into a single temporary training file.
-    
+
     Args:
         source_files: List of file paths or file objects
         dest_dir: Destination directory path
         filename: Target filename (default: toolcalldataset.jsonl)
-        
+
     Returns:
         Path to the merged file
     """
     os.makedirs(dest_dir, exist_ok=True)
     dest_path = os.path.join(dest_dir, filename)
-    
-    with open(dest_path, 'wb') as outfile:
+
+    with open(dest_path, "wb") as outfile:
         for f in source_files:
             source_path = f if isinstance(f, str) else f.name
-            with open(source_path, 'rb') as infile:
+            with open(source_path, "rb") as infile:
                 shutil.copyfileobj(infile, outfile)
                 # Ensure newline between files if missing
-                outfile.write(b'\n')
-                
+                outfile.write(b"\n")
+
     return dest_path
 
 
-def copy_dataset_file(source_file, dest_dir: str, filename: str = "toolcalldataset.jsonl") -> str:
+def copy_dataset_file(
+    source_file, dest_dir: str, filename: str = "toolcalldataset.jsonl"
+) -> str:
     """
     Copy a dataset file to the training data directory.
-    
+
     Args:
         source_file: File path string or file object with .name attribute
         dest_dir: Destination directory path
         filename: Target filename (default: toolcalldataset.jsonl)
-        
+
     Returns:
         Path to the copied file
     """
     os.makedirs(dest_dir, exist_ok=True)
     dest_path = os.path.join(dest_dir, filename)
-    
+
     # Handle both string paths and file objects
     source_path = source_file if isinstance(source_file, str) else source_file.name
     shutil.copy(source_path, dest_path)
@@ -113,34 +122,34 @@ def copy_dataset_file(source_file, dest_dir: str, filename: str = "toolcalldatas
 def create_model_zip(model_dir: str, output_name: str = "model.zip") -> Optional[str]:
     """
     Create a zip file from a model directory.
-    
+
     Args:
         model_dir: Path to the model directory
         output_name: Name for the output zip file
-        
+
     Returns:
         Path to the created zip file, or None if failed
     """
     if not os.path.exists(model_dir):
         return None
-    
+
     if not os.path.isdir(model_dir):
         return None
-    
+
     try:
         zip_path = os.path.join(os.path.dirname(model_dir), output_name)
-        
+
         # Remove old zip if exists
         if os.path.exists(zip_path):
             os.remove(zip_path)
-        
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             for root, dirs, files in os.walk(model_dir):
                 for file in files:
                     file_path = os.path.join(root, file)
                     arcname = os.path.relpath(file_path, os.path.dirname(model_dir))
                     zipf.write(file_path, arcname)
-        
+
         return zip_path
     except Exception as e:
         print(f"Error creating zip: {e}")
@@ -150,7 +159,7 @@ def create_model_zip(model_dir: str, output_name: str = "model.zip") -> Optional
 def clean_temp_files(*file_paths):
     """
     Remove temporary files.
-    
+
     Args:
         *file_paths: Variable number of file paths to remove
     """
@@ -164,18 +173,19 @@ def clean_temp_files(*file_paths):
 
 # --- Document Processing ---
 
+
 def extract_text_from_file(file_path: Path) -> str:
     """
     Extract text content from various file formats.
-    
+
     Supports: .docx, .rtf, .html, .htm, and plain text files.
-    
+
     Args:
         file_path: Path to the file
-        
+
     Returns:
         Extracted text content
-        
+
     Raises:
         ImportError: If required library is not installed
         ValueError: If no text could be extracted
@@ -249,16 +259,16 @@ def create_document_provider_from_file(
         - .docx: Word documents
         - .rtf: Rich Text Format
         - .html: HTML files
-        
+
     Args:
         file_path: Path to the file
         key: Column/key name for structured formats
         chunk_size: Size of text chunks for raw documents
         chunk_overlap: Overlap between chunks
-        
+
     Returns:
         DocumentProvider instance
-        
+
     Raises:
         ValueError: If file format is unsupported or column not found
     """

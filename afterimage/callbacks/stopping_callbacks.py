@@ -87,11 +87,20 @@ class BudgetStoppingCallback(BaseStoppingCallback):
             return False
 
         report = state.monitor.get_total_token_usage()
-        if self.max_total_tokens is not None and report.total_tokens >= self.max_total_tokens:
+        if (
+            self.max_total_tokens is not None
+            and report.total_tokens >= self.max_total_tokens
+        ):
             return True
-        if self.max_completion_tokens is not None and report.total_completion_tokens >= self.max_completion_tokens:
+        if (
+            self.max_completion_tokens is not None
+            and report.total_completion_tokens >= self.max_completion_tokens
+        ):
             return True
-        if self.max_prompt_tokens is not None and report.total_prompt_tokens >= self.max_prompt_tokens:
+        if (
+            self.max_prompt_tokens is not None
+            and report.total_prompt_tokens >= self.max_prompt_tokens
+        ):
             return True
         return False
 

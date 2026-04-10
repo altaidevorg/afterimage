@@ -1,4 +1,5 @@
 """Tests for AsyncConversationGenerator."""
+
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 
@@ -173,7 +174,9 @@ async def test_async_conversation_generator_rebuilds_row_after_evaluator_retry()
                             coherence=EvaluationEntrySchema(feedback="bad", score=0.0),
                             factuality=EvaluationEntrySchema(feedback="bad", score=0.0),
                             grounding=EvaluationEntrySchema(feedback="bad", score=0.0),
-                            helpfulness=EvaluationEntrySchema(feedback="bad", score=0.0),
+                            helpfulness=EvaluationEntrySchema(
+                                feedback="bad", score=0.0
+                            ),
                             relevance=EvaluationEntrySchema(feedback="bad", score=0.0),
                             overall_grade=GradeSchema.BAD,
                         ),

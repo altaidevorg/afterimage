@@ -19,6 +19,7 @@ from .storage.result_store import ResultStore
 def create_app(config: ServerConfig | None = None) -> FastAPI:
     if config is None:
         from .config import get_config
+
         config = get_config()
 
     job_store = JobStore(db_path=config.job_db_path)

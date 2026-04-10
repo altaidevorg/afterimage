@@ -73,7 +73,14 @@ class TestPreferenceCommand:
         """--format flag should override config format in dry run."""
         result = runner.invoke(
             main,
-            ["preference", "-c", str(preference_config), "--dry-run", "--format", "orpo"],
+            [
+                "preference",
+                "-c",
+                str(preference_config),
+                "--dry-run",
+                "--format",
+                "orpo",
+            ],
         )
         assert result.exit_code == 0
         assert "orpo" in result.output.lower()

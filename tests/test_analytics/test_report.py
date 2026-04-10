@@ -29,7 +29,12 @@ def full_report():
             unique_contexts=10,
         ),
         personas=PersonaStats(
-            persona_counts={"Student": 40, "Developer": 30, "Teacher": 20, "Beginner": 10},
+            persona_counts={
+                "Student": 40,
+                "Developer": 30,
+                "Teacher": 20,
+                "Beginner": 10,
+            },
             depth_distribution={0: 60, 1: 30, 2: 10},
         ),
         coverage=CoverageStats(
@@ -42,7 +47,18 @@ def full_report():
             grade_counts={"perfect": 20, "good": 50, "needs_improvement": 25, "bad": 5},
             avg_scores={"coherence": 0.85, "factuality": 0.78, "relevance": 0.82},
             score_histogram=[2, 5, 10, 20, 30, 15, 10, 5, 2, 1],
-            score_bins=["0.0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"],
+            score_bins=[
+                "0.0",
+                "0.1",
+                "0.2",
+                "0.3",
+                "0.4",
+                "0.5",
+                "0.6",
+                "0.7",
+                "0.8",
+                "0.9",
+            ],
         ),
         diversity=DiversityStats(
             vocabulary_size=1200,
@@ -108,7 +124,10 @@ class TestGenerateReport:
     def test_self_contained(self, full_report):
         html = generate_report(full_report)
         # No external links
-        assert "http" not in html.split("<body>")[1].split("</body>")[0] or "localhost" not in html
+        assert (
+            "http" not in html.split("<body>")[1].split("</body>")[0]
+            or "localhost" not in html
+        )
 
     def test_writes_file(self, full_report, tmp_path):
         out = tmp_path / "report.html"

@@ -91,9 +91,7 @@ class BaseExporter(ABC):
                     row = json.loads(line)
                 except json.JSONDecodeError:
                     result.skipped += 1
-                    result.warnings.append(
-                        f"Line {result.total_input}: invalid JSON"
-                    )
+                    result.warnings.append(f"Line {result.total_input}: invalid JSON")
                     continue
 
                 try:
@@ -102,9 +100,7 @@ class BaseExporter(ABC):
                     )
                 except Exception as exc:
                     result.skipped += 1
-                    result.warnings.append(
-                        f"Line {result.total_input}: {exc}"
-                    )
+                    result.warnings.append(f"Line {result.total_input}: {exc}")
                     continue
 
                 if not converted:
@@ -114,9 +110,7 @@ class BaseExporter(ABC):
                 for out_row in converted:
                     warnings = self.validate_output(out_row)
                     result.warnings.extend(warnings)
-                    fout.write(
-                        json.dumps(out_row, ensure_ascii=False) + "\n"
-                    )
+                    fout.write(json.dumps(out_row, ensure_ascii=False) + "\n")
                     result.total_output += 1
 
         return result

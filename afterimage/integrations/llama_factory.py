@@ -46,11 +46,16 @@ class LLaMAFactoryExporter(BaseExporter):
         while i < len(entries) - 1:
             user_entry = entries[i]
             asst_entry = entries[i + 1]
-            if user_entry.get("role") == "user" and asst_entry.get("role") == "assistant":
-                pairs.append((
-                    user_entry.get("content", ""),
-                    asst_entry.get("content", ""),
-                ))
+            if (
+                user_entry.get("role") == "user"
+                and asst_entry.get("role") == "assistant"
+            ):
+                pairs.append(
+                    (
+                        user_entry.get("content", ""),
+                        asst_entry.get("content", ""),
+                    )
+                )
                 i += 2
             else:
                 i += 1

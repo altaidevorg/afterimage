@@ -107,8 +107,12 @@ class LocalLLMProvider:
 
             return LLMResponse(
                 text=assistant_message.content or "",
-                prompt_token_count=response.usage.prompt_tokens if response.usage else 0,
-                completion_token_count=response.usage.completion_tokens if response.usage else 0,
+                prompt_token_count=response.usage.prompt_tokens
+                if response.usage
+                else 0,
+                completion_token_count=response.usage.completion_tokens
+                if response.usage
+                else 0,
                 total_token_count=response.usage.total_tokens if response.usage else 0,
                 finish_reason=response.choices[0].finish_reason,
                 model_name=self.model_name,
@@ -147,8 +151,12 @@ class LocalLLMProvider:
 
             return LLMResponse(
                 text=assistant_message.content or "",
-                prompt_token_count=response.usage.prompt_tokens if response.usage else 0,
-                completion_token_count=response.usage.completion_tokens if response.usage else 0,
+                prompt_token_count=response.usage.prompt_tokens
+                if response.usage
+                else 0,
+                completion_token_count=response.usage.completion_tokens
+                if response.usage
+                else 0,
                 total_token_count=response.usage.total_tokens if response.usage else 0,
                 finish_reason=response.choices[0].finish_reason,
                 model_name=self.model_name,
@@ -186,8 +194,12 @@ class LocalLLMProvider:
             return StructuredLLMResponse(
                 text=assistant_message.content or "",
                 parsed=assistant_message.parsed,
-                prompt_token_count=response.usage.prompt_tokens if response.usage else 0,
-                completion_token_count=response.usage.completion_tokens if response.usage else 0,
+                prompt_token_count=response.usage.prompt_tokens
+                if response.usage
+                else 0,
+                completion_token_count=response.usage.completion_tokens
+                if response.usage
+                else 0,
                 total_token_count=response.usage.total_tokens if response.usage else 0,
                 finish_reason=response.choices[0].finish_reason,
                 model_name=self.model_name,
@@ -225,8 +237,12 @@ class LocalLLMProvider:
             return StructuredLLMResponse(
                 text=assistant_message.content or "",
                 parsed=assistant_message.parsed,
-                prompt_token_count=response.usage.prompt_tokens if response.usage else 0,
-                completion_token_count=response.usage.completion_tokens if response.usage else 0,
+                prompt_token_count=response.usage.prompt_tokens
+                if response.usage
+                else 0,
+                completion_token_count=response.usage.completion_tokens
+                if response.usage
+                else 0,
                 total_token_count=response.usage.total_tokens if response.usage else 0,
                 finish_reason=response.choices[0].finish_reason,
                 model_name=self.model_name,

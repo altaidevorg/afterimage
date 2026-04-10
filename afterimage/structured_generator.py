@@ -432,6 +432,7 @@ class StructuredGenerator(BaseGenerator):
             max_concurrency,
         )
 
+
 # temporary alias for old imports
 AsyncStructuredGenerator = StructuredGenerator
 

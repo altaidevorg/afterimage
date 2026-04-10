@@ -21,11 +21,13 @@ if TYPE_CHECKING:
 
 
 # Grades that trigger a retry
-_RETRY_GRADES = frozenset({
-    GradeSchema.NOT_ACCEPTABLE,
-    GradeSchema.BAD,
-    GradeSchema.NEEDS_IMPROVEMENT,
-})
+_RETRY_GRADES = frozenset(
+    {
+        GradeSchema.NOT_ACCEPTABLE,
+        GradeSchema.BAD,
+        GradeSchema.NEEDS_IMPROVEMENT,
+    }
+)
 
 
 @dataclass

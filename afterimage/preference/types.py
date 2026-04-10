@@ -27,7 +27,9 @@ class ScoredResponse(BaseModel):
 class PreferencePair(BaseModel):
     """A (chosen, rejected) pair for preference training."""
 
-    prompt: str = Field(..., description="The user prompt that generated both responses")
+    prompt: str = Field(
+        ..., description="The user prompt that generated both responses"
+    )
     chosen: ScoredResponse
     rejected: ScoredResponse
     shared_prefix: Optional[List[Dict[str, Any]]] = Field(
@@ -40,7 +42,9 @@ class PreferencePair(BaseModel):
 class PreferenceConfig(BaseModel):
     """Configuration for preference pair generation."""
 
-    num_pairs: int = Field(default=10, description="Number of preference pairs to generate")
+    num_pairs: int = Field(
+        default=10, description="Number of preference pairs to generate"
+    )
     num_responses: int = Field(
         default=2, description="Responses generated per prompt (min 2)"
     )

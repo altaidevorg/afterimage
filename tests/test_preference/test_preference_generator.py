@@ -138,12 +138,14 @@ def _make_mock_generator(respondent_prompt: str = "You are a helpful assistant."
     gen.instruction_generator_callback = None
     gen.respondent_prompt_modifier = None
     gen.ainitialize = AsyncMock()
+
     # go() returns a minimal single-turn conversation
     async def _go(*args, **kwargs):
         return [
             ConversationEntry(role=Role.USER, content="Test question"),
             ConversationEntry(role=Role.ASSISTANT, content="Test answer"),
         ]
+
     gen.go = _go
     return gen
 
@@ -192,9 +194,7 @@ async def test_generates_correct_num_responses():
     pref_gen = _make_pref_gen(strategy="temperature", num_responses=2)
 
     callback = MagicMock()
-    callback.acall = AsyncMock(
-        return_value=_make_instructions(["What is Python?"])
-    )
+    callback.acall = AsyncMock(return_value=_make_instructions(["What is Python?"]))
     pref_gen._gen.instruction_generator_callback = callback
 
     scored_counts = []
@@ -279,9 +279,7 @@ async def test_score_gap_filtering():
     pref_gen2._build_pair = _limited_build
 
     callback2 = MagicMock()
-    callback2.acall = AsyncMock(
-        return_value=_make_instructions(["Q1", "Q2", "Q3"])
-    )
+    callback2.acall = AsyncMock(return_value=_make_instructions(["Q1", "Q2", "Q3"]))
     try:
         pairs2, analytics2 = await asyncio.wait_for(
             pref_gen2.generate(num_pairs=1, instruction_generator_callback=callback2),
@@ -562,7 +560,9 @@ async def test_failed_response_skipped_not_crash():
     class _FailingLLM:
         call_count = 0
 
-        async def agenerate_content(self, prompt: str, temperature: float = 0.7, **kwargs):
+        async def agenerate_content(
+            self, prompt: str, temperature: float = 0.7, **kwargs
+        ):
             self.__class__.call_count += 1
             if self.__class__.call_count % 2 == 0:
                 raise RuntimeError("Simulated LLM failure")

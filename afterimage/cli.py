@@ -28,7 +28,9 @@ def main():
 
 @main.command()
 @click.option(
-    "-c", "--config", "config_path",
+    "-c",
+    "--config",
+    "config_path",
     required=True,
     type=click.Path(exists=True),
     help="Path to YAML config file.",
@@ -108,11 +110,15 @@ def _print_plan(cfg: AfterImageConfig) -> None:
     conc = cfg.generation.max_concurrency or "provider default"
     click.echo(f"  Concurrency:    {conc}")
     if cfg.documents:
-        click.echo(f"  Documents:      {cfg.documents.provider} @ {cfg.documents.path or cfg.documents.collection}")
+        click.echo(
+            f"  Documents:      {cfg.documents.provider} @ {cfg.documents.path or cfg.documents.collection}"
+        )
     else:
         click.echo("  Documents:      none")
     click.echo(f"  Personas:       {'enabled' if cfg.personas.enabled else 'disabled'}")
-    click.echo(f"  Auto-improve:   {'enabled' if cfg.quality.auto_improve else 'disabled'}")
+    click.echo(
+        f"  Auto-improve:   {'enabled' if cfg.quality.auto_improve else 'disabled'}"
+    )
     click.echo(f"  Output:         {cfg.output.path}")
 
 
@@ -152,7 +158,9 @@ def _handle_generation_error(exc: Exception, cfg: AfterImageConfig) -> None:
 
 @main.command()
 @click.option(
-    "-c", "--config", "config_path",
+    "-c",
+    "--config",
+    "config_path",
     required=True,
     type=click.Path(exists=True),
     help="Path to YAML config file.",
@@ -204,6 +212,7 @@ def validate(config_path: str):
     if cfg.model.provider == "local" and cfg.model.base_url:
         try:
             import urllib.request
+
             req = urllib.request.Request(
                 cfg.model.base_url.rstrip("/") + "/models",
                 method="GET",
@@ -239,23 +248,30 @@ def _check_fail(label: str, reason: str) -> None:
 
 @main.command()
 @click.option(
-    "-i", "--input", "input_path",
+    "-i",
+    "--input",
+    "input_path",
     type=click.Path(exists=True),
     default=None,
     help="Path to AfterImage JSONL dataset.",
 )
 @click.option(
-    "-f", "--format", "formats",
+    "-f",
+    "--format",
+    "formats",
     multiple=True,
     help="Target format(s). Repeat for multiple: -f sharegpt -f alpaca",
 )
 @click.option(
-    "--all", "export_all",
+    "--all",
+    "export_all",
     is_flag=True,
     help="Export to all available formats.",
 )
 @click.option(
-    "-o", "--output-dir", "output_dir",
+    "-o",
+    "--output-dir",
+    "output_dir",
     default=None,
     type=click.Path(),
     help="Output directory (default: same as input file).",
@@ -288,8 +304,17 @@ def _check_fail(label: str, reason: str) -> None:
     is_flag=True,
     help="Show all available export formats.",
 )
-def export(input_path, formats, export_all, output_dir, split, shuffle, seed,
-           system_prompt, list_formats):
+def export(
+    input_path,
+    formats,
+    export_all,
+    output_dir,
+    split,
+    shuffle,
+    seed,
+    system_prompt,
+    list_formats,
+):
     """Convert AfterImage dataset to training tool formats."""
     from .integrations import get_exporter, list_formats as _list_fmts
 
@@ -321,7 +346,13 @@ def export(input_path, formats, export_all, output_dir, split, shuffle, seed,
 
         if split is not None:
             r = _export_with_split(
-                exporter, inp, out_dir, fmt, split, shuffle, seed,
+                exporter,
+                inp,
+                out_dir,
+                fmt,
+                split,
+                shuffle,
+                seed,
                 system_prompt=system_prompt,
             )
             results.append(r)
@@ -357,13 +388,17 @@ def export(input_path, formats, export_all, output_dir, split, shuffle, seed,
 
 @main.command()
 @click.option(
-    "-i", "--input", "input_path",
+    "-i",
+    "--input",
+    "input_path",
     required=True,
     type=click.Path(exists=True),
     help="Path to AfterImage JSONL dataset.",
 )
 @click.option(
-    "-o", "--output", "output_path",
+    "-o",
+    "--output",
+    "output_path",
     default=None,
     type=click.Path(),
     help="Output HTML report path. Default: input path with .html extension.",
@@ -391,13 +426,17 @@ def analyze(input_path: str, output_path: str | None):
 
 @main.command()
 @click.option(
-    "-i", "--input", "input_path",
+    "-i",
+    "--input",
+    "input_path",
     required=True,
     type=click.Path(exists=True),
     help="Path to AfterImage JSONL dataset.",
 )
 @click.option(
-    "-f", "--format", "fmt",
+    "-f",
+    "--format",
+    "fmt",
     default="messages",
     help="Export format before pushing (default: messages).",
 )
@@ -424,7 +463,8 @@ def push(input_path, fmt, repo, private, split):
     except ImportError:
         click.secho(
             "Install hub extra: pip install 'afterimage[hub]'",
-            fg="red", err=True,
+            fg="red",
+            err=True,
         )
         raise SystemExit(1)
 
@@ -444,7 +484,13 @@ def push(input_path, fmt, repo, private, split):
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         r = _export_with_split(
-            exporter, inp, tmp_dir, fmt, split, shuffle=True, seed=42,
+            exporter,
+            inp,
+            tmp_dir,
+            fmt,
+            split,
+            shuffle=True,
+            seed=42,
         )
 
         train_path = tmp_dir / f"{inp.stem}_{fmt}_train.jsonl"
@@ -477,12 +523,14 @@ def push(input_path, fmt, repo, private, split):
         n_val = sum(1 for _ in open(val_path))
 
         import importlib.metadata
+
         try:
             version = importlib.metadata.version("afterimage")
         except importlib.metadata.PackageNotFoundError:
             version = "0.0.0"
 
         from datetime import date
+
         card = (
             "---\nlicense: apache-2.0\ntask_categories:\n  - conversational\n"
             "tags:\n  - synthetic\n  - afterimage\n---\n"
@@ -514,7 +562,9 @@ def push(input_path, fmt, repo, private, split):
 
 @main.command()
 @click.option(
-    "-c", "--config", "config_path",
+    "-c",
+    "--config",
+    "config_path",
     required=True,
     type=click.Path(exists=True),
     help="Path to YAML config file.",
@@ -531,13 +581,16 @@ def push(input_path, fmt, repo, private, split):
     help="Override config preference.num_pairs.",
 )
 @click.option(
-    "--format", "output_format",
+    "--format",
+    "output_format",
     default=None,
     type=click.Choice(["dpo", "chat_dpo", "ultrafeedback", "anthropic_hh", "orpo"]),
     help="Override output format.",
 )
 @click.option(
-    "-o", "--output", "output_path",
+    "-o",
+    "--output",
+    "output_path",
     default=None,
     type=click.Path(),
     help="Override output file path.",
@@ -548,7 +601,9 @@ def push(input_path, fmt, repo, private, split):
     default=False,
     help="Save full generation log with all scored responses.",
 )
-def preference(config_path: str, dry_run: bool, num_pairs, output_format, output_path, save_log):
+def preference(
+    config_path: str, dry_run: bool, num_pairs, output_format, output_path, save_log
+):
     """Generate DPO/RLHF preference pairs from a config file."""
     try:
         cfg = load_config(config_path)
@@ -645,8 +700,10 @@ def preference(config_path: str, dry_run: bool, num_pairs, output_format, output
     if analytics.total_attempted > 0:
         click.echo(f"  Attempted:    {analytics.total_attempted}")
         click.echo(f"  Valid pairs:  {analytics.total_valid}")
-        click.echo(f"  Discarded:    {analytics.total_discarded} "
-                   f"({analytics.discard_rate:.1%} discard rate)")
+        click.echo(
+            f"  Discarded:    {analytics.total_discarded} "
+            f"({analytics.discard_rate:.1%} discard rate)"
+        )
     for warning in analytics.warnings:
         click.secho(f"  Warning: {warning}", fg="yellow")
 
@@ -664,7 +721,9 @@ def _print_preference_plan(cfg: AfterImageConfig, pref_config) -> None:
     click.echo(f"  Output path:    {pref_config.output_path}")
     click.echo(f"  Save log:       {'yes' if pref_config.save_log else 'no'}")
     if cfg.documents:
-        click.echo(f"  Documents:      {cfg.documents.provider} @ {cfg.documents.path or cfg.documents.collection}")
+        click.echo(
+            f"  Documents:      {cfg.documents.provider} @ {cfg.documents.path or cfg.documents.collection}"
+        )
     else:
         click.echo("  Documents:      none")
 
@@ -706,8 +765,13 @@ def _run_auto_export(cfg: AfterImageConfig) -> None:
             exporter = get_exporter(fmt)
             if export_cfg.split is not None:
                 _export_with_split(
-                    exporter, inp, out_dir, fmt,
-                    export_cfg.split, export_cfg.shuffle, export_cfg.seed,
+                    exporter,
+                    inp,
+                    out_dir,
+                    fmt,
+                    export_cfg.split,
+                    export_cfg.shuffle,
+                    export_cfg.seed,
                 )
             else:
                 out_path = out_dir / f"{inp.stem}_{fmt}.jsonl"
@@ -721,9 +785,7 @@ def _print_formats_table(formats: list[dict]) -> None:
     """Print a formatted table of available export formats."""
     click.echo("Available export formats:")
     click.echo("-" * 72)
-    click.echo(
-        f"{'Name':<16} {'Multi-turn':<12} {'System':<8} {'Tools':<8} Used by"
-    )
+    click.echo(f"{'Name':<16} {'Multi-turn':<12} {'System':<8} {'Tools':<8} Used by")
     click.echo("-" * 72)
     for f in formats:
         mt = "yes" if f["multi_turn"] else "-"
@@ -784,7 +846,8 @@ def _export_with_split(
                 try:
                     row = json.loads(raw_line)
                     converted = exporter.convert_conversation(
-                        row, system_prompt=system_prompt,
+                        row,
+                        system_prompt=system_prompt,
                     )
                     for out_row in converted:
                         fout.write(json.dumps(out_row, ensure_ascii=False) + "\n")

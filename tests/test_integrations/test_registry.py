@@ -5,7 +5,16 @@ import pytest
 from afterimage.integrations import EXPORTERS, get_exporter, list_formats
 
 
-EXPECTED_FORMATS = ["alpaca", "dpo", "llama_factory", "messages", "oumi", "openai", "raw", "sharegpt"]
+EXPECTED_FORMATS = [
+    "alpaca",
+    "dpo",
+    "llama_factory",
+    "messages",
+    "oumi",
+    "openai",
+    "raw",
+    "sharegpt",
+]
 
 
 class TestRegistry:

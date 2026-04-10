@@ -124,7 +124,9 @@ class ContextualInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
 
         # set the number of instructions to be generated if it has a placeholder for it
         if "{n_instructions}" in self.prompt:
-            self.prompt = self.prompt.replace("{n_instructions}", str(self.n_instructions))
+            self.prompt = self.prompt.replace(
+                "{n_instructions}", str(self.n_instructions)
+            )
 
         self.model_name = model_name if model_name is not None else default_model_name
         self.model_provider_name = model_provider_name
@@ -340,7 +342,6 @@ Ask the questions in the same language as this context.
                 .strip()
             )
             if self.monitor:
-              
                 self.monitor.track_generation(
                     duration=time.time() - start_time,
                     success=True,
@@ -501,7 +502,10 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
                 None,
             )
 
-        if isinstance(target_context_usage_count, int) and target_context_usage_count > 0:
+        if (
+            isinstance(target_context_usage_count, int)
+            and target_context_usage_count > 0
+        ):
             self._persona_target_per_document = (
                 self._resolve_persona_target_from_context_usage(
                     target_context_usage_count
@@ -575,9 +579,7 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
             )
             return PersonaSelectionState(mode="cycle", active_pool=active_pool)
 
-        max_depth = max(
-            candidate.generation_depth for candidate in persona_candidates
-        )
+        max_depth = max(candidate.generation_depth for candidate in persona_candidates)
         depth_counts = Counter(
             candidate.generation_depth for candidate in persona_candidates
         )
@@ -629,7 +631,9 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
         """
         random_contexts, persona_candidate = self._sample()
         persona = (
-            persona_candidate.text if persona_candidate is not None else "A curious user"
+            persona_candidate.text
+            if persona_candidate is not None
+            else "A curious user"
         )
         persona_generation_depth = (
             persona_candidate.generation_depth
@@ -666,7 +670,9 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
         """Generates instructions based on the provided prompt, sampled context and persona asynchronously."""
         random_contexts, persona_candidate = self._sample()
         persona = (
-            persona_candidate.text if persona_candidate is not None else "A curious user"
+            persona_candidate.text
+            if persona_candidate is not None
+            else "A curious user"
         )
         persona_generation_depth = (
             persona_candidate.generation_depth
@@ -814,7 +820,9 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
         """Generates instructions that require tool calls."""
         random_contexts, persona_candidate = self._sample()
         persona = (
-            persona_candidate.text if persona_candidate is not None else "A curious user"
+            persona_candidate.text
+            if persona_candidate is not None
+            else "A curious user"
         )
         persona_generation_depth = (
             persona_candidate.generation_depth
@@ -857,7 +865,9 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
         """Generates instructions that require tool calls asynchronously."""
         random_contexts, persona_candidate = self._sample()
         persona = (
-            persona_candidate.text if persona_candidate is not None else "A curious user"
+            persona_candidate.text
+            if persona_candidate is not None
+            else "A curious user"
         )
         persona_generation_depth = (
             persona_candidate.generation_depth
@@ -903,4 +913,3 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
     async def acreate_correspondent_prompt(self, respondent_prompt: str) -> str:
         """Create a prompt for the correspondent asynchronously."""
         return self.create_correspondent_prompt(respondent_prompt)
-        

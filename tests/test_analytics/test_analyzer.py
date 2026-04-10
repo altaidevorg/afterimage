@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from afterimage.analytics.analyzer import DatasetAnalyzer, _word_tokenize, _make_histogram
+from afterimage.analytics.analyzer import (
+    DatasetAnalyzer,
+    _word_tokenize,
+    _make_histogram,
+)
 from afterimage.analytics.models import DatasetReport
 
 
@@ -48,11 +52,41 @@ def _make_row(
 @pytest.fixture
 def sample_rows():
     return [
-        _make_row("What is Python?", "A programming language.", persona="Student", context_id="doc1", depth=0),
-        _make_row("Explain OOP", "Object-oriented programming...", persona="Student", context_id="doc1", depth=0),
-        _make_row("How does async work?", "Async allows concurrent...", persona="Developer", context_id="doc2", depth=1),
-        _make_row("What is REST?", "Representational state transfer.", persona="Beginner", context_id="doc3", depth=0),
-        _make_row("What about GraphQL?", "A query language for APIs.", persona="Developer", context_id="doc2", depth=1),
+        _make_row(
+            "What is Python?",
+            "A programming language.",
+            persona="Student",
+            context_id="doc1",
+            depth=0,
+        ),
+        _make_row(
+            "Explain OOP",
+            "Object-oriented programming...",
+            persona="Student",
+            context_id="doc1",
+            depth=0,
+        ),
+        _make_row(
+            "How does async work?",
+            "Async allows concurrent...",
+            persona="Developer",
+            context_id="doc2",
+            depth=1,
+        ),
+        _make_row(
+            "What is REST?",
+            "Representational state transfer.",
+            persona="Beginner",
+            context_id="doc3",
+            depth=0,
+        ),
+        _make_row(
+            "What about GraphQL?",
+            "A query language for APIs.",
+            persona="Developer",
+            context_id="doc2",
+            depth=1,
+        ),
     ]
 
 

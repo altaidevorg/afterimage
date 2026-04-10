@@ -1,10 +1,12 @@
 """
 Configuration and environment management for the demo UI.
 """
+
 import os
 
 
 # --- API Configuration ---
+
 
 def get_api_key() -> str:
     """
@@ -20,6 +22,7 @@ def get_api_key() -> str:
 
 
 # --- Path Configuration ---
+
 
 def get_training_dir() -> str:
     """Get the path to the training directory."""
@@ -39,6 +42,7 @@ def get_datasets_dir() -> str:
 
 
 # --- Environment Setup ---
+
 
 def setup_environment():
     """Set up environment variables for the application."""

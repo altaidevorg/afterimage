@@ -45,7 +45,9 @@ def sample_jsonl(tmp_path):
 class TestAnalyzeCommand:
     def test_basic_analyze(self, runner, sample_jsonl, tmp_path):
         out = tmp_path / "report.html"
-        result = runner.invoke(main, ["analyze", "-i", str(sample_jsonl), "-o", str(out)])
+        result = runner.invoke(
+            main, ["analyze", "-i", str(sample_jsonl), "-o", str(out)]
+        )
         assert result.exit_code == 0
         assert out.exists()
         assert "Report saved" in result.output
@@ -73,12 +75,15 @@ class TestAutoAnalyzeConfig:
         from afterimage.config import load_config
 
         cfg_file = tmp_path / "config.yaml"
-        cfg_file.write_text(textwrap.dedent("""
+        cfg_file.write_text(
+            textwrap.dedent("""
             respondent:
               system_prompt: "test"
             analytics:
               auto_analyze: true
-        """), encoding="utf-8")
+        """),
+            encoding="utf-8",
+        )
         cfg = load_config(cfg_file)
         assert cfg.analytics.auto_analyze is True
 
@@ -86,10 +91,13 @@ class TestAutoAnalyzeConfig:
         from afterimage.config import load_config
 
         cfg_file = tmp_path / "config.yaml"
-        cfg_file.write_text(textwrap.dedent("""
+        cfg_file.write_text(
+            textwrap.dedent("""
             respondent:
               system_prompt: "test"
-        """), encoding="utf-8")
+        """),
+            encoding="utf-8",
+        )
         cfg = load_config(cfg_file)
         assert cfg.analytics.auto_analyze is False
 
@@ -97,12 +105,15 @@ class TestAutoAnalyzeConfig:
         from afterimage.config import load_config
 
         cfg_file = tmp_path / "config.yaml"
-        cfg_file.write_text(textwrap.dedent("""
+        cfg_file.write_text(
+            textwrap.dedent("""
             respondent:
               system_prompt: "test"
             analytics:
               auto_analyze: true
               output_path: /tmp/my_report.html
-        """), encoding="utf-8")
+        """),
+            encoding="utf-8",
+        )
         cfg = load_config(cfg_file)
         assert cfg.analytics.output_path == "/tmp/my_report.html"

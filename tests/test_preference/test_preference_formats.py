@@ -49,8 +49,16 @@ def _make_pair(
         shared_prefix=shared_prefix,
         metadata={
             "all_scores": [
-                {"content": chosen_content[:50], "score": chosen_score, "label": chosen_label},
-                {"content": rejected_content[:50], "score": rejected_score, "label": rejected_label},
+                {
+                    "content": chosen_content[:50],
+                    "score": chosen_score,
+                    "label": chosen_label,
+                },
+                {
+                    "content": rejected_content[:50],
+                    "score": rejected_score,
+                    "label": rejected_label,
+                },
             ]
         },
     )
@@ -207,7 +215,9 @@ class TestSpecialCharacters:
         chosen = 'The answer is "yes"\nWith unicode: café'
         rejected = "Simple answer."
 
-        pair = _make_pair(prompt=prompt, chosen_content=chosen, rejected_content=rejected)
+        pair = _make_pair(
+            prompt=prompt, chosen_content=chosen, rejected_content=rejected
+        )
 
         for fmt in ("dpo", "chat_dpo", "ultrafeedback", "anthropic_hh", "orpo"):
             rows = format_preference_pairs([pair], fmt=fmt)

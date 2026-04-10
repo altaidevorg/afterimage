@@ -32,8 +32,7 @@ def format_preference_pairs(
     }
     if fmt not in formatters:
         raise ValueError(
-            f"Unknown preference format: {fmt!r}. "
-            f"Choose from: {', '.join(formatters)}"
+            f"Unknown preference format: {fmt!r}. Choose from: {', '.join(formatters)}"
         )
     converter = formatters[fmt]
     return [converter(pair) for pair in pairs]

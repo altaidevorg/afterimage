@@ -63,4 +63,4 @@ class TestStreaming:
                 try:
                     json.loads(line)
                 except json.JSONDecodeError:
-                    pytest.fail(f"Invalid JSON on line {i+1}")
+                    pytest.fail(f"Invalid JSON on line {i + 1}")
