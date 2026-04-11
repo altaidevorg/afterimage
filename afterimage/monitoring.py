@@ -131,7 +131,9 @@ class GenerationMonitor:
             metric_handlers: List of custom metric handlers
             log_handlers: List of custom log handlers
             alert_handlers: List of callables to handle alerts
-            metrics_interval: How often to calculate metrics (seconds)
+            metrics_interval: Seconds between built-in alert rule evaluations (rolling
+                windows are still five minutes; this is only how often rules run).
+                If ``<= 0``, periodic alert checks are disabled.
             shutdown_timeout: Timeout for graceful shutdown (seconds)
             alert_min_success_rate: Alert if success_rate mean below this (default 0.8).
             alert_max_generation_time_seconds: Alert if generation_time mean above this in seconds (default 30).
@@ -210,8 +212,24 @@ class GenerationMonitor:
         ]
         if self._token_usage_callback is not None:
             self._workers.append(Thread(target=self._token_usage_worker, daemon=True))
+        if self.metrics_interval and self.metrics_interval > 0:
+            self._workers.append(Thread(target=self._alert_worker, daemon=True))
         for worker in self._workers:
             worker.start()
+
+    def _alert_worker(self) -> None:
+        """Periodically evaluate built-in alert rules against recent metrics."""
+        interval = max(1, int(self.metrics_interval))
+        while not self._shutdown.is_set():
+            if self._shutdown.wait(timeout=float(interval)):
+                break
+            try:
+                self._check_alerts()
+            except Exception as e:
+                warnings.warn(
+                    f"Periodic alert check failed: {e}",
+                    stacklevel=2,
+                )
 
     def _metric_worker(self):
         """Process metrics from queue."""
@@ -513,6 +531,10 @@ class GenerationMonitor:
         for worker in self._workers:
             worker.join(timeout=self.shutdown_timeout)
 
+    def check_alerts(self) -> None:
+        """Run built-in alert rules once (same logic as the periodic alert worker)."""
+        self._check_alerts()
+
     def get_metrics(
         self,
         metric_name: str,
@@ -619,7 +641,7 @@ class GenerationMonitor:
                 total_tokens=total_all,
             )
 
-    def _check_alerts(self, metrics: dict[str, Any]):
+    def _check_alerts(self) -> None:
         """Check metrics against configurable alert thresholds."""
         # Check success rate
         recent_success = self.get_metrics("success_rate", timedelta(minutes=5))

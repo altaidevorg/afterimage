@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.abspath(".."))
 # -- Project information -----------------------------------------------------
 
 project = "AfterImage"
-copyright = "2024, Altai Dev"
+copyright = "2026, ALTAI"
 author = "Yusuf Sarıgöz"
 
 # The full version, including alpha/beta/rc tags
