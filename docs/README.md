@@ -8,7 +8,7 @@
 pip install git+https://github.com/altaidevorg/afterimage.git
 ```
 
-Optional extras: `embeddings-local` (SentenceTransformer for local/process embeddings, Qdrant retriever by model name, quality checks), `server` (FastAPI server), `training` (demo UI fine-tuning scripts). Example: `pip install "afterimage[embeddings-local]@git+https://github.com/altaidevorg/afterimage.git"`.
+Optional extras: `embeddings-local` (SentenceTransformer for local/process embeddings, Qdrant retriever by model name, quality checks), `server` (FastAPI server), `training` (Torch/TRL fine-tuning plus Gradio and FastMCP for the demo UI). Example: `pip install "afterimage[embeddings-local]@git+https://github.com/altaidevorg/afterimage.git"`.
 
 ## Core Concepts
 

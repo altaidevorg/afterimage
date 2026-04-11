@@ -127,7 +127,7 @@ Options:
   --split FLOAT       Train/val split ratio (default: 0.1)
 ```
 
-Requires the hub extra: `pip install 'afterimage[hub]'`
+`huggingface_hub` is a core dependency; no extra install is required for `push`.
 
 ## Auto-Export After Generation
 
@@ -284,4 +284,4 @@ output_rows = exporter.convert_conversation(row)
 - **Streaming**: Exports process line-by-line. Memory usage is constant regardless of dataset size.
 - **Graceful degradation**: Unconvertible rows are skipped with warnings, never crashing mid-export.
 - **Deterministic**: Same input + seed always produces the same output.
-- **No external dependencies**: All core exporters use only the Python standard library. Only `push` requires `huggingface_hub`.
+- **No external dependencies**: All core exporters use only the Python standard library. `push` uses `huggingface_hub`, which is installed with the package.

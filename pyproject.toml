@@ -19,12 +19,10 @@ classifiers = [
 dependencies = [
     "click>=8.0.0",
     "filelock",
-    "fastmcp>=3.2.0",
     "google-genai==1.38.0",
-    "gradio>=6.3.0",
     "grpcio==1.67.1",
+    "huggingface-hub>=0.22.0",
     "langdetect>=1.0.9",
-    "letsearch-client>=0.1.1",
     "matplotlib>=3.7.0",
     "openai>=1.107.3",
     "openpyxl>=3.0.0",
@@ -50,10 +48,6 @@ embeddings-local = [
     "sentence-transformers>=3.0.0",
 ]
 
-hub = [
-    "huggingface_hub>=0.20.0",
-]
-
 server = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
@@ -63,16 +57,17 @@ server = [
     "aiosqlite>=0.20.0",
 ]
 
-# examples/demo_ui/training_scripts/train.py (mirrors training_scripts/requirements.txt)
+# examples/demo_ui (Gradio, FastMCP) and training_scripts/train.py (mirrors training_scripts/requirements.txt)
 training = [
     "torch>=2.0.0",
     "transformers>=4.56.2,<5.0.0",
     "datasets>=2.18.0",
     "peft>=0.10.0",
     "accelerate>=0.28.0",
-    "huggingface_hub>=0.22.0",
     "trl>=0.29.1,<0.30.0",
     "python-dotenv>=1.0.0",
+    "fastmcp>=3.2.0",
+    "gradio>=6.3.0",
 ]
 
 [project.scripts]

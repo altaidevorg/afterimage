@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 import click
+from huggingface_hub import HfApi
 
 from .config import AfterImageConfig, load_config, resolve_api_key
 
@@ -489,16 +490,6 @@ def analyze(input_path: str, output_path: str | None):
 )
 def push(input_path, fmt, repo, private, split):
     """Export and push dataset to HuggingFace Hub."""
-    try:
-        from huggingface_hub import HfApi
-    except ImportError:
-        click.secho(
-            "Install hub extra: pip install 'afterimage[hub]'",
-            fg="red",
-            err=True,
-        )
-        raise SystemExit(1)
-
     import json
     import tempfile
     from .integrations import get_exporter

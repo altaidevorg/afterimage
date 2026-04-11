@@ -7,3 +7,5 @@ huggingface_hub>=0.22.0
 trl>=0.29.1,<0.30.0
 python-dotenv>=1.0.0
 tqdm>=4.66.0
+fastmcp>=3.2.0
+gradio>=6.3.0

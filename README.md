@@ -40,9 +40,8 @@ pip install "afterimage[embeddings-local]"
 | Extra | Purpose |
 |--------|---------|
 | `embeddings-local` | Local embeddings (`sentence-transformers`) for process-based embedding providers, Qdrant-style workflows, and quality checks that need a local model. |
-| `hub` | Hugging Face Hub integration (e.g. `afterimage push`). |
 | `server` | FastAPI app (`afterimage-server` entry point). |
-| `training` | Torch / TRL stack used by the demo training scripts under `examples/`. |
+| `training` | Torch / TRL stack, Gradio, and FastMCP for `examples/demo_ui` and the training scripts under `examples/`. |
 
 ---
 
