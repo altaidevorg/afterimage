@@ -20,6 +20,10 @@ class ExportResult:
     total_output: int = 0
     skipped: int = 0
     warnings: list[str] = field(default_factory=list)
+    #: JSONL lines written to the train shard (split export only; else 0).
+    train_export_rows: int = 0
+    #: JSONL lines written to the validation shard (split export only; else 0).
+    val_export_rows: int = 0
 
 
 class BaseExporter(ABC):

@@ -500,7 +500,6 @@ def push(input_path, fmt, repo, private, split):
         raise SystemExit(1)
 
     import json
-    import random
     import tempfile
     from .integrations import get_exporter
 
@@ -545,13 +544,13 @@ def push(input_path, fmt, repo, private, split):
 
         # Dataset card
         first_row = ""
-        with open(train_path) as f:
+        with open(train_path, encoding="utf-8") as f:
             line = f.readline().strip()
             if line:
                 first_row = json.dumps(json.loads(line), indent=2)
 
-        n_train = sum(1 for _ in open(train_path))
-        n_val = sum(1 for _ in open(val_path))
+        n_train = r.train_export_rows
+        n_val = r.val_export_rows
 
         import importlib.metadata
 
@@ -884,6 +883,7 @@ def _export_with_split(
 
     with open(input_path, "rb") as fin:
         for out_path, subset in [(train_path, train_starts), (val_path, val_starts)]:
+            train_shard = out_path == train_path
             with open(out_path, "w", encoding="utf-8") as fout:
                 for start in subset:
                     fin.seek(start)
@@ -897,6 +897,10 @@ def _export_with_split(
                         for out_row in converted:
                             fout.write(json.dumps(out_row, ensure_ascii=False) + "\n")
                             result.total_output += 1
+                            if train_shard:
+                                result.train_export_rows += 1
+                            else:
+                                result.val_export_rows += 1
                     except Exception as exc:
                         result.skipped += 1
                         result.warnings.append(str(exc))
