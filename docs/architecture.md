@@ -9,8 +9,8 @@ Afterimage is designed as a modular pipeline for synthetic data generation. The 
 ### Core Components
 
 1.  **Generators (`BaseGenerator`)**: The orchestrators. They manage the main loop, concurrency, and state.
-    *   `AsyncConversationGenerator`: Manages multi-turn dialogs.
-    *   `AsyncStructuredGenerator`: Manages single-turn structured output.
+    *   `ConversationGenerator` (exported as `AsyncConversationGenerator` for backward compatibility): multi-turn dialogs.
+    *   `StructuredGenerator` (alias `AsyncStructuredGenerator`): single-turn structured output.
 2.  **Instruction Generators (`BaseInstructionGeneratorCallback`)**: Strategies for "What to ask".
     *   Responsible for producing the initial user instruction/question.
     *   Can have internal state (e.g., to ensure coverage of a document set).
@@ -40,10 +40,10 @@ from afterimage.common import GeneratedInstructions
 
 class MyCustomInstructionGenerator(BaseInstructionGeneratorCallback):
     async def agenerate(self, original_prompt: str) -> GeneratedInstructions:
-        # Your logic here
+        # Your logic here — return at least one instruction string in `instructions`
         return GeneratedInstructions(
-            instruction="Tell me a joke about API limits.",
-            context="System load is high."
+            instructions=["Tell me a joke about API limits."],
+            context="System load is high.",
         )
 ```
 
@@ -55,13 +55,26 @@ To save data to a custom backend (e.g., S3, Mongo, or a specific API endpoint), 
 from afterimage.storage import BaseStorage
 
 class MyCloudStorage(BaseStorage):
+    """Implement every method on :class:`~afterimage.storage.BaseStorage` (sync + async + documents)."""
+
+    def save_conversations(self, conversations):
+        raise NotImplementedError
+
     async def asave_conversations(self, conversations):
         # Push to cloud
         pass
-        
-    async def load_conversations(self, limit=None, offset=None):
-        # Fetch from cloud
+
+    def load_conversations(self, limit=None, offset=None):
         return []
+
+    def load_documents(self, limit=None, offset=None):
+        return []
+
+    def save_documents(self, documents):
+        raise NotImplementedError
+
+    async def asave_documents(self, documents):
+        pass
 ```
 
 ### Custom LLM Provider
@@ -69,19 +82,20 @@ class MyCloudStorage(BaseStorage):
 To support a new model family (e.g., Anthropic, Mistral, or a local VLLM), implement the `LLMProvider` protocol. You must also implement a corresponding `ChatSession`.
 
 ```python
-from afterimage.providers import LLMProvider, ChatSession, LLMResponse
+from afterimage.providers import ChatSession, LLMProvider
+from afterimage.providers.llm_providers import LLMResponse
+
 
 class MyCustomChat(ChatSession):
     async def asend_message(self, message, **kwargs) -> LLMResponse:
         # Implement stateful chat logic
-        pass
+        raise NotImplementedError
 
-class MyCustomProvider(LLMProvider):
-    def initialize(self, api_key: str):
-        self.client = ...
+
+class MyCustomProvider:
+    """Satisfy :class:`~afterimage.providers.llm_providers.LLMProvider` (structural typing)."""
 
     async def agenerate_content(self, prompt: str, **kwargs) -> LLMResponse:
-        # Call your API
         return LLMResponse(
             text="response",
             prompt_token_count=10,
@@ -89,10 +103,22 @@ class MyCustomProvider(LLMProvider):
             total_token_count=20,
             finish_reason="stop",
             model_name="my-model",
-            raw_response={}
+            raw_response={},
         )
 
+    def generate_content(self, prompt: str, **kwargs) -> LLMResponse:
+        raise NotImplementedError
+
+    async def agenerate_structured(self, prompt: str, schema, **kwargs):
+        raise NotImplementedError
+
+    def generate_structured(self, prompt: str, schema, **kwargs):
+        raise NotImplementedError
+
     def start_chat(self, **kwargs) -> ChatSession:
+        return MyCustomChat()
+
+    async def astart_chat(self, **kwargs) -> ChatSession:
         return MyCustomChat()
 ```
 

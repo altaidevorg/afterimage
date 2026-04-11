@@ -58,9 +58,9 @@ Each line in a generated `.jsonl` file is a JSON object representing one convers
 | `instruction_context` | `string \| null` | Yes | Context given to instruction generator |
 | `response_context` | `string \| null` | Yes | Context given to respondent |
 | `persona` | `string \| null` | Yes | Top-level persona shorthand |
-| `evaluation` | `object \| null` | Only with `auto_improve` | Quality evaluation scores |
-| `evaluation.overall_grade` | `string` | With evaluation | `perfect\|good\|needs_improvement\|bad\|not_acceptable` |
-| `final_score` | `float \| null` | Only with `auto_improve` | Composite quality score 0-1 |
+| `evaluation` | `object \| null` | When a judge ran (e.g. `auto_improve` or manual evaluation) | Quality evaluation scores; may be absent on unevaluated rows |
+| `evaluation.overall_grade` | `string` | With evaluation | One of `perfect`, `good`, `needs_improvement`, `bad`, `not_acceptable` (see `GradeSchema` in `afterimage.types`) |
+| `final_score` | `float` | Usually present on stored rows | Composite 0–1 score when evaluated; unevaluated rows may omit the field or serialize with model defaults depending on writer |
 
 ## Notes
 

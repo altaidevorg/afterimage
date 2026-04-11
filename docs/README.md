@@ -47,14 +47,14 @@ async def main():
     generator = ConversationGenerator(
         respondent_prompt=respondent_prompt,
         api_key=api_key,
-        model_name="gemini-2.0-flash",  # Default model
+        model_name="gemini-2.5-flash",  # Library default when model_name is omitted
     )
 
     # 3. Generate Conversations
     print("Generating conversations...")
     await generator.generate(
         num_dialogs=3,      # Number of separate conversations to generate
-        max_turns=1,        # Maximum number of turns (exchange pairs) per conversation. 1 is enough for most cases.
+        max_turns=1,      # Upper bound; each dialog samples a turn count uniformly from 1..max_turns
         max_concurrency=2   # Number of parallel generations
     )
     

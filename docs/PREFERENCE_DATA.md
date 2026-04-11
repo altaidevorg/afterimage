@@ -164,32 +164,61 @@ Export as `chat_dpo` format and use Unsloth's DPO notebook directly.
 
 ## Python API
 
+Set `OPENAI_API_KEY` in the environment (or switch the provider block to Gemini and `GEMINI_API_KEY` consistently).
+
 ```python
+import asyncio
+import os
+
 from afterimage import ConversationGenerator
+from afterimage.callbacks import ContextualInstructionGeneratorCallback
 from afterimage.evaluator import ConversationJudge
+from afterimage.key_management import SmartKeyPool
 from afterimage.preference import PreferenceConfig
+from afterimage.providers import InMemoryDocumentProvider, LLMFactory
 
-gen = ConversationGenerator(
-    respondent_prompt="You are a helpful assistant.",
-    api_key="your-key",
-    instruction_generator_callback=my_callback,
-)
 
-judge = ConversationJudge.from_factory(llm, key_pool=key_pool, model_provider_name="openai")
+async def main():
+    pool = SmartKeyPool.from_single_key(os.environ["OPENAI_API_KEY"])
+    llm = LLMFactory.create("openai", "gpt-4o-mini", pool)
+    judge = ConversationJudge.from_factory(
+        llm,
+        key_pool=pool,
+        model_provider_name="openai",
+    )
 
-pref_gen = gen.to_preference_generator(
-    judge=judge,
-    config=PreferenceConfig(
-        num_pairs=50,
-        strategy="temperature",
-        output_format="dpo",
-        output_path="./preferences.jsonl",
-    ),
-)
+    docs = InMemoryDocumentProvider(["Short context document text."])
+    instruction_callback = ContextualInstructionGeneratorCallback(
+        api_key=pool,
+        documents=docs,
+        model_provider_name="openai",
+        model_name="gpt-4o-mini",
+    )
 
-pairs, analytics = await pref_gen.generate()
-pref_gen.save_pairs(pairs, analytics)
-print(f"Generated {len(pairs)} pairs, discard rate: {analytics.discard_rate:.0%}")
+    gen = ConversationGenerator(
+        respondent_prompt="You are a helpful assistant.",
+        api_key=pool,
+        model_provider_name="openai",
+        instruction_generator_callback=instruction_callback,
+    )
+
+    pref_gen = gen.to_preference_generator(
+        judge=judge,
+        config=PreferenceConfig(
+            num_pairs=50,
+            strategy="temperature",
+            output_format="dpo",
+            output_path="./preferences.jsonl",
+        ),
+    )
+
+    pairs, analytics = await pref_gen.generate()
+    pref_gen.save_pairs(pairs, analytics)
+    print(f"Generated {len(pairs)} pairs, discard rate: {analytics.discard_rate:.0%}")
+    await judge.aclose()
+
+
+asyncio.run(main())
 ```
 
 ## CLI reference

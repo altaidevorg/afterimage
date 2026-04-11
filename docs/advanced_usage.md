@@ -21,9 +21,9 @@ key_pool = SmartKeyPool(
 )
 
 # 2. Use it in Generator
-generator = AsyncConversationGenerator(
+generator = AsyncConversationGenerator(  # same class as ConversationGenerator
     ...,
-    api_key=key_pool  # Pass the pool instead of a string
+    api_key=key_pool,  # pass the pool instead of a string
 )
 ```
 
@@ -75,16 +75,21 @@ storage = JSONLStorage(
 If your data lives in a custom API or a specific format, you can write your own `DocumentProvider`. You just need to implement the protocol that yields `Document` objects.
 
 ```python
-from typing import AsyncIterator
 from afterimage.types import Document
 
-class MyAPIDocumentProvider:
-    def __init__(self, api_endpoint):
-        self.api_endpoint = api_endpoint
 
-    async def get_documents(self, batch_size: int = 10) -> AsyncIterator[Document]:
-        # Fetch from your API and yield Document objects
-        items = await self._fetch_from_api() 
-        for item in items:
-            yield Document(content=item['text'], metadata=item['meta'])
+class MyAPIDocumentProvider:
+    """Minimal :class:`~afterimage.providers.document_providers.DocumentProvider` shape: implement `_load_documents`."""
+
+    def __init__(self, api_endpoint: str):
+        self.api_endpoint = api_endpoint
+        self._documents: list[Document] | None = None
+
+    def _load_documents(self) -> list[Document]:
+        if self._documents is None:
+            items = ...  # fetch from your API (sync or wrap async with asyncio.run)
+            self._documents = [
+                Document(content=item["text"], metadata=item["meta"]) for item in items
+            ]
+        return self._documents
 ```
