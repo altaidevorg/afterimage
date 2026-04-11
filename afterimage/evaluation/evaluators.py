@@ -381,7 +381,7 @@ class FactualityEvaluator(AsyncLLMBaseEvaluator):
                     [],
                 )
 
-            separator_str = "\n---\n"
+            separator_str = "\n----\n"
             prompt = f"""Evaluate the factual accuracy of the following responses in relation to the provided context.
 Rate each response on a scale of 0-1 and give concise feedback.
 
@@ -484,13 +484,15 @@ class HelpfulnessEvaluator(AsyncLLMBaseEvaluator):
                     [],
                 )
 
+            separator_str = "\n----\n"
+            pairs = separator_str.join(f"[{i+1}] Q: {q}\nA: {a}" for i, (q, a) in enumerate(pairs))
             prompt = f"""Evaluate how helpful each answer is for its question (0-1 each).
 
 Context (reference):
 {conversation.response_context or conversation.instruction_context or ""}
 
 Pairs:
-{"\n---\n".join(f"[{i+1}] Q: {q}\nA: {a}" for i, (q, a) in enumerate(pairs))}
+{pairs}
 
 Return scores (one per pair), feedback, needs_improvement."""
 
