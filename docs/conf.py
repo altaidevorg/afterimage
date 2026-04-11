@@ -1,3 +1,4 @@
+import importlib
 import os
 import sys
 
@@ -17,10 +18,12 @@ sys.path.insert(0, os.path.abspath(".."))
 project = "AfterImage"
 copyright = "2026, ALTAI"
 author = "Yusuf Sarıgöz"
-
 # The full version, including alpha/beta/rc tags
 release = afterimage.__version__
 
+html_title = "Generate conversational, tool-calling, structured-output, and preference datasets — easily and at scale"
+html_short_title = f"{project} {release}"
+html_baseurl = "https://afterimage.altai.dev"
 
 # -- General configuration ---------------------------------------------------
 

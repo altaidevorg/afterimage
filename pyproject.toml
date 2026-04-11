@@ -1,11 +1,11 @@
 [project]
 name = "afterimage"
 version = "0.14.0"
-keywords = ["afterimage", "synthetic", "dataset-generation", "synthetic-dataset"]
+keywords = ["afterimage", "dataset-generation", "synthetic-dataset", "tool-calling", "structured-output", "preference-data", "persona-driven"]
 authors = [
     { name = "Yusuf Sarıgöz", email = "yusuf@altai.dev"}
 ]
-description = "Create synthetic datasets based on your documents"
+description = "Generate conversational, tool-calling, structured-output, and preference datasets — easily and at scale"
 readme = "README.md"
 requires-python = ">=3.11"
 classifiers = [
