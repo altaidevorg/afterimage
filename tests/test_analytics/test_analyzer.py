@@ -223,6 +223,15 @@ class TestLengths:
         assert len(report.lengths.user_lengths) == 5
         assert len(report.lengths.assistant_lengths) == 5
 
+    def test_length_histograms_share_bins(self):
+        """Bins come from min/max over all messages so charts align with length_bins."""
+        rows = [_make_row("hi", "word " * 40)]
+        le = DatasetAnalyzer(rows).analyze().lengths
+        assert len(le.user_length_histogram) == len(le.assistant_length_histogram)
+        assert len(le.length_bins) == len(le.user_length_histogram)
+        assert sum(le.user_length_histogram) == len(le.user_lengths)
+        assert sum(le.assistant_length_histogram) == len(le.assistant_lengths)
+
 
 class TestFromJsonl:
     def test_roundtrip(self, sample_jsonl):

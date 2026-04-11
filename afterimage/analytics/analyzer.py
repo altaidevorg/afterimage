@@ -23,6 +23,28 @@ _WORD_RE = re.compile(r"\w+", re.UNICODE)
 _HISTOGRAM_BINS = 10
 
 
+def _equal_width_bin_counts(
+    values: List[int | float], lo: float, hi: float, n_bins: int
+) -> List[int]:
+    """Count *values* into *n_bins* equal-width bins over ``[lo, hi]`` (same rules as :func:`_make_histogram`)."""
+    if lo == hi:
+        return [len(values)]
+    width = (hi - lo) / n_bins
+    counts = [0] * n_bins
+    for v in values:
+        idx = min(int((v - lo) / width), n_bins - 1)
+        counts[idx] += 1
+    return counts
+
+
+def _equal_width_bin_labels(lo: float, hi: float, n_bins: int) -> List[str]:
+    """X-axis labels for *n_bins* equal-width bins from *lo* to *hi*."""
+    if lo == hi:
+        return [str(lo)]
+    width = (hi - lo) / n_bins
+    return [f"{lo + i * width:.0f}" for i in range(n_bins)]
+
+
 def _word_tokenize(text: str) -> List[str]:
     """Cheap whitespace+regex tokenizer (no NLTK dependency)."""
     return _WORD_RE.findall(text.lower())
@@ -35,15 +57,10 @@ def _make_histogram(
     if not values:
         return [], []
     lo, hi = min(values), max(values)
-    if lo == hi:
-        return [len(values)], [str(lo)]
-    width = (hi - lo) / n_bins
-    counts = [0] * n_bins
-    for v in values:
-        idx = min(int((v - lo) / width), n_bins - 1)
-        counts[idx] += 1
-    labels = [f"{lo + i * width:.0f}" for i in range(n_bins)]
-    return counts, labels
+    return (
+        _equal_width_bin_counts(values, lo, hi, n_bins),
+        _equal_width_bin_labels(lo, hi, n_bins),
+    )
 
 
 class DatasetAnalyzer:
@@ -261,13 +278,17 @@ class DatasetAnalyzer:
         avg_u = sum(user_lens) / len(user_lens) if user_lens else 0
         avg_a = sum(asst_lens) / len(asst_lens) if asst_lens else 0
 
-        u_hist, u_bins = _make_histogram(user_lens)
-        a_hist, _ = _make_histogram(asst_lens)
-
-        # Use combined bins for fair comparison
         all_lens = user_lens + asst_lens
-        combined_hist_u, combined_bins = _make_histogram(user_lens)
-        combined_hist_a, _ = _make_histogram(asst_lens)
+        if not all_lens:
+            u_hist: list[int] = []
+            a_hist: list[int] = []
+            length_bins: list[str] = []
+        else:
+            lo, hi = min(all_lens), max(all_lens)
+            n_bins = _HISTOGRAM_BINS
+            length_bins = _equal_width_bin_labels(lo, hi, n_bins)
+            u_hist = _equal_width_bin_counts(user_lens, lo, hi, n_bins)
+            a_hist = _equal_width_bin_counts(asst_lens, lo, hi, n_bins)
 
         return LengthStats(
             user_lengths=user_lens,
@@ -276,5 +297,5 @@ class DatasetAnalyzer:
             avg_assistant_length=avg_a,
             user_length_histogram=u_hist,
             assistant_length_histogram=a_hist,
-            length_bins=u_bins or combined_bins,
+            length_bins=length_bins,
         )
