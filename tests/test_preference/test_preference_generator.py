@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import List
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from afterimage.common import GeneratedInstructions
 from afterimage.preference.generator import PreferenceGenerator
-from afterimage.preference.types import PreferenceConfig, PreferencePair
+from afterimage.preference.types import PreferenceConfig
 from afterimage.types import (
     ConversationEntry,
     ConversationWithContext,
@@ -532,7 +532,6 @@ async def test_concurrent_generation():
 
 def test_to_preference_generator():
     """ConversationGenerator.to_preference_generator() should return a PreferenceGenerator."""
-    from afterimage.conversation_generator import ConversationGenerator
     from afterimage.preference.generator import PreferenceGenerator as PG
 
     mock_gen = _make_mock_generator()

@@ -4,7 +4,6 @@ Chat handler for the trained model.
 
 import os
 import re
-import json
 import gradio as gr
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from core.config import get_training_dir

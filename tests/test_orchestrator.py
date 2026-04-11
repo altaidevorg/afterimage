@@ -1,7 +1,7 @@
 """Tests for Orchestrator integration with ConversationGenerator."""
 
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
 
 from afterimage.conversation_generator import ConversationGenerator
 from afterimage.orchestrator import Orchestrator
@@ -11,9 +11,7 @@ from afterimage.common import GeneratedInstructions
 from afterimage.providers.llm_providers import (
     LLMResponse,
     ChatSession,
-    StructuredLLMResponse,
 )
-from afterimage.types import ConversationEntry, Role
 
 
 class MockInstructionCallback:

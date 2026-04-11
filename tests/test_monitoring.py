@@ -3,7 +3,6 @@
 import time
 from pathlib import Path
 
-import pytest
 
 from afterimage.monitoring import Alert, GenerationMonitor
 

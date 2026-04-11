@@ -9,7 +9,6 @@ import importlib.util
 import os
 import sys
 import json
-import ast
 import re
 from pathlib import Path
 
@@ -217,7 +216,7 @@ def compare_tool_calls(expected, predicted):
 
                 if exp_args == pred_args:
                     correct_args += 1
-            except Exception as e:
+            except Exception:
                 pass
 
     if correct_tools == exp_count and correct_args == exp_count:
@@ -297,22 +296,22 @@ def evaluate_model(model_path=None):
         )
 
         # Format expected
-        print(f"\nExpected:")
+        print("\nExpected:")
         if expected_tool_calls:
             for tc in expected_tool_calls:
                 func = tc.get("function", {})
                 print(f"  - {func.get('name')}: {func.get('arguments')}")
         else:
-            print(f"  (no tool calls)")
+            print("  (no tool calls)")
 
         # Format predicted
-        print(f"\nPredicted:")
+        print("\nPredicted:")
         if predicted_tool_calls:
             for tc in predicted_tool_calls:
                 func = tc.get("function", {})
                 print(f"  - {func.get('name')}: {func.get('arguments')}")
         else:
-            print(f"  (no tool calls)")
+            print("  (no tool calls)")
 
         print(f"\nResult: {category}")
         if details:

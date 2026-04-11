@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from ..providers import LLMProvider
-    from .types import ScoredResponse
 
 logger = logging.getLogger(__name__)
 

@@ -11,7 +11,6 @@ import logging
 from typing import Any, Optional
 
 from .metadata_utils import extract_unique_context_ids
-from .types import GenerationState
 
 logger = logging.getLogger(__name__)
 

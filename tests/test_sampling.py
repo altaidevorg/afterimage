@@ -1,6 +1,5 @@
 """Tests for SamplingStrategy."""
 
-import pytest
 
 from afterimage.sampling import SamplingStrategy
 from afterimage.callbacks import (

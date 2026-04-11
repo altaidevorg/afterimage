@@ -1,7 +1,6 @@
 """Tests for DatasetAnalyzer."""
 
 import json
-from pathlib import Path
 
 import pytest
 

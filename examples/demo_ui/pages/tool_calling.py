@@ -1,5 +1,4 @@
 import os
-import tempfile
 import gradio as gr
 from pages.base import (
     TOOL_CALLING_RESPONDENT_PROMPT,
@@ -10,12 +9,10 @@ from pages.base import (
 from pages.handlers.training import (
     set_download_loading,
     generate_model_zip,
-    get_model_download_label,
 )
 
 from core.config import get_training_dir, MAX_CATEGORIES
 from core.tools_db import get_tools_db
-from schemas import AVAILABLE_TOOLS
 
 
 def create_tool_calling_page(start_gen_fn, train_fn=None):

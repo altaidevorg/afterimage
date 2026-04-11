@@ -4,7 +4,6 @@ Afterimage Demo UI - Main Application
 A Gradio-based UI for demonstrating synthetic data generation capabilities.
 """
 
-import asyncio
 import sys
 from pathlib import Path
 

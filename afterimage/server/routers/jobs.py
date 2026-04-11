@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import mimetypes
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse

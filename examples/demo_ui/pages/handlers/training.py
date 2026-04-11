@@ -4,17 +4,14 @@ Event handlers for the Train Model page.
 
 import json
 import os
-import shutil
 import tempfile
-import time
 from collections import Counter
 from datetime import datetime
 from glob import glob
-from typing import Any, List, Tuple
+from typing import List
 import zipfile
 
 import gradio as gr
-import pandas as pd
 
 
 from core.config import get_training_dir, get_datasets_dir

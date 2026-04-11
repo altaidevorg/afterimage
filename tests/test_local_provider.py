@@ -1,7 +1,6 @@
 """Tests for LocalLLMProvider."""
 
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 
 from afterimage.providers.local_provider import LocalLLMProvider, _REQUEST_TIMEOUT
 from afterimage.providers.llm_providers import LLMFactory

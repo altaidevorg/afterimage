@@ -70,7 +70,7 @@ Document excerpt:
     )
 
     result = json.loads(response.text)
-    print(f"Generated system prompt parts:")
+    print("Generated system prompt parts:")
     print(f"  Respondent Role: {result['respondent_role']}")
     print(f"  Correspondent Role: {result['correspondent_role']}")
     print(f"  Instruction: {result['instruction']}")
@@ -198,7 +198,7 @@ Rules:
     print(
         f"\nSuccessfully saved {len(conversations_data)} conversations to {OUTPUT_JSON}"
     )
-    print(f"System prompt parts also saved for further use.")
+    print("System prompt parts also saved for further use.")
 
 
 if __name__ == "__main__":

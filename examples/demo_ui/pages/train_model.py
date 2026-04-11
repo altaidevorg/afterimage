@@ -9,7 +9,6 @@ from typing import List, Any, Tuple
 import gradio as gr
 
 from core.config import (
-    get_datasets_dir,
     MAX_CATEGORIES,
     MAX_TOOL_SLIDERS,
     DEFAULT_CATEGORY,

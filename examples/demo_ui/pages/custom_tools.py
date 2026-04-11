@@ -7,15 +7,10 @@ or by manually entering the function definition fields.
 
 import json
 import gradio as gr
-import pandas as pd
 
-from core.function_parser import (
-    ParsedFunction,
-)
 
 from .handlers.custom_tools import (
     EXAMPLE_PARAMS,
-    get_tool_names,
     parse_code,
     save_from_code,
     clear_code_editor,

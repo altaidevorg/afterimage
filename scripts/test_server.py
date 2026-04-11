@@ -16,8 +16,6 @@ import asyncio
 import json
 import sys
 import time
-from pathlib import Path
-from typing import Any
 
 import httpx
 
@@ -281,11 +279,11 @@ async def test_generate_and_poll(
         return job_id
 
     if final_status == "completed":
-        r.ok(f"job completes (status=completed)")
+        r.ok("job completes (status=completed)")
     else:
         body = await (await client.get(f"/api/v1/jobs/{job_id}")).aread()
         r.fail(
-            f"job completes",
+            "job completes",
             f"status={final_status} error={json.loads(body).get('error', '')}",
         )
 
@@ -350,7 +348,7 @@ async def test_list_jobs(client: httpx.AsyncClient, r: TestResult):
         _assert(resp.status_code == 200, f"status {resp.status_code}")
         body = resp.json()
         _assert(body["per_page"] == 1, f"per_page should be 1, got {body['per_page']}")
-        _assert(len(body["jobs"]) <= 1, f"returned more than 1 job")
+        _assert(len(body["jobs"]) <= 1, "returned more than 1 job")
         r.ok("GET /api/v1/jobs?page=1&per_page=1 (pagination)")
     except Exception as e:
         r.fail("GET /api/v1/jobs pagination", str(e))

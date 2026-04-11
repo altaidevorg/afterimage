@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import html
 import math
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 
 def _esc(text: str) -> str:

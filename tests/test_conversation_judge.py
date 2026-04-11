@@ -12,8 +12,6 @@ from afterimage.evaluator import ConversationJudge, ConversationJudgeConfig
 from afterimage.types import (
     ConversationEntry,
     ConversationWithContext,
-    EvaluationEntrySchema,
-    EvaluationSchema,
     GradeSchema,
     Role,
 )

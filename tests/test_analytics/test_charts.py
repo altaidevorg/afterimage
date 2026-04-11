@@ -1,6 +1,5 @@
 """Tests for SVG chart generators."""
 
-import pytest
 
 from afterimage.analytics.charts import bar_chart, donut_chart, histogram, metric_card
 

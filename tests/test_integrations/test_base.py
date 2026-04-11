@@ -2,7 +2,6 @@
 
 import json
 
-import pytest
 
 from afterimage.integrations.base import BaseExporter, ExportResult
 

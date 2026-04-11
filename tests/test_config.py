@@ -1,6 +1,5 @@
 """Tests for YAML config loading and validation."""
 
-import os
 import textwrap
 from pathlib import Path
 
@@ -69,7 +68,7 @@ class TestLoadConfig:
     def test_system_prompt_file(self, tmp_config, tmp_path):
         prompt_file = tmp_path / "prompt.txt"
         prompt_file.write_text("You are a pirate.", encoding="utf-8")
-        cfg_path = tmp_config(f"""
+        cfg_path = tmp_config("""
             respondent:
               system_prompt_file: prompt.txt
         """)

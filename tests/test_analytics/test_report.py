@@ -1,6 +1,5 @@
 """Tests for HTML report generation."""
 
-from pathlib import Path
 
 import pytest
 

@@ -137,7 +137,7 @@ def filter_and_prepare_dataset(training_file, tool_filter_config, target_dir) ->
 
 from ..config import get_training_dir, get_data_dir, SPINNERS
 from ..file_utils import copy_dataset_file, merge_dataset_files
-from .utils import format_time, make_progress_display
+from .utils import make_progress_display
 
 
 async def _execute_training_subprocess(

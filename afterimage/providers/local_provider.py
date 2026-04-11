@@ -9,7 +9,7 @@ Wraps :class:`OpenAIProvider` with local-friendly defaults:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Type
+from typing import List, Optional, Type
 
 from openai import AsyncOpenAI, OpenAI
 
@@ -18,12 +18,10 @@ from .llm_providers import (
     ChatSession,
     LLMResponse,
     OpenAIChatSession,
-    OpenAIProvider,
     StructuredLLMResponse,
     T,
     _extract_reasoning_content,
 )
-from ..key_management import SmartKeyPool
 
 
 # Timeouts for local inference (seconds)

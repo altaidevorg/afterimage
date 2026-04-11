@@ -5,7 +5,7 @@ Converters for transforming generation output items into display rows.
 import json
 from typing import Any
 
-from schemas import CustomerSupportInteraction, ToolInvocation
+from schemas import CustomerSupportInteraction
 from afterimage.types import ConversationWithContext, EvaluatedConversationWithContext
 
 

@@ -91,7 +91,7 @@ def check_files(dataset_file: str):
     if os.path.exists(config.TOOLS_FILE):
         print(f"[OK] Tools: {config.TOOLS_FILE}")
     else:
-        print(f"[INFO] Tools schema not found (optional)")
+        print("[INFO] Tools schema not found (optional)")
 
 
 def load_model():

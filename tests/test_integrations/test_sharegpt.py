@@ -1,6 +1,5 @@
 """Tests for ShareGPT exporter."""
 
-import json
 
 import pytest
 

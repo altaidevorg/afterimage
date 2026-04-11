@@ -6,7 +6,6 @@ import os
 import shutil
 import zipfile
 import pandas as pd
-import json
 from pathlib import Path
 from typing import Optional, List, Union, Any
 from html.parser import HTMLParser

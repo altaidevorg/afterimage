@@ -96,7 +96,7 @@ def generate_report(
     sections: list[str] = []
 
     # -- Header --
-    sections.append(f"<h1>AfterImage Dataset Report</h1>")
+    sections.append("<h1>AfterImage Dataset Report</h1>")
     sections.append(f'<p class="subtitle">{html.escape(report.dataset_path)}</p>')
 
     # -- Summary metrics --

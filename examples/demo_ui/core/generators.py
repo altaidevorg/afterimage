@@ -5,7 +5,7 @@ Generator factory functions for different generation modes.
 import asyncio
 from typing import List, Literal, Optional
 
-from schemas import CustomerSupportInteraction, ToolInvocation, AVAILABLE_TOOLS
+from schemas import CustomerSupportInteraction, AVAILABLE_TOOLS
 from .storage import CaptureStorage
 from .tools_db import get_tools_db
 from .function_parser import function_to_openai_schema
