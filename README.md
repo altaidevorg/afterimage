@@ -1,66 +1,107 @@
 # AfterImage
 
-**AfterImage** is a flexible Python framework for generating synthetic conversational datasets using State-of-the-Art Large Language Models (LLMs), primarily Google Gemini and OpenAI-compatible APIs.
+**AfterImage** is a Python library and CLI for generating **synthetic conversational datasets** with modern LLMs (Gemini, OpenAI-compatible APIs, DeepSeek, and local OpenAI-compatible servers). It is built so you can **start with a YAML file and one command**, then **compose** callbacks, document providers, storage, evaluation, and export pipelines as your needs grow—from quick experiments to large, production-style runs.
 
-It is designed to be highly customizable, enabling tailored instruction generation, persona-based simulation, diverse document ingestion, and context-aware conversation generation.
+**Documentation (hosted):** [https://afterimage.altai.dev](https://afterimage.altai.dev)
 
-## 🚀 Getting Started
+---
 
-To get started with AfterImage, please refer to the **[Quickstart Guide](https://github.com/altaidevorg/afterimage/blob/main/docs/README.md)**. It covers:
+## Two ways to work (same engine)
 
-*   **Installation**: How to set up the library.
-*   **Basic Usage**: Generating simple conversations.
-*   **RAG & Context**: Using documents to drive questions.
-*   **Personas**: Creating varied user personas for realistic datasets.
+**1. CLI and config — easy to begin**  
+Describe generation in YAML, set your API key in the environment, and run `afterimage generate`. No boilerplate, no custom harness required to get JSONL on disk. Optional commands cover **export** to fine-tuning formats and **preference** (DPO-style) pair generation.
 
-## 📖 Documentation
+**2. Python API — composable and extensible**  
+Use `ConversationGenerator`, `StructuredGenerator`, and `PersonaGenerator` with pluggable **instruction generators**, **respondent prompt modifiers**, **stopping criteria**, **storage** (JSONL or SQL), **quality judges**, and **monitoring**. The same abstractions power the CLI; you swap or combine pieces instead of forking the stack.
 
-*   **[Quickstart Guide](https://github.com/altaidevorg/afterimage/blob/main/docs/README.md)**: The best place to start.
-*   **[Design & Architecture](DESIGN.md)**: Understanding the core concepts and codebase structure.
-*   **[Examples](./examples)**: Examples of how to use AfterImage.
+That split keeps onboarding shallow while leaving room for **scale** (concurrency, key pools, SQL storage) and **specialized flows** (RAG-style context, personas, structured extraction, preference data).
 
-## 📦 Installation
+---
 
-```bash
-pip install git+https://github.com/altaidevorg/afterimage.git
-```
+## Installation
 
-Optional extras (see `pyproject.toml`):
-
-* **`embeddings-local`** — `sentence-transformers` for `ProcessEmbeddingProvider`, `QdrantRetriever` (by model name), and `QualityChecker` semantic checks.
-* **`server`** — FastAPI app (`afterimage-server`).
-* **`training`** — Torch/TRL stack for `examples/demo_ui/training_scripts/train.py`.
+The package can be installed from PyPI as **`afterimage`**.
 
 ```bash
-pip install "afterimage[embeddings-local]@git+https://github.com/altaidevorg/afterimage.git"
+uv add afterimage
 ```
-
-## ✨ Key Features
-
-*   **Async-First**: High-performance parallel generation.
-*   **Persona Simulation**: Realistic user diversity.
-*   **Context-Aware**: Grounds conversations in your documents (RAG).
-*   **DPO/RLHF Preference Data**: Generate (chosen, rejected) pairs for reward model training — no manual labeling.
-*   **Multi-Modal**: Support for text and potentially other modalities in future.
-*   **Monitoring**: Real-time generation metrics and alerts.
-
-## 🎯 Generating Preference Data (DPO/RLHF)
-
-AfterImage can generate preference pairs directly from your documents:
 
 ```bash
-afterimage preference -c config.yaml
+pip install afterimage
 ```
 
-Add a `preference` block to your config:
+**Optional extras** (see `pyproject.toml` for exact dependency sets):
 
-```yaml
-preference:
-  num_pairs: 100
-  strategy: temperature    # temperature | prompt | model | combined
-  output_format: dpo       # dpo | chat_dpo | ultrafeedback | anthropic_hh | orpo
-  output_path: ./preferences.jsonl
+```bash
+uv add "afterimage[embeddings-local]"
+# or
+pip install "afterimage[embeddings-local]"
 ```
 
-See [docs/PREFERENCE_DATA.md](docs/PREFERENCE_DATA.md) for the full guide including multi-turn preferences, training tool integrations, and Python API.
+| Extra | Purpose |
+|--------|---------|
+| `embeddings-local` | Local embeddings (`sentence-transformers`) for process-based embedding providers, Qdrant-style workflows, and quality checks that need a local model. |
+| `hub` | Hugging Face Hub integration (e.g. `afterimage push`). |
+| `server` | FastAPI app (`afterimage-server` entry point). |
+| `training` | Torch / TRL stack used by the demo training scripts under `examples/`. |
 
+---
+
+## Start in minutes (CLI)
+
+Requires **Python 3.11+** and an API key (e.g. `GEMINI_API_KEY` for the sample config).
+
+```bash
+afterimage generate -c examples/configs/basic.yaml
+```
+
+Dry-run the plan without calling the API:
+
+```bash
+afterimage generate -c examples/configs/basic.yaml --dry-run
+```
+
+Export a dataset to common fine-tuning formats:
+
+```bash
+afterimage export -i your_dataset.jsonl -f sharegpt -f messages
+afterimage export --list-formats
+```
+
+Generate **preference** pairs from config:
+
+```bash
+afterimage preference -c your_config.yaml
+```
+
+More examples live under [`examples/configs/`](examples/configs/). In-depth guides (conversations, personas, structured generation, evaluation, export, preference data, local models) are on **[afterimage.altai.dev](https://afterimage.altai.dev)**.
+
+---
+
+## What you can build
+
+- **Multi-turn synthetic chat** for SFT, evaluation sets, or simulation.  
+- **Document-grounded** questions and answers (instruction side + optional respondent context).  
+- **Persona-driven** diversity tied to your corpus.  
+- **Structured outputs** via Pydantic schemas (single-turn extraction or generation).  
+- **DPO / RLHF-style preference** data with multiple variation strategies.  
+- **Quality loops** (async judge, optional auto-improve) and **observability** (metrics, periodic alert checks, exports to JSON/CSV/Parquet).
+
+---
+
+## Repository layout
+
+| Path | Contents |
+|------|-----------|
+| [`docs/`](docs/) | Sphinx sources; mirrors and extends the hosted site. |
+| [`examples/`](examples/) | YAML configs and demo flows. |
+| [`DESIGN.md`](DESIGN.md) | Architecture and design notes for contributors. |
+| [`afterimage/`](afterimage/) | Library and CLI implementation. |
+
+**Source & issues:** [github.com/altaidevorg/afterimage](https://github.com/altaidevorg/afterimage)
+
+---
+
+## License
+
+MIT (see PyPI package metadata and `pyproject.toml` classifiers).

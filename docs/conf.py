@@ -21,7 +21,7 @@ author = "Yusuf Sarıgöz"
 # The full version, including alpha/beta/rc tags
 release = afterimage.__version__
 
-html_title = "Generate conversational, tool-calling, structured-output, and preference datasets — easily and at scale"
+html_title = f"{release} — Generate conversational, tool-calling, structured-output, and preference datasets — easily and at scale"
 html_short_title = f"{project} {release}"
 html_baseurl = "https://afterimage.altai.dev"
 
