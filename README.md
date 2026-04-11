@@ -1,10 +1,9 @@
 # AfterImage
 
+[![Tests](https://github.com/altaidevorg/afterimage/actions/workflows/tests.yml/badge.svg)](https://github.com/altaidevorg/afterimage/actions/workflows/tests.yml)
+[![Documentation](https://img.shields.io/badge/docs-afterimage.altai.dev-0066cc)](https://afterimage.altai.dev)
+
 **AfterImage** is a Python library and CLI for generating **synthetic conversational datasets** with modern LLMs (Gemini, OpenAI-compatible APIs, DeepSeek, and local OpenAI-compatible servers). It is built so you can **start with a YAML file and one command**, then **compose** callbacks, document providers, storage, evaluation, and export pipelines as your needs grow—from quick experiments to large, production-style runs.
-
-**Documentation (hosted):** [https://afterimage.altai.dev](https://afterimage.altai.dev)
-
----
 
 ## Two ways to work (same engine)
 
@@ -14,7 +13,7 @@ Describe generation in YAML, set your API key in the environment, and run `after
 **2. Python API — composable and extensible**  
 Use `ConversationGenerator`, `StructuredGenerator`, and `PersonaGenerator` with pluggable **instruction generators**, **respondent prompt modifiers**, **stopping criteria**, **storage** (JSONL or SQL), **quality judges**, and **monitoring**. The same abstractions power the CLI; you swap or combine pieces instead of forking the stack.
 
-That split keeps onboarding shallow while leaving room for **scale** (concurrency, key pools, SQL storage) and **specialized flows** (RAG-style context, personas, structured extraction, preference data).
+That split keeps onboarding shallow while leaving room for **scale** (concurrency, key pools, SQL storage) and **specialized flows** (RAG-style context, personas, structured extraction, preference data). Guides and API reference are on **[afterimage.altai.dev](https://afterimage.altai.dev)**.
 
 ---
 
