@@ -1,0 +1,6 @@
+[build]
+command = "pip install -e . --group dev && sphinx-build -b html docs docs/_build/html"
+publish = "docs/_build/html"
+
+[build.environment]
+PYTHON_VERSION = "3.11"
