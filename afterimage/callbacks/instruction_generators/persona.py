@@ -41,7 +41,9 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
         documents: Union[list[str], DocumentProvider],
         prompt: str | None = None,
         model_name: str | None = None,
-        model_provider_name: Literal["gemini", "openai", "deepseek", "local"] = "gemini",
+        model_provider_name: Literal[
+            "gemini", "openai", "deepseek", "local"
+        ] = "gemini",
         num_random_contexts: int = 1,
         n_instructions: int = 3,
         separator_text: str = "\n" + "-" * 80 + "\n\n",

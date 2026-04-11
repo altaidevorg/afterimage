@@ -80,8 +80,7 @@ def _stopping_config_to_callback(
         )
     if isinstance(rule, StoppingAll):
         inner = [
-            _stopping_config_to_callback(r, document_provider)
-            for r in rule.conditions
+            _stopping_config_to_callback(r, document_provider) for r in rule.conditions
         ]
         return AndStoppingCallback(inner)
     raise TypeError(f"Unsupported stopping rule type: {type(rule)!r}")

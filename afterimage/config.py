@@ -26,7 +26,9 @@ class StoppingContextCoverage(BaseModel):
 
     type: Literal["context_coverage"] = "context_coverage"
     target_visits: int = Field(
-        default=1, ge=1, description="Each context id must appear at least this many times"
+        default=1,
+        ge=1,
+        description="Each context id must appear at least this many times",
     )
     coverage_threshold: float = Field(
         default=1.0,
@@ -99,9 +101,13 @@ StoppingCriterionConfig = Annotated[
 StoppingAll.model_rebuild()
 
 
-def _stopping_nesting_depth(rules: list[StoppingCriterionConfig], depth: int = 0) -> int:
+def _stopping_nesting_depth(
+    rules: list[StoppingCriterionConfig], depth: int = 0
+) -> int:
     if depth > 8:
-        raise ValueError("generation.stopping: nesting deeper than 8 levels is not allowed")
+        raise ValueError(
+            "generation.stopping: nesting deeper than 8 levels is not allowed"
+        )
     max_d = depth
     for rule in rules:
         if isinstance(rule, StoppingAll):
@@ -331,7 +337,9 @@ class AfterImageConfig(BaseModel):
     @model_validator(mode="after")
     def _documents_personas_and_stopping(self):
         if self.personas.enabled and self.documents is None:
-            raise ValueError("personas.enabled requires a documents section in the config")
+            raise ValueError(
+                "personas.enabled requires a documents section in the config"
+            )
 
         if self.documents is not None and not self.context.enabled:
             raise ValueError(

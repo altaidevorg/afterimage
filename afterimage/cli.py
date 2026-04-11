@@ -124,7 +124,9 @@ def _print_plan(cfg: AfterImageConfig) -> None:
             extra = ", ".join(f"{k}={v!r}" for k, v in payload.items())
             click.echo(f"    - {t}" + (f"  {extra}" if extra else ""))
     else:
-        click.echo("  Stopping:       (YAML rules only; fixed cap comes from num_dialogs)")
+        click.echo(
+            "  Stopping:       (YAML rules only; fixed cap comes from num_dialogs)"
+        )
     conc = cfg.generation.max_concurrency or "provider default"
     click.echo(f"  Concurrency:    {conc}")
     if cfg.documents:

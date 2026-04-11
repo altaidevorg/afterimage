@@ -27,7 +27,9 @@ class SimpleInstructionGeneratorCallback(LLMBackedInstructionGeneratorCallback):
         api_key: str | SmartKeyPool,
         prompt: str | None = None,
         model_name: str | None = None,
-        model_provider_name: Literal["gemini", "openai", "deepseek", "local"] = "gemini",
+        model_provider_name: Literal[
+            "gemini", "openai", "deepseek", "local"
+        ] = "gemini",
         n_instructions: int = 3,
         safety_settings: Optional[dict] = None,
         monitor: GenerationMonitor | None = None,
