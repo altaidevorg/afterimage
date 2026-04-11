@@ -826,6 +826,24 @@ def _print_formats_table(formats: list[dict]) -> None:
     click.echo("-" * 72)
 
 
+def _jsonl_nonempty_line_starts(path: Path) -> list[int]:
+    """Return byte offsets of each non-empty line in *path* (JSONL).
+
+    Offsets are taken in binary mode so :func:`seek` / :func:`readline` stay aligned
+    with the original file on all platforms.
+    """
+    starts: list[int] = []
+    with open(path, "rb") as f:
+        while True:
+            pos = f.tell()
+            chunk = f.readline()
+            if not chunk:
+                break
+            if chunk.strip():
+                starts.append(pos)
+    return starts
+
+
 def _export_with_split(
     exporter,
     input_path: Path,
@@ -845,21 +863,14 @@ def _export_with_split(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Read all lines (needed for split)
-    lines: list[str] = []
-    with open(input_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                lines.append(line)
-
+    line_starts = _jsonl_nonempty_line_starts(input_path)
     if shuffle:
         rng = random.Random(seed)
-        rng.shuffle(lines)
+        rng.shuffle(line_starts)
 
-    n_val = max(1, int(len(lines) * split_ratio)) if lines else 0
-    val_lines = lines[:n_val]
-    train_lines = lines[n_val:]
+    n_val = max(1, int(len(line_starts) * split_ratio)) if line_starts else 0
+    val_starts = line_starts[:n_val]
+    train_starts = line_starts[n_val:]
 
     train_path = output_dir / f"{input_path.stem}_{fmt}_train.jsonl"
     val_path = output_dir / f"{input_path.stem}_{fmt}_val.jsonl"
@@ -869,26 +880,29 @@ def _export_with_split(
         input_path=str(input_path),
         output_path=str(train_path),
     )
-    result.total_input = len(lines)
+    result.total_input = len(line_starts)
 
-    for out_path, subset in [(train_path, train_lines), (val_path, val_lines)]:
-        with open(out_path, "w", encoding="utf-8") as fout:
-            for raw_line in subset:
-                try:
-                    row = json.loads(raw_line)
-                    converted = exporter.convert_conversation(
-                        row,
-                        system_prompt=system_prompt,
-                    )
-                    for out_row in converted:
-                        fout.write(json.dumps(out_row, ensure_ascii=False) + "\n")
-                        result.total_output += 1
-                except Exception as exc:
-                    result.skipped += 1
-                    result.warnings.append(str(exc))
+    with open(input_path, "rb") as fin:
+        for out_path, subset in [(train_path, train_starts), (val_path, val_starts)]:
+            with open(out_path, "w", encoding="utf-8") as fout:
+                for start in subset:
+                    fin.seek(start)
+                    raw_line = fin.readline().decode("utf-8").strip()
+                    try:
+                        row = json.loads(raw_line)
+                        converted = exporter.convert_conversation(
+                            row,
+                            system_prompt=system_prompt,
+                        )
+                        for out_row in converted:
+                            fout.write(json.dumps(out_row, ensure_ascii=False) + "\n")
+                            result.total_output += 1
+                    except Exception as exc:
+                        result.skipped += 1
+                        result.warnings.append(str(exc))
 
     click.secho(
-        f"  {fmt}: {len(train_lines)} train + {len(val_lines)} val "
+        f"  {fmt}: {len(train_starts)} train + {len(val_starts)} val "
         f"-> {train_path.name}, {val_path.name}",
         fg="green",
     )
