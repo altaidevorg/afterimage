@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import math
 from typing import Dict, List, Tuple
 
 
@@ -209,7 +210,6 @@ def donut_chart(
     )
 
     angle = -90  # start at top
-    import math
 
     for i, (label, val) in enumerate(data.items()):
         if val == 0:
