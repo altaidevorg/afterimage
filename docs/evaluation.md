@@ -44,7 +44,7 @@ async def main():
     pool = SmartKeyPool.from_single_key("YOUR_KEY")
     llm = LLMFactory.create("gemini", "gemini-2.0-flash", pool)
     embed = EmbeddingProviderFactory.create(
-        {"type": "gemini", "model": "text-embedding-004"},
+        {"type": "gemini", "model": "gemini-embedding-001"},
         key_pool=pool,
     )
     judge = ConversationJudge(llm=llm, embedding_provider=embed)
@@ -58,7 +58,7 @@ asyncio.run(main())
 
 ### With `ConversationGenerator` (auto-improve)
 
-Pass `auto_improve=True`. Optionally set `embedding_provider`, `embedding_provider_config`, or `judge_config` (:class:`~afterimage.evaluator.ConversationJudgeConfig`).
+Pass `auto_improve=True`. Optionally set `embedding_provider`, `embedding_provider_config`, or `judge_config` (`ConversationJudgeConfig`). For `ConversationJudge.from_factory`, `model_provider_name` must be `gemini`, `openai`, or `deepseek` (embeddings follow `default_embedding_provider_config` for that vendor).
 
 ### Runnable example
 

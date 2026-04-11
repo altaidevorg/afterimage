@@ -18,6 +18,8 @@ This generator works differently than the conversation generator. Instead of sim
 The strategy callbacks (for instructions and prompt modification) should be configured at initialization.
 
 ```python
+import os
+
 from afterimage import StructuredGenerator
 from pydantic import BaseModel, Field
 
@@ -66,7 +68,7 @@ await generator.generate(
 
 ## Example: Data Extraction from Documents
 
-Here is how to use `AsyncStructuredGenerator` to process a list of "raw" reviews and extract structured data from them.
+Here is how to use `StructuredGenerator` (the `AsyncStructuredGenerator` name is an alias of the same class) to process a list of "raw" reviews and extract structured data from them.
 
 ```python
 import asyncio

@@ -1,4 +1,5 @@
 """Tests for PersonaGenerator."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -66,11 +67,15 @@ def persona_generator():
     storage_mock = MagicMock(spec=JSONLStorage)
     storage_mock.asave_documents = AsyncMock()
     monitor_mock = MagicMock(spec=GenerationMonitor)
-    return PersonaGenerator(
-        api_key="test_key",
-        storage=storage_mock,
-        monitor=monitor_mock,
-    ), storage_mock, monitor_mock
+    return (
+        PersonaGenerator(
+            api_key="test_key",
+            storage=storage_mock,
+            monitor=monitor_mock,
+        ),
+        storage_mock,
+        monitor_mock,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -203,8 +208,7 @@ def test_resolve_auto_n_iterations_chooses_closest_pool(
     generator, _, _ = persona_generator
 
     assert (
-        generator._resolve_auto_n_iterations(target_per_document)
-        == expected_iterations
+        generator._resolve_auto_n_iterations(target_per_document) == expected_iterations
     )
 
 
@@ -231,7 +235,9 @@ async def test_generate_for_documents_batching(persona_generator):
 
 
 @pytest.mark.asyncio
-async def test_generate_from_documents_builds_fixed_width_persona_tree(persona_generator):
+async def test_generate_from_documents_builds_fixed_width_persona_tree(
+    persona_generator,
+):
     generator, _, _ = persona_generator
     doc = Document(id="doc1", text="doc")
     provider = InMemoryDocumentProvider([doc])
@@ -270,7 +276,12 @@ async def test_generate_from_documents_auto_uses_provider_target_usage_count(
 
     doc = provider.get_all()[0]
     assert [len(entry.descriptions) for entry in doc.personas] == [5, 25, 125, 625]
-    assert [entry.metadata["generation_depth"] for entry in doc.personas] == [0, 1, 2, 3]
+    assert [entry.metadata["generation_depth"] for entry in doc.personas] == [
+        0,
+        1,
+        2,
+        3,
+    ]
 
 
 @pytest.mark.asyncio
@@ -314,7 +325,9 @@ async def test_generate_from_documents_provider_target_usage_accounts_for_multi_
 
 
 @pytest.mark.asyncio
-async def test_generate_from_documents_auto_scales_by_active_doc_count(persona_generator):
+async def test_generate_from_documents_auto_scales_by_active_doc_count(
+    persona_generator,
+):
     generator, _, _ = persona_generator
     provider = InMemoryDocumentProvider(
         [

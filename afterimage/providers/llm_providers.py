@@ -998,16 +998,36 @@ class LLMFactory:
         system_instruction: Optional[str] = None,
         **kwargs,
     ) -> LLMProvider:
+        from .local_provider import LocalLLMProvider
+
         providers = {
             "gemini": GeminiProvider,
             "openai": OpenAIProvider,
             "deepseek": DeepSeekProvider,
+            "local": LocalLLMProvider,
         }
 
         if provider not in providers:
             raise ValueError(f"Unknown provider: {provider}")
 
         provider_cls = providers[provider]
+
+        if provider == "local":
+            # LocalLLMProvider has a different constructor signature
+            base_url = kwargs.pop("base_url", None) or "http://localhost:8000/v1"
+            local_api_key = api_key if isinstance(api_key, str) else "not-needed"
+            if isinstance(api_key, SmartKeyPool):
+                local_api_key = "not-needed"
+            init_kwargs = {
+                "base_url": base_url,
+                "api_key": local_api_key,
+                "system_instruction": system_instruction,
+                **kwargs,
+            }
+            if model_name is not None:
+                init_kwargs["model_name"] = model_name
+            return provider_cls(**init_kwargs)
+
         init_kwargs = {
             "api_key": api_key,
             "system_instruction": system_instruction,

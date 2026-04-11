@@ -3,7 +3,7 @@ Afterimage Demo UI - Main Application
 
 A Gradio-based UI for demonstrating synthetic data generation capabilities.
 """
-import asyncio
+
 import sys
 from pathlib import Path
 
@@ -17,6 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 # Setup environment first
 from core.config import setup_environment, get_api_key
+
 setup_environment()
 
 # Get API key (will raise ValueError if not set)
@@ -50,13 +51,6 @@ from pages.handlers.generation import (
 # --- Context Loading ---
 
 
-
-
-
-
-
-
-
 # --- Main Application ---
 
 with gr.Blocks(title="Afterimage") as demo:
@@ -74,11 +68,11 @@ with demo.route("Structured Generation", "/structured"):
 
 with demo.route("Train Model", "/train"):
     create_train_model_page(
-        run_analysis, 
-        run_training, 
-        run_training_developer, 
+        run_analysis,
+        run_training,
+        run_training_developer,
         run_evaluation,
-        chat_with_trained_model
+        chat_with_trained_model,
     )
 
 

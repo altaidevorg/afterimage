@@ -1,4 +1,5 @@
 """Tests for instruction generator callbacks."""
+
 from collections import Counter
 import random
 import pytest
@@ -7,6 +8,7 @@ from unittest.mock import MagicMock
 from afterimage.callbacks.instruction_generator_callbacks import (
     ContextualInstructionGeneratorCallback,
     PersonaInstructionGeneratorCallback,
+    SimpleInstructionGeneratorCallback,
     ToolCallingInstructionGeneratorCallback,
     LLMFactory,
 )
@@ -90,6 +92,27 @@ def patch_llm_factory(mock_llm_factory):
     LLMFactory.create = original
 
 
+def test_simple_callback_generate():
+    callback = SimpleInstructionGeneratorCallback(api_key="test_key")
+    result = callback.generate("Ask something interesting.")
+    assert result.instructions == ["Test instruction"]
+    assert result.context == ""
+    assert result.context_id is None
+    assert result.context_ids == []
+    assert result.persona is None
+    assert not hasattr(callback, "provider")
+
+
+@pytest.mark.asyncio
+async def test_simple_callback_agenerate():
+    callback = SimpleInstructionGeneratorCallback(api_key="test_key")
+    result = await callback.agenerate("Ask something interesting.")
+    assert result.instructions == ["Test instruction"]
+    assert result.context == ""
+    assert result.context_id is None
+    assert result.context_ids == []
+
+
 def test_contextual_callback_generate(documents):
     callback = ContextualInstructionGeneratorCallback(
         api_key="test_key", documents=documents, num_random_contexts=1
@@ -161,7 +184,9 @@ def test_persona_callback_supports_legacy_personas_without_generation_depth():
     assert result.persona_generation_depth == 0
 
 
-def test_contextual_callback_does_not_report_usage_before_generation_succeeds(documents):
+def test_contextual_callback_does_not_report_usage_before_generation_succeeds(
+    documents,
+):
     provider = InMemoryDocumentProvider(documents)
     callback = ContextualInstructionGeneratorCallback(
         api_key="test_key",
@@ -422,9 +447,7 @@ def test_persona_callback_weighted_oversampling_prefers_shallow_personas():
 
     state = callback._get_persona_selection_state(doc)
     random.seed(0)
-    depth_counts = Counter(
-        state.next_candidate().generation_depth for _ in range(5000)
-    )
+    depth_counts = Counter(state.next_candidate().generation_depth for _ in range(5000))
 
     assert state.mode == "weighted"
     assert depth_counts[0] > depth_counts[4]

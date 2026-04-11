@@ -37,8 +37,8 @@ OPTIMIZER = "adamw_torch"
 
 # Evaluation
 EVAL_STRATEGY = "epoch"  # Evaluate at end of each epoch
-SAVE_STRATEGY = "no"     # Checkpoint saving (only final model)
-SAVE_TOTAL_LIMIT = 0     # Checkpoint limit (0 = no saving)
+SAVE_STRATEGY = "no"  # Checkpoint saving (only final model)
+SAVE_TOTAL_LIMIT = 0  # Checkpoint limit (0 = no saving)
 LOAD_BEST_MODEL = False  # False because no checkpoints
 
 # ==========================================

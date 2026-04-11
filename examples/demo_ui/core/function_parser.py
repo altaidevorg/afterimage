@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Type, Union, get_type_hi
 @dataclass
 class FunctionDefinition:
     """Represents a parsed function definition for tool calling."""
-    
+
     name: str
     description: str
     parameters: Dict[str, Any]
@@ -152,12 +152,14 @@ TYPE_MAPPING = {
 
 class FunctionParseError(Exception):
     """Raised when function parsing fails."""
+
     pass
 
 
 @dataclass
 class ParsedFunction:
     """Container for parsed function with source code."""
+
     definition: FunctionDefinition
     source_code: str
     category: str = "Uncategorized"
@@ -224,64 +226,68 @@ def _get_default_value(default: ast.expr) -> Any:
     return None
 
 
-def _parse_function_node(node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> FunctionDefinition:
+def _parse_function_node(
+    node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+) -> FunctionDefinition:
     """
     Parse an AST function node and extract FunctionDefinition.
-    
+
     Args:
         node: ast.FunctionDef or ast.AsyncFunctionDef node
-        
+
     Returns:
         FunctionDefinition object
     """
     name = node.name
-    
+
     # Extract docstring as description
     description = ""
-    if (node.body and 
-        isinstance(node.body[0], ast.Expr) and 
-        isinstance(node.body[0].value, ast.Constant) and
-        isinstance(node.body[0].value.value, str)):
+    if (
+        node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+        and isinstance(node.body[0].value.value, str)
+    ):
         description = node.body[0].value.value.strip()
-    
+
     # Extract parameters
     parameters: Dict[str, Any] = {}
     required: List[str] = []
-    
+
     args = node.args
     num_args = len(args.args)
     num_defaults = len(args.defaults)
     defaults_offset = num_args - num_defaults
-    
+
     for i, arg in enumerate(args.args):
         param_name = arg.arg
-        
+
         if param_name == "self":
             continue
-        
+
         type_str = "string"
         if arg.annotation:
             type_str = _get_type_from_annotation(arg.annotation)
-        
+
         json_type = _annotation_to_json_type(type_str)
-        
+
         param_info: Dict[str, Any] = {
             "type": json_type,
         }
-        
+
         default_index = i - defaults_offset
         has_default = default_index >= 0 and default_index < num_defaults
-        
+
         if has_default:
             default_value = _get_default_value(args.defaults[default_index])
             if default_value is not None:
                 param_info["default"] = default_value
         else:
             required.append(param_name)
-        
+
         param_info["description"] = f"Parameter '{param_name}' of type {type_str}"
         parameters[param_name] = param_info
-    
+
     return FunctionDefinition(
         name=name,
         description=description,
@@ -297,13 +303,13 @@ def _parse_function_node(node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> 
 def parse_function(source_code: str) -> ParsedFunction:
     """
     Parse Python function code and extract FunctionDefinition.
-    
+
     Args:
         source_code: Python code containing a function definition
-        
+
     Returns:
         ParsedFunction with FunctionDefinition and source code
-        
+
     Raises:
         FunctionParseError: If parsing fails
     """
@@ -311,28 +317,28 @@ def parse_function(source_code: str) -> ParsedFunction:
         tree = ast.parse(source_code)
     except SyntaxError as e:
         raise FunctionParseError(f"Syntax error in code: {e}")
-    
+
     func_node = None
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             func_node = node
             break
-    
+
     if func_node is None:
         raise FunctionParseError("No function definition found in the code")
-    
+
     func_definition = _parse_function_node(func_node)
-    
+
     return ParsedFunction(definition=func_definition, source_code=source_code)
 
 
 def parse_multiple_functions(source_code: str) -> List[ParsedFunction]:
     """
     Parse multiple function definitions from Python code.
-    
+
     Args:
         source_code: Python code containing one or more function definitions
-        
+
     Returns:
         List of ParsedFunction objects
     """
@@ -340,43 +346,48 @@ def parse_multiple_functions(source_code: str) -> List[ParsedFunction]:
         tree = ast.parse(source_code)
     except SyntaxError as e:
         raise FunctionParseError(f"Syntax error in code: {e}")
-    
+
     definitions = []
-    
+
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             try:
                 func_definition = _parse_function_node(node)
                 func_source = ast.unparse(node)
-                definitions.append(ParsedFunction(definition=func_definition, source_code=func_source))
+                definitions.append(
+                    ParsedFunction(definition=func_definition, source_code=func_source)
+                )
             except Exception:
                 continue
-    
+
     return definitions
 
 
 def validate_function_code(source_code: str) -> tuple[bool, str]:
     """
     Validate that the provided code is a valid Python function.
-    
+
     Returns:
         Tuple of (is_valid, error_message)
     """
     if not source_code or not source_code.strip():
         return False, "Code is empty"
-    
+
     try:
         tree = ast.parse(source_code)
     except SyntaxError as e:
         return False, f"Syntax error: {e}"
-    
+
     has_function = False
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             has_function = True
             break
-    
+
     if not has_function:
-        return False, "No function definition found. Code must contain at least one 'def' statement."
-    
+        return (
+            False,
+            "No function definition found. Code must contain at least one 'def' statement.",
+        )
+
     return True, ""

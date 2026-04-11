@@ -15,12 +15,14 @@ sys.path.insert(0, os.path.abspath(".."))
 # -- Project information -----------------------------------------------------
 
 project = "AfterImage"
-copyright = "2024, Altai Dev"
+copyright = "2026, ALTAI"
 author = "Yusuf Sarıgöz"
-
 # The full version, including alpha/beta/rc tags
 release = afterimage.__version__
 
+html_title = f"{release} — Generate conversational, tool-calling, structured-output, and preference datasets — easily and at scale"
+html_short_title = f"{project} {release}"
+html_baseurl = "https://afterimage.altai.dev"
 
 # -- General configuration ---------------------------------------------------
 

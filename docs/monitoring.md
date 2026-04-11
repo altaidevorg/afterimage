@@ -14,11 +14,11 @@ You can attach a monitor to any generator (`ConversationGenerator`, `PersonaGene
 from afterimage import ConversationGenerator, GenerationMonitor
 
 # 1. Initialize Monitor
-# This will save metrics to 'metrics.jsonl' and logs to 'afterimage.log' in the specified directory.
-# If no log_dir is provided, it creates a timestamped folder in ./monitoring/
+# This writes metrics to metrics.jsonl and logs to afterimage.log under log_dir.
+# If log_dir is omitted, a timestamped directory is created under ./.afterimage-monitoring/
 monitor = GenerationMonitor(
     log_dir="./logs",
-    metrics_interval=60  # Check for alerts every 60 seconds
+    metrics_interval=60,  # seconds between built-in alert rule runs (rolling windows stay 5 minutes)
 )
 
 # 2. Attach to Generator
@@ -93,27 +93,29 @@ The standard visualizations include:
 
 ## Alerts
 
-The monitor includes an active alerting system that checks for anomalies every `metrics_interval`. Built-in alerts include:
+`GenerationMonitor` exposes `alert_handlers` plus threshold kwargs (`alert_min_success_rate`, `alert_max_generation_time_seconds`, `alert_max_error_rate`, token means, `alert_max_conversation_length_mean`). A background **`_alert_worker`** thread wakes every **`metrics_interval`** seconds (minimum one second) and runs the same logic as **`check_alerts()`**, evaluating rolling **five-minute means** from `get_metrics`, for example:
 
-*   **Low Success Rate**: Triggers if success rate drops below 80%.
-*   **High Generation Time**: Triggers if average generation time exceeds 30s.
-*   **High Error Rate**: Triggers if error rate exceeds 20%.
-*   **High Token Usage**: Triggers if token usage spikes (Prompt > 4k, Completion > 4k, Total > 8k).
-*   **Short Conversations**: Triggers if average conversation length is < 2 turns.
+* Low success rate below **0.8** (default)
+* Mean generation time above **30s**
+* Mean error rate above **0.2**
+* Mean prompt / completion / total token counts above **4096 / 4096 / 8192**
+* Mean `conversation_length` **above** **2** turns (`long_conversations`)
 
-### Custom Alert Handlers
+Set **`metrics_interval=0`** to disable only the periodic alert thread (metric and log workers are unchanged). To run the rules on demand from your own code, call **`monitor.check_alerts()`**.
 
-You can define custom logic to respond to these alerts, such as sending a Slack notification or stopping the generation.
+### Custom alert handlers
+
+Register callables that accept an `Alert` dataclass (`name`, `message`, `level`, `timestamp`, `data`). They are invoked whenever a built-in rule fires (including on each periodic pass while the condition remains true).
 
 ```python
 def stop_on_critical_error(alert):
     if alert.level == "error":
         print(f"CRITICAL ALERT: {alert.name} - {alert.message}")
-        # Logic to stop generation or notify team
-        
+
+
 monitor = GenerationMonitor(
     log_dir="./logs",
-    alert_handlers=[stop_on_critical_error]
+    alert_handlers=[stop_on_critical_error],
 )
 ```
 
@@ -122,7 +124,7 @@ monitor = GenerationMonitor(
 ### Threading Model
 The `GenerationMonitor` uses a producer-consumer architecture to ensure monitoring does not impact generation performance.
 *   **Producers**: `record_metric`, `log_info`, etc., simply put items into a thread-safe `queue.Queue`.
-*   **Consumers**: Background worker threads (`_metric_worker`, `_log_worker`) pull items from the queues and process them (writing to files, checking alerts, etc.).
+*   **Consumers**: Background worker threads (`_metric_worker`, `_log_worker`) pull items from the queues and process them (writing to files, forwarding to handlers). When `metrics_interval > 0`, **`_alert_worker`** also runs and may invoke **`alert_handlers`**.
 
 ### Custom Handlers
 By default, the monitor uses `FileMetricHandler` and `FileLogHandler`. You can implement your own handlers (e.g., to send metrics to Datadog, Prometheus, or WandB) by implementing the `MetricHandler` or `LogHandler` protocols.

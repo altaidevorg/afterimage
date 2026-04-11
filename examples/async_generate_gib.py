@@ -54,6 +54,7 @@ instruction_generator_callback = ContextualInstructionGeneratorCallback(
 # Set up the respondent prompt modifier
 respondent_prompt_modifier = WithContextRespondentPromptModifier()
 
+
 async def main():
     # Initialize the ConversationGenerator
     conv_gen = AsyncConversationGenerator(
@@ -73,7 +74,7 @@ async def main():
     # we call it here just to trigger the creation of correspondent prompt and print it
     # before entering the generation loop.
     await conv_gen.ainitialize(instruction_generator_callback)
-    
+
     # Print the auto-generated correspondent prompt
     print("Generated Correspondent Prompt:")
     print(conv_gen.correspondent_prompt)
@@ -102,6 +103,7 @@ async def main():
 
     # graceful shutdown
     monitor.shutdown()
+
 
 # Generate conversations
 if __name__ == "__main__":

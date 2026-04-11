@@ -16,7 +16,12 @@ from afterimage import (
     JSONLStorage,
 )
 
-from ..models import AnalyzeDocumentResponse, GenerationPhase, GenerationRequest, JobProgress
+from ..models import (
+    AnalyzeDocumentResponse,
+    GenerationPhase,
+    GenerationRequest,
+    JobProgress,
+)
 from ..storage.result_store import ResultStore
 from .prompt_analyzer import PromptAnalyzer
 
@@ -46,7 +51,9 @@ class GenerationService:
     ) -> GenerationResult:
         start_time = time.monotonic()
 
-        async def _report(phase: GenerationPhase, completed: int = 0, total: int = 0) -> None:
+        async def _report(
+            phase: GenerationPhase, completed: int = 0, total: int = 0
+        ) -> None:
             if progress_callback is None:
                 return
             elapsed = time.monotonic() - start_time
@@ -62,7 +69,9 @@ class GenerationService:
                     percent=round(pct, 1),
                     current_phase=phase,
                     elapsed_seconds=round(elapsed, 1),
-                    estimated_remaining_seconds=round(remaining, 1) if remaining is not None else None,
+                    estimated_remaining_seconds=round(remaining, 1)
+                    if remaining is not None
+                    else None,
                 )
             )
 
@@ -107,26 +116,27 @@ class GenerationService:
         lang = request.force_language
         lang_rule = f"ALWAYS respond in {lang.upper()}." if lang else ""
 
-        respondent_prompt = (
-            request.respondent_prompt
-            or (
-                f"{prompt_parts.respondent_role} {prompt_parts.instruction} {lang_rule}".strip()
-                if prompt_parts
-                else f"You are a helpful expert. {lang_rule}".strip()
-            )
+        respondent_prompt = request.respondent_prompt or (
+            f"{prompt_parts.respondent_role} {prompt_parts.instruction} {lang_rule}".strip()
+            if prompt_parts
+            else f"You are a helpful expert. {lang_rule}".strip()
         )
         # If the caller supplied their own respondent_prompt but force_language is set,
         # append the language rule so WithContextRespondentPromptModifier cannot override it.
         if lang and lang_rule not in respondent_prompt:
             respondent_prompt = f"{respondent_prompt} {lang_rule}"
 
-        correspondent_prompt = (
-            request.correspondent_prompt
-            or (prompt_parts.correspondent_role if prompt_parts else "You are a curious user.")
+        correspondent_prompt = request.correspondent_prompt or (
+            prompt_parts.correspondent_role
+            if prompt_parts
+            else "You are a curious user."
         )
 
         if request.include_system_prompt_parts and prompt_parts:
-            system_prompt_parts_list = [prompt_parts.respondent_role, prompt_parts.instruction]
+            system_prompt_parts_list = [
+                prompt_parts.respondent_role,
+                prompt_parts.instruction,
+            ]
 
         # ------------------------------------------------------------------
         # Phase 4: Generate personas (optional)
@@ -187,7 +197,9 @@ class GenerationService:
         storage = _ProgressStorage(
             conversations_path=str(conversations_path),
             total=request.num_dialogs,
-            report_fn=lambda completed: _report("generating", completed, request.num_dialogs),
+            report_fn=lambda completed: _report(
+                "generating", completed, request.num_dialogs
+            ),
         )
 
         # ------------------------------------------------------------------

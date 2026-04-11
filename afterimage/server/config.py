@@ -13,7 +13,9 @@ class ServerConfig(BaseSettings):
     OPENAI_API_KEY) as a fallback, so the existing .env file works without changes.
     """
 
-    model_config = SettingsConfigDict(env_prefix="AFTERIMAGE_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="AFTERIMAGE_", env_file=".env", extra="ignore"
+    )
 
     # API keys — populated by the prefixed vars or bare fallbacks (see validator below)
     gemini_api_key: str | None = None

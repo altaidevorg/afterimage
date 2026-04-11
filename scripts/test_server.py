@@ -8,6 +8,7 @@ Usage:
     python test_server.py
     python test_server.py --base-url http://localhost:8000 --quick
 """
+
 from __future__ import annotations
 
 import argparse
@@ -15,8 +16,6 @@ import asyncio
 import json
 import sys
 import time
-from pathlib import Path
-from typing import Any
 
 import httpx
 
@@ -34,17 +33,18 @@ PersonaGenerator to enrich documents with diverse user personas.
 Storage backends include JSONLStorage and SQLStorage.
 """.strip()
 
-GREEN  = "\033[92m"
-RED    = "\033[91m"
+GREEN = "\033[92m"
+RED = "\033[91m"
 YELLOW = "\033[93m"
-CYAN   = "\033[96m"
-BOLD   = "\033[1m"
-RESET  = "\033[0m"
+CYAN = "\033[96m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class TestResult:
     def __init__(self):
@@ -70,16 +70,18 @@ class TestResult:
     def summary(self):
         total = len(self.passed) + len(self.failed) + len(self.skipped)
         print()
-        print(f"{BOLD}{'─'*60}{RESET}")
-        print(f"{BOLD}Results: {total} tests  "
-              f"{GREEN}{len(self.passed)} passed{RESET}  "
-              f"{RED}{len(self.failed)} failed{RESET}  "
-              f"{YELLOW}{len(self.skipped)} skipped{RESET}{BOLD}{RESET}")
+        print(f"{BOLD}{'─' * 60}{RESET}")
+        print(
+            f"{BOLD}Results: {total} tests  "
+            f"{GREEN}{len(self.passed)} passed{RESET}  "
+            f"{RED}{len(self.failed)} failed{RESET}  "
+            f"{YELLOW}{len(self.skipped)} skipped{RESET}{BOLD}{RESET}"
+        )
         if self.failed:
             print(f"\n{RED}Failed tests:{RESET}")
             for name, reason in self.failed:
                 print(f"  • {name}: {reason}")
-        print(f"{BOLD}{'─'*60}{RESET}")
+        print(f"{BOLD}{'─' * 60}{RESET}")
         return len(self.failed) == 0
 
 
@@ -96,6 +98,7 @@ def _assert(condition: bool, msg: str):
 # Test suites
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 async def test_health(client: httpx.AsyncClient, r: TestResult):
     section("Health & Readiness")
 
@@ -107,7 +110,10 @@ async def test_health(client: httpx.AsyncClient, r: TestResult):
         _assert(body["status"] == "ok", f"status field: {body.get('status')}")
         _assert("version" in body, "missing version")
         _assert("active_jobs" in body, "missing active_jobs")
-        r.ok("GET /health", f"version={body['version']} active_jobs={body['active_jobs']}")
+        r.ok(
+            "GET /health",
+            f"version={body['version']} active_jobs={body['active_jobs']}",
+        )
     except Exception as e:
         r.fail("GET /health", str(e))
 
@@ -141,7 +147,9 @@ async def test_docs(client: httpx.AsyncClient, r: TestResult):
             r.fail(f"GET {path}", str(e))
 
 
-async def test_analyze_document(client: httpx.AsyncClient, r: TestResult) -> dict[str, str] | None:
+async def test_analyze_document(
+    client: httpx.AsyncClient, r: TestResult
+) -> dict[str, str] | None:
     section("POST /api/v1/analyze-document")
     result = None
 
@@ -152,7 +160,9 @@ async def test_analyze_document(client: httpx.AsyncClient, r: TestResult) -> dic
             json={"document_text": SAMPLE_DOCUMENT, "excerpt_length": 500},
             timeout=60,
         )
-        _assert(resp.status_code == 200, f"status {resp.status_code}: {resp.text[:200]}")
+        _assert(
+            resp.status_code == 200, f"status {resp.status_code}: {resp.text[:200]}"
+        )
         body = resp.json()
         for field in ("respondent_role", "correspondent_role", "instruction"):
             _assert(field in body and body[field], f"missing/empty field: {field}")
@@ -182,7 +192,9 @@ async def test_generate_and_poll(
     output_format: str = "jsonl",
 ) -> str | None:
     """Submit a generation job and poll until completion. Returns job_id."""
-    section(f"POST /api/v1/generate  (num_dialogs={num_dialogs}, format={output_format})")
+    section(
+        f"POST /api/v1/generate  (num_dialogs={num_dialogs}, format={output_format})"
+    )
     job_id = None
 
     # Submit
@@ -204,11 +216,16 @@ async def test_generate_and_poll(
             },
             timeout=30,
         )
-        _assert(resp.status_code == 202, f"status {resp.status_code}: {resp.text[:200]}")
+        _assert(
+            resp.status_code == 202, f"status {resp.status_code}: {resp.text[:200]}"
+        )
         body = resp.json()
         job_id = body.get("job_id")
         _assert(job_id, "missing job_id")
-        _assert(body["status"] in ("queued", "running"), f"unexpected status: {body['status']}")
+        _assert(
+            body["status"] in ("queued", "running"),
+            f"unexpected status: {body['status']}",
+        )
         _assert("links" in body and "stream" in body["links"], "missing SSE link")
         r.ok("POST /api/v1/generate → 202", f"job_id={job_id}")
     except Exception as e:
@@ -245,7 +262,11 @@ async def test_generate_and_poll(
                 body = resp.json()
                 status = body["status"]
                 pct = body.get("progress", {}).get("percent", 0)
-                print(f"\r  {YELLOW}⏳ {status} {pct:.0f}%{RESET}        ", end="", flush=True)
+                print(
+                    f"\r  {YELLOW}⏳ {status} {pct:.0f}%{RESET}        ",
+                    end="",
+                    flush=True,
+                )
                 if status in ("completed", "failed", "cancelled"):
                     final_status = status
                     print()
@@ -258,10 +279,13 @@ async def test_generate_and_poll(
         return job_id
 
     if final_status == "completed":
-        r.ok(f"job completes (status=completed)")
+        r.ok("job completes (status=completed)")
     else:
         body = await (await client.get(f"/api/v1/jobs/{job_id}")).aread()
-        r.fail(f"job completes", f"status={final_status} error={json.loads(body).get('error','')}")
+        r.fail(
+            "job completes",
+            f"status={final_status} error={json.loads(body).get('error', '')}",
+        )
 
     return job_id
 
@@ -297,7 +321,9 @@ async def test_job_status(client: httpx.AsyncClient, r: TestResult, job_id: str)
             _assert("download_url" in body["result"], "missing download_url")
             r.ok("completed job has result.download_url")
         else:
-            r.skip("completed job has result.download_url", f"job status={body['status']}")
+            r.skip(
+                "completed job has result.download_url", f"job status={body['status']}"
+            )
     except Exception as e:
         r.fail("completed job has result.download_url", str(e))
 
@@ -322,7 +348,7 @@ async def test_list_jobs(client: httpx.AsyncClient, r: TestResult):
         _assert(resp.status_code == 200, f"status {resp.status_code}")
         body = resp.json()
         _assert(body["per_page"] == 1, f"per_page should be 1, got {body['per_page']}")
-        _assert(len(body["jobs"]) <= 1, f"returned more than 1 job")
+        _assert(len(body["jobs"]) <= 1, "returned more than 1 job")
         r.ok("GET /api/v1/jobs?page=1&per_page=1 (pagination)")
     except Exception as e:
         r.fail("GET /api/v1/jobs pagination", str(e))
@@ -343,7 +369,9 @@ async def test_download_result(
 
     try:
         resp = await client.get(f"/api/v1/jobs/{job_id}/result", timeout=30)
-        _assert(resp.status_code == 200, f"status {resp.status_code}: {resp.text[:200]}")
+        _assert(
+            resp.status_code == 200, f"status {resp.status_code}: {resp.text[:200]}"
+        )
 
         content_type = resp.headers.get("content-type", "")
         if output_format == "json":
@@ -358,7 +386,9 @@ async def test_download_result(
             lines = [l for l in resp.text.strip().splitlines() if l.strip()]
             _assert(len(lines) > 0, "JSONL result is empty")
             first = json.loads(lines[0])
-            _assert("conversations" in first, "first JSONL line missing 'conversations'")
+            _assert(
+                "conversations" in first, "first JSONL line missing 'conversations'"
+            )
             r.ok(
                 "GET /result → 200 (JSONL)",
                 f"content-type={content_type}  lines={len(lines)}",
@@ -404,7 +434,9 @@ async def test_sse_stream(client: httpx.AsyncClient, r: TestResult):
     deadline = time.time() + 300
 
     try:
-        async with client.stream("GET", f"/api/v1/jobs/{job_id}/stream", timeout=300) as stream:
+        async with client.stream(
+            "GET", f"/api/v1/jobs/{job_id}/stream", timeout=300
+        ) as stream:
             _assert(stream.status_code == 200, f"SSE status {stream.status_code}")
             async for line in stream.aiter_lines():
                 if time.time() > deadline:
@@ -432,7 +464,10 @@ async def test_sse_stream(client: httpx.AsyncClient, r: TestResult):
         complete_events = [e for e in events if e.get("event") == "complete"]
         if complete_events:
             payload = json.loads(complete_events[0].get("data", "{}"))
-            _assert("download_url" in payload, f"complete event missing download_url: {payload}")
+            _assert(
+                "download_url" in payload,
+                f"complete event missing download_url: {payload}",
+            )
             r.ok("SSE complete event has download_url")
 
     except Exception as e:
@@ -478,7 +513,9 @@ async def test_cancel_job(client: httpx.AsyncClient, r: TestResult):
         await asyncio.sleep(1)
         resp = await client.get(f"/api/v1/jobs/{job_id}")
         body = resp.json()
-        _assert(body["status"] == "cancelled", f"expected cancelled, got {body['status']}")
+        _assert(
+            body["status"] == "cancelled", f"expected cancelled, got {body['status']}"
+        )
         r.ok("cancelled job has status=cancelled")
 
         # Try to cancel again → 409
@@ -498,12 +535,17 @@ async def test_file_upload(client: httpx.AsyncClient, r: TestResult):
         resp = await client.post(
             "/api/v1/generate/upload",
             files={"file": ("test_doc.txt", content, "text/plain")},
-            data={"num_dialogs": "2", "use_personas": "false",
-                  "auto_generate_prompts": "false",
-                  "output_format": "jsonl"},
+            data={
+                "num_dialogs": "2",
+                "use_personas": "false",
+                "auto_generate_prompts": "false",
+                "output_format": "jsonl",
+            },
             timeout=30,
         )
-        _assert(resp.status_code == 202, f"status {resp.status_code}: {resp.text[:300]}")
+        _assert(
+            resp.status_code == 202, f"status {resp.status_code}: {resp.text[:300]}"
+        )
         job_id = resp.json().get("job_id")
         _assert(job_id, "missing job_id")
         r.ok("POST /generate/upload → 202", f"job_id={job_id}")
@@ -528,6 +570,7 @@ async def test_file_upload(client: httpx.AsyncClient, r: TestResult):
 # Main runner
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 async def run_tests(base_url: str, api_key: str | None, quick: bool):
     r = TestResult()
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
@@ -537,8 +580,9 @@ async def run_tests(base_url: str, api_key: str | None, quick: bool):
     print(f"API key  : {'set' if api_key else 'not set (auth disabled)'}")
     print(f"Mode     : {'quick (2 dialogs, skip SSE)' if quick else 'full'}")
 
-    async with httpx.AsyncClient(base_url=base_url, headers=headers, timeout=60) as client:
-
+    async with httpx.AsyncClient(
+        base_url=base_url, headers=headers, timeout=60
+    ) as client:
         # Basic health — abort early if server unreachable
         await test_health(client, r)
         if r.failed and any("GET /health" in f[0] for f in r.failed):
@@ -550,14 +594,18 @@ async def run_tests(base_url: str, api_key: str | None, quick: bool):
         await test_analyze_document(client, r)
 
         # Full generation + poll (JSONL format)
-        job_id_jsonl = await test_generate_and_poll(client, r, num_dialogs=2, output_format="jsonl")
+        job_id_jsonl = await test_generate_and_poll(
+            client, r, num_dialogs=2, output_format="jsonl"
+        )
         if job_id_jsonl:
             await test_job_status(client, r, job_id_jsonl)
             await test_list_jobs(client, r)
             await test_download_result(client, r, job_id_jsonl, "jsonl")
 
         # Generation + poll (JSON format)
-        job_id_json = await test_generate_and_poll(client, r, num_dialogs=2, output_format="json")
+        job_id_json = await test_generate_and_poll(
+            client, r, num_dialogs=2, output_format="json"
+        )
         if job_id_json:
             await test_download_result(client, r, job_id_json, "json")
 
@@ -579,7 +627,9 @@ async def run_tests(base_url: str, api_key: str | None, quick: bool):
 def main():
     parser = argparse.ArgumentParser(description="AfterImage Server Test Playground")
     parser.add_argument("--base-url", default="http://localhost:8000")
-    parser.add_argument("--api-key", default=None, help="Bearer token if server auth is enabled")
+    parser.add_argument(
+        "--api-key", default=None, help="Bearer token if server auth is enabled"
+    )
     parser.add_argument("--quick", action="store_true", help="Skip SSE streaming test")
     args = parser.parse_args()
 

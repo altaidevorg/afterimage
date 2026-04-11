@@ -17,12 +17,12 @@ import os
 generator = ConversationGenerator(
     respondent_prompt="You are a helpful assistant.",
     api_key=os.getenv("GEMINI_API_KEY"),
-    model_name="gemini-2.0-flash",
+    model_name="gemini-2.5-flash",
     # Strategies are now passed here
     instruction_generator_callback=my_instruction_gen,
     respondent_prompt_modifier=my_prompt_modifier,
-    auto_improve=False,  # set to to True to enable auto-improvement
-    evaluator_model_name="gemini-2.0-flash"
+    auto_improve=False,  # set True to enable auto-improvement (ConversationJudge + retries)
+    evaluator_model_name="gemini-2.5-flash"
 )
 ```
 
@@ -56,7 +56,7 @@ await generator.generate(
 **Parameters:**
 
 *   `num_dialogs` (int, optional): Number of conversations to generate.
-*   `max_turns` (int): Maximum exchanges per conversation.
+*   `max_turns` (int): Upper bound on exchanges per conversation; the generator samples a turn count uniformly from `1` through `max_turns` for each dialog (see `ConversationGenerator.generate`).
 *   `max_concurrency` (int): Parallel generation limit.
 *   `stopping_criteria` (List[BaseStoppingCallback], optional): Custom logic for when to stop generating (e.g., when all personas are covered). If `num_dialogs` is set, a `FixedNumberStoppingCallback` is automatically added.
 

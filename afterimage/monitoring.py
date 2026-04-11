@@ -108,7 +108,7 @@ class GenerationMonitor:
     def __init__(
         self,
         log_dir: str | Path | None = None,
-        metric_handlers: list[MetricHandler]|None = None,
+        metric_handlers: list[MetricHandler] | None = None,
         log_handlers: list[LogHandler] | None = None,
         alert_handlers: list[Callable[[Alert], None]] | None = None,
         metrics_interval: int = 60,  # seconds
@@ -131,7 +131,9 @@ class GenerationMonitor:
             metric_handlers: List of custom metric handlers
             log_handlers: List of custom log handlers
             alert_handlers: List of callables to handle alerts
-            metrics_interval: How often to calculate metrics (seconds)
+            metrics_interval: Seconds between built-in alert rule evaluations (rolling
+                windows are still five minutes; this is only how often rules run).
+                If ``<= 0``, periodic alert checks are disabled.
             shutdown_timeout: Timeout for graceful shutdown (seconds)
             alert_min_success_rate: Alert if success_rate mean below this (default 0.8).
             alert_max_generation_time_seconds: Alert if generation_time mean above this in seconds (default 30).
@@ -146,7 +148,8 @@ class GenerationMonitor:
         self.log_dir = (
             Path(log_dir)
             if log_dir
-            else Path("monitoring") / datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            else Path(".afterimage-monitoring")
+            / datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         )
         self.log_dir.mkdir(exist_ok=True, parents=True)
 
@@ -159,13 +162,35 @@ class GenerationMonitor:
         self.shutdown_timeout = shutdown_timeout
 
         # Alert thresholds (None = use default)
-        self._alert_min_success_rate = 0.8 if alert_min_success_rate is None else alert_min_success_rate
-        self._alert_max_generation_time_seconds = 30.0 if alert_max_generation_time_seconds is None else alert_max_generation_time_seconds
-        self._alert_max_error_rate = 0.2 if alert_max_error_rate is None else alert_max_error_rate
-        self._alert_max_prompt_token_mean = 4096.0 if alert_max_prompt_token_mean is None else alert_max_prompt_token_mean
-        self._alert_max_completion_token_mean = 4096.0 if alert_max_completion_token_mean is None else alert_max_completion_token_mean
-        self._alert_max_total_token_mean = 8192.0 if alert_max_total_token_mean is None else alert_max_total_token_mean
-        self._alert_max_conversation_length_mean = 2.0 if alert_max_conversation_length_mean is None else alert_max_conversation_length_mean
+        self._alert_min_success_rate = (
+            0.8 if alert_min_success_rate is None else alert_min_success_rate
+        )
+        self._alert_max_generation_time_seconds = (
+            30.0
+            if alert_max_generation_time_seconds is None
+            else alert_max_generation_time_seconds
+        )
+        self._alert_max_error_rate = (
+            0.2 if alert_max_error_rate is None else alert_max_error_rate
+        )
+        self._alert_max_prompt_token_mean = (
+            4096.0
+            if alert_max_prompt_token_mean is None
+            else alert_max_prompt_token_mean
+        )
+        self._alert_max_completion_token_mean = (
+            4096.0
+            if alert_max_completion_token_mean is None
+            else alert_max_completion_token_mean
+        )
+        self._alert_max_total_token_mean = (
+            8192.0 if alert_max_total_token_mean is None else alert_max_total_token_mean
+        )
+        self._alert_max_conversation_length_mean = (
+            2.0
+            if alert_max_conversation_length_mean is None
+            else alert_max_conversation_length_mean
+        )
 
         self._token_usage_callback = token_usage_callback
         self._token_usage_callback_interval = token_usage_callback_interval_seconds
@@ -187,8 +212,24 @@ class GenerationMonitor:
         ]
         if self._token_usage_callback is not None:
             self._workers.append(Thread(target=self._token_usage_worker, daemon=True))
+        if self.metrics_interval and self.metrics_interval > 0:
+            self._workers.append(Thread(target=self._alert_worker, daemon=True))
         for worker in self._workers:
             worker.start()
+
+    def _alert_worker(self) -> None:
+        """Periodically evaluate built-in alert rules against recent metrics."""
+        interval = max(1, int(self.metrics_interval))
+        while not self._shutdown.is_set():
+            if self._shutdown.wait(timeout=float(interval)):
+                break
+            try:
+                self._check_alerts()
+            except Exception as e:
+                warnings.warn(
+                    f"Periodic alert check failed: {e}",
+                    stacklevel=2,
+                )
 
     def _metric_worker(self):
         """Process metrics from queue."""
@@ -298,12 +339,10 @@ class GenerationMonitor:
         self._enqueue_log({"message": message, **error_data, **data}, "error")
 
     def record_metric(
-        self, metric_name: str, value: float, metadata: dict[str, Any]|None = None
+        self, metric_name: str, value: float, metadata: dict[str, Any] | None = None
     ):
         """Record metric using queue."""
-        timestamp = (
-            (metadata.get("timestamp") if metadata else None) or datetime.now()
-        )
+        timestamp = (metadata.get("timestamp") if metadata else None) or datetime.now()
         meta = dict(metadata) if metadata else {}
         meta.setdefault("timestamp", timestamp)
 
@@ -383,7 +422,9 @@ class GenerationMonitor:
             self.record_metric(
                 metric,
                 raw,
-                token_meta if metric != "conversation_length" else {"timestamp": timestamp},
+                token_meta
+                if metric != "conversation_length"
+                else {"timestamp": timestamp},
             )
 
         # Log complete metrics
@@ -489,6 +530,10 @@ class GenerationMonitor:
         self._shutdown.set()
         for worker in self._workers:
             worker.join(timeout=self.shutdown_timeout)
+
+    def check_alerts(self) -> None:
+        """Run built-in alert rules once (same logic as the periodic alert worker)."""
+        self._check_alerts()
 
     def get_metrics(
         self,
@@ -596,7 +641,7 @@ class GenerationMonitor:
                 total_tokens=total_all,
             )
 
-    def _check_alerts(self, metrics: dict[str, Any]):
+    def _check_alerts(self) -> None:
         """Check metrics against configurable alert thresholds."""
         # Check success rate
         recent_success = self.get_metrics("success_rate", timedelta(minutes=5))
@@ -613,7 +658,10 @@ class GenerationMonitor:
 
         # Check generation time
         recent_time = self.get_metrics("generation_time", timedelta(minutes=5))
-        if recent_time and recent_time["mean"] > self._alert_max_generation_time_seconds:
+        if (
+            recent_time
+            and recent_time["mean"] > self._alert_max_generation_time_seconds
+        ):
             self._send_alert(
                 Alert(
                     name="high_generation_time",
@@ -650,7 +698,10 @@ class GenerationMonitor:
                 )
             )
         recent_tokens = self.get_metrics("completion_token_count", timedelta(minutes=5))
-        if recent_tokens and recent_tokens["mean"] > self._alert_max_completion_token_mean:
+        if (
+            recent_tokens
+            and recent_tokens["mean"] > self._alert_max_completion_token_mean
+        ):
             self._send_alert(
                 Alert(
                     name="high_token_usage:completion",
@@ -674,7 +725,10 @@ class GenerationMonitor:
 
         # Check for long conversations
         recent_turns = self.get_metrics("conversation_length", timedelta(minutes=5))
-        if recent_turns and recent_turns["mean"] > self._alert_max_conversation_length_mean:
+        if (
+            recent_turns
+            and recent_turns["mean"] > self._alert_max_conversation_length_mean
+        ):
             self._send_alert(
                 Alert(
                     name="long_conversations",

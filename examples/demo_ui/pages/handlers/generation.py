@@ -1,6 +1,7 @@
 """
 Handlers for generation tasks (Structured, Generic, Tool Calling).
 """
+
 import asyncio
 import pandas as pd
 import gradio as gr
@@ -20,6 +21,7 @@ from core import (
 
 # --- Context Loading ---
 
+
 async def load_context(
     context_source: str,
     context_text: str,
@@ -28,29 +30,32 @@ async def load_context(
 ) -> tuple[list[str] | None, str | None]:
     """Load context from the specified source."""
     all_texts = []
-    
+
     if context_source == "Manual Entry":
         manual_chunks = [c.strip() for c in context_text.split("\n\n") if c.strip()]
         if manual_chunks:
             all_texts.extend(manual_chunks)
-    
+
     elif context_source == "File Upload":
         if not context_file:
             return None, "### Error: No file uploaded"
         try:
-            file_provider = create_document_provider_from_file(context_file, context_key)
+            file_provider = create_document_provider_from_file(
+                context_file, context_key
+            )
             file_docs = file_provider.get_all()
             all_texts.extend([d.text for d in file_docs])
         except Exception as e:
             return None, f"### Error loading file: {str(e)}"
-    
+
     if not all_texts:
         return None, "### Error: No context provided"
-    
+
     return all_texts, None
 
 
 # --- Generation Task ---
+
 
 async def run_generation_task(
     context_text: str,
@@ -100,7 +105,7 @@ async def run_generation_task(
             respondent_prompt=respondent_prompt,
             selected_tools=selected_tools,
         )
-        
+
         # Start generation task
         gen_task = create_generation_task(generator, num_samples, generation_mode)
 
@@ -130,13 +135,18 @@ async def run_generation_task(
 
 # --- Page-Specific Generation Wrappers ---
 
+
 async def start_structured_gen(*args):
-    async for update in run_generation_task(*args, generation_mode="Structured Generation"):
+    async for update in run_generation_task(
+        *args, generation_mode="Structured Generation"
+    ):
         yield update
 
 
 async def start_generic_gen(*args):
-    async for update in run_generation_task(*args, generation_mode="Generic Conversation"):
+    async for update in run_generation_task(
+        *args, generation_mode="Generic Conversation"
+    ):
         yield update
 
 
@@ -153,14 +163,14 @@ async def start_tool_gen(
     """Start tool calling generation with selected tools."""
     # Get the actual tool objects from selected names
     selected_tools = get_selected_tools(tool_names)
-    
+
     if not selected_tools:
         yield pd.DataFrame(), "### Error: Please select at least one tool", None
         return
-    
+
     # Default category if empty
     category = dataset_category.strip() if dataset_category else "Uncategorized"
-    
+
     async for data, status, path in run_generation_task(
         context_text,
         respondent_prompt,
@@ -181,11 +191,12 @@ async def start_tool_gen(
 
 # --- Training Wrappers ---
 
+
 async def start_training_from_path(file_path: str):
     """Train model from a generated dataset file path."""
     if not file_path:
         yield "Status: No dataset file provided", ""
         return
-    
+
     async for update in run_training(file_path):
         yield update

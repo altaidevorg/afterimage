@@ -1,7 +1,7 @@
 import asyncio
 import os
 from enum import Enum
-from typing import List, Optional
+from typing import List
 from pydantic import BaseModel, Field
 
 from afterimage import (

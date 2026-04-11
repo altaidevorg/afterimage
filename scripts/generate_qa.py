@@ -10,14 +10,14 @@ from afterimage import (
     PersonaGenerator,
     InMemoryDocumentProvider,
     WithContextRespondentPromptModifier,
-    JSONLStorage
+    JSONLStorage,
 )
 from dotenv import load_dotenv
 
 # --- Configuration ---
-NUM_DIALOGS = 200          # Number of QA pairs to generate
-MAX_TURNS = 1            # Each QA pair is 1 turn (Q & A)
-PERSONA_ITERATIONS = 0   
+NUM_DIALOGS = 200  # Number of QA pairs to generate
+MAX_TURNS = 1  # Each QA pair is 1 turn (Q & A)
+PERSONA_ITERATIONS = 0
 STORAGE_FILE = "afterimage_qa.jsonl"
 OUTPUT_JSON = "generated_qa_afterimage_docs.json"
 
@@ -25,6 +25,7 @@ OUTPUT_JSON = "generated_qa_afterimage_docs.json"
 # --- Pydantic schema for structured LLM output ---
 class SystemPromptParts(BaseModel):
     """Dynamically generated system prompt parts based on document context."""
+
     respondent_role: str = Field(
         description="A concise role description for the AI assistant (e.g. 'You are a machine learning researcher specializing in PEFT')."
     )
@@ -69,14 +70,11 @@ Document excerpt:
     )
 
     result = json.loads(response.text)
-    print(f"Generated system prompt parts:")
+    print("Generated system prompt parts:")
     print(f"  Respondent Role: {result['respondent_role']}")
     print(f"  Correspondent Role: {result['correspondent_role']}")
     print(f"  Instruction: {result['instruction']}")
     return result
-
-
-
 
 
 async def main():
@@ -85,15 +83,16 @@ async def main():
 
     # Clean fresh start
     for f in [STORAGE_FILE, "documents.jsonl", "conversations.jsonl"]:
-        if os.path.exists(f): os.remove(f)
+        if os.path.exists(f):
+            os.remove(f)
 
     with open("afterimage-docs.txt", "r") as f:
         article_content = f.read()
-    
+
     # --- Step 0: Generate dynamic system prompt parts from document ---
     print("Generating dynamic system prompt parts from document...")
     prompt_parts_data = await generate_system_prompt_parts(api_key, article_content)
-    
+
     # Build the parts list (same pattern as user's other script)
     parts = [
         prompt_parts_data["respondent_role"],
@@ -101,13 +100,15 @@ async def main():
     ]
     print(f"System prompt parts ready: {len(parts)} parts\n")
 
-    chunks = [article_content[i:i+5000] for i in range(0, len(article_content), 5000)]
+    chunks = [
+        article_content[i : i + 5000] for i in range(0, len(article_content), 5000)
+    ]
     docs = InMemoryDocumentProvider(chunks)
 
     # 1. Generate Personas
     persona_gen = PersonaGenerator(api_key=api_key)
     await persona_gen.generate_from_documents(docs, n_iterations=PERSONA_ITERATIONS)
-    
+
     # Count generated personas
     all_personas = []
     for doc in docs.get_all():
@@ -134,8 +135,8 @@ Rules:
         api_key=api_key,
         documents=docs,
         num_random_contexts=1,
-        n_instructions=1, 
-        prompt=custom_instruction_prompt
+        n_instructions=1,
+        prompt=custom_instruction_prompt,
     )
 
     # 3. Setup the respondent prompt modifier (Assistant)
@@ -148,7 +149,7 @@ Rules:
 
     generator = AsyncConversationGenerator(
         respondent_prompt=respondent_prompt,
-        correspondent_prompt=correspondent_prompt, 
+        correspondent_prompt=correspondent_prompt,
         api_key=api_key,
         model_name="gemini-2.0-flash",
         instruction_generator_callback=instruction_callback,
@@ -157,13 +158,13 @@ Rules:
     )
 
     # 5. Generate conversations
-    print(f"Generating {NUM_DIALOGS} QA pairs using discovered personas (English only)...")
-    await generator.generate(
-        num_dialogs=NUM_DIALOGS,
-        max_turns=MAX_TURNS,
-        max_concurrency=4
+    print(
+        f"Generating {NUM_DIALOGS} QA pairs using discovered personas (English only)..."
     )
-    
+    await generator.generate(
+        num_dialogs=NUM_DIALOGS, max_turns=MAX_TURNS, max_concurrency=4
+    )
+
     # 6. Load results and save to JSON in conversation format
     conversations = generator.load_conversations()
     conversations_data = []
@@ -172,16 +173,18 @@ Rules:
         if hasattr(conv, "model_dump"):
             conversations_data.append(conv.model_dump())
         else:
-            conversations_data.append({
-                "persona": getattr(conv, "persona", None),
-                "conversations": [
-                    {
-                        "role": getattr(turn, "role", None),
-                        "content": getattr(turn, "content", None),
-                    }
-                    for turn in getattr(conv, "conversations", [])
-                ],
-            })
+            conversations_data.append(
+                {
+                    "persona": getattr(conv, "persona", None),
+                    "conversations": [
+                        {
+                            "role": getattr(turn, "role", None),
+                            "content": getattr(turn, "content", None),
+                        }
+                        for turn in getattr(conv, "conversations", [])
+                    ],
+                }
+            )
 
     # 7. Save everything to JSON — includes parts for further use
     output_data = {
@@ -191,9 +194,12 @@ Rules:
 
     with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
         json.dump(output_data, f, indent=4, ensure_ascii=False)
-    
-    print(f"\nSuccessfully saved {len(conversations_data)} conversations to {OUTPUT_JSON}")
-    print(f"System prompt parts also saved for further use.")
+
+    print(
+        f"\nSuccessfully saved {len(conversations_data)} conversations to {OUTPUT_JSON}"
+    )
+    print("System prompt parts also saved for further use.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

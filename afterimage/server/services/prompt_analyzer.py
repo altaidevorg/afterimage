@@ -41,9 +41,9 @@ class PromptAnalyzer:
                 "Analyze the following document excerpt and generate the best system prompt "
                 "roles for a synthetic conversation dataset generation.\n\n"
                 "The parts should include:\n"
-                "1. \"respondent_role\" - describing who the AI assistant is (e.g. \"You are an expert in X\")\n"
-                "2. \"correspondent_role\" - describing who the person asking the questions is\n"
-                "3. \"instruction\" - specific answering logic for the assistant.\n\n"
+                '1. "respondent_role" - describing who the AI assistant is (e.g. "You are an expert in X")\n'
+                '2. "correspondent_role" - describing who the person asking the questions is\n'
+                '3. "instruction" - specific answering logic for the assistant.\n\n'
                 "Make these highly tailored to the document's domain.\n\n"
                 f"Document excerpt:\n---\n{excerpt}\n---"
             ),

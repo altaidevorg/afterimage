@@ -26,12 +26,16 @@ checkpoints/
 
 # monitoring
 monitoring/
+.afterimage-monitoring
 logs/
 plots/
 *_logs/
 *.png
 *.log
 TODO.md
+
+# outputs
+output/
 
 # storage
 *.db

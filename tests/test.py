@@ -1,9 +1,7 @@
 from google import genai
 from google.genai import types
-import os
 from pydantic import BaseModel
 
-from typing_extensions import TypedDict
 
 
 class TurkishFood(BaseModel):

@@ -46,10 +46,7 @@ async def _aclose_genai_client(client: genai.Client) -> None:
     try:
         if hasattr(client, "aio"):
             api_client = client.aio._api_client
-            if (
-                hasattr(api_client, "_aiohttp_session")
-                and api_client._aiohttp_session
-            ):
+            if hasattr(api_client, "_aiohttp_session") and api_client._aiohttp_session:
                 await api_client._aiohttp_session.close()
             if (
                 hasattr(api_client, "_async_httpx_client")
@@ -430,11 +427,7 @@ class EmbeddingProviderFactory:
             if key_pool is not None:
                 pool = key_pool
             else:
-                key = (
-                    api_key
-                    or cfg.get("api_key")
-                    or os.environ.get("OPENAI_API_KEY")
-                )
+                key = api_key or cfg.get("api_key") or os.environ.get("OPENAI_API_KEY")
                 if not key:
                     raise ValueError(
                         "OpenAI embedding provider needs key_pool, api_key, config['api_key'], or OPENAI_API_KEY"
@@ -454,11 +447,7 @@ class EmbeddingProviderFactory:
             if key_pool is not None:
                 pool = key_pool
             else:
-                key = (
-                    api_key
-                    or cfg.get("api_key")
-                    or os.environ.get("GEMINI_API_KEY")
-                )
+                key = api_key or cfg.get("api_key") or os.environ.get("GEMINI_API_KEY")
                 if not key:
                     raise ValueError(
                         "Gemini embedding provider needs key_pool, api_key, config['api_key'], or GEMINI_API_KEY"

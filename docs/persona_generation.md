@@ -24,6 +24,8 @@ import os
 persona_gen = PersonaGenerator(api_key=os.getenv("GEMINI_API_KEY"))
 ```
 
+`PersonaGenerator` chat backends are **`gemini`**, **`openai`**, or **`deepseek`** only (there is no `local` option on this class today).
+
 ### Methods
 
 #### `generate_from_documents`
@@ -77,7 +79,7 @@ print(persona)
 
 ## Using Personas in Conversation
 
-Once you have generated personas using `PersonaGenerator`, you need to tell the `AsyncConversationGenerator` to use them. You do this with the `PersonaInstructionGeneratorCallback`.
+Once you have generated personas using `PersonaGenerator`, you configure a `ConversationGenerator` (the library also exports the same class as `AsyncConversationGenerator`) with `PersonaInstructionGeneratorCallback`.
 
 ### Full Workflow
 
@@ -93,10 +95,10 @@ At runtime, persona sampling is adaptive:
 import asyncio
 import os
 from afterimage import (
-    AsyncConversationGenerator,
+    ConversationGenerator,
     PersonaGenerator,
     PersonaInstructionGeneratorCallback,
-    InMemoryDocumentProvider
+    InMemoryDocumentProvider,
 )
 
 async def main():
@@ -120,11 +122,11 @@ async def main():
         num_random_contexts=1
     )
 
-    # 4. Generate Conversations using Personas
-    generator = AsyncConversationGenerator(
+    # 4. Generate conversations using personas
+    generator = ConversationGenerator(
         respondent_prompt="You are a support agent.",
         api_key=api_key,
-        instruction_generator_callback=instruction_callback
+        instruction_generator_callback=instruction_callback,
     )
 
     print("Generating persona-based conversations...")

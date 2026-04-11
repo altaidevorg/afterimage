@@ -1,11 +1,11 @@
 [project]
 name = "afterimage"
-version = "0.13.0"
-keywords = ["afterimage", "synthetic", "dataset-generation", "synthetic-dataset"]
+version = "0.14.0"
+keywords = ["afterimage", "dataset-generation", "synthetic-dataset", "tool-calling", "structured-output", "preference-data", "persona-driven"]
 authors = [
     { name = "Yusuf Sarıgöz", email = "yusuf@altai.dev"}
 ]
-description = "Create synthetic datasets based on your documents"
+description = "Generate conversational, tool-calling, structured-output, and preference datasets — easily and at scale"
 readme = "README.md"
 requires-python = ">=3.11"
 classifiers = [
@@ -17,13 +17,12 @@ classifiers = [
 ]
 
 dependencies = [
+    "click>=8.0.0",
     "filelock",
-    "fastmcp>=3.2.0",
     "google-genai==1.38.0",
-    "gradio>=6.3.0",
     "grpcio==1.67.1",
+    "huggingface-hub>=0.22.0",
     "langdetect>=1.0.9",
-    "letsearch-client>=0.1.1",
     "matplotlib>=3.7.0",
     "openai>=1.107.3",
     "openpyxl>=3.0.0",
@@ -31,6 +30,7 @@ dependencies = [
     "pyarrow>=14.0.1",
     "pydantic>=2.10.4",
     "python-docx>=1.2.0",
+    "pyyaml>=6.0",
     "qdrant-client",
     "seaborn>=0.12.0",
     "striprtf>=0.0.29",
@@ -57,19 +57,21 @@ server = [
     "aiosqlite>=0.20.0",
 ]
 
-# examples/demo_ui/training_scripts/train.py (mirrors training_scripts/requirements.txt)
+# examples/demo_ui (Gradio, FastMCP) and training_scripts/train.py (mirrors training_scripts/requirements.txt)
 training = [
     "torch>=2.0.0",
     "transformers>=4.56.2,<5.0.0",
     "datasets>=2.18.0",
     "peft>=0.10.0",
     "accelerate>=0.28.0",
-    "huggingface_hub>=0.22.0",
     "trl>=0.29.1,<0.30.0",
     "python-dotenv>=1.0.0",
+    "fastmcp>=3.2.0",
+    "gradio>=6.3.0",
 ]
 
 [project.scripts]
+afterimage = "afterimage.cli:main"
 afterimage-server = "afterimage.server:main"
 
 [tool.setuptools.packages.find]
@@ -82,6 +84,7 @@ dev = [
     "myst-parser>=4.0.1",
     "pytest>=9.0.2",
     "pytest-asyncio>=0.24.0",
+    "ruff>=0.15.10",
     "sentence-transformers>=3.0.0",
     "sphinx>=8.2.3",
     "sphinx-rtd-theme>=3.1.0",

@@ -26,4 +26,6 @@ async def analyze_document(
             detail="No LLM API key configured. Set AFTERIMAGE_GEMINI_API_KEY or similar.",
         )
     analyzer = PromptAnalyzer(api_key=api_key, model_name=config.default_model)
-    return await analyzer.analyze(body.document_text, excerpt_length=body.excerpt_length)
+    return await analyzer.analyze(
+        body.document_text, excerpt_length=body.excerpt_length
+    )

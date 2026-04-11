@@ -1,5 +1,5 @@
 """Integration tests for stopping callbacks (require GEMINI_API_KEY)."""
-import os
+
 
 import pytest
 
@@ -7,7 +7,6 @@ from afterimage import (
     AsyncConversationGenerator,
     ContextualInstructionGeneratorCallback,
     InMemoryDocumentProvider,
-    FixedNumberStoppingCallback,
     ContextCoverageStoppingCallback,
     PersonaUsageStoppingCallback,
     Document,

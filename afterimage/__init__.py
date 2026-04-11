@@ -10,6 +10,7 @@ from afterimage.callbacks import (
     PersonaInstructionGeneratorCallback,  # noqa
     PersonaUsageStoppingCallback,  # noqa
     RateLimitStoppingCallback,  # noqa
+    SimpleInstructionGeneratorCallback,  # noqa
     ToolCallingInstructionGeneratorCallback,  # noqa
     WithContextRespondentPromptModifier,  # noqa
     WithRAGRespondentPromptModifier,  # noqa
@@ -21,6 +22,9 @@ from afterimage.evaluator import (
     default_embedding_provider_config,  # noqa
 )
 from afterimage.key_management import SmartKeyPool  # noqa
+from afterimage.orchestrator import Orchestrator  # noqa
+from afterimage.quality_gate import QualityGate, QualityResult  # noqa
+from afterimage.sampling import SamplingStrategy  # noqa
 from afterimage.monitoring import (
     GenerationMonitor,  # noqa
     ModelTokenUsage,  # noqa
@@ -45,7 +49,10 @@ from afterimage.providers import (
     QdrantDocumentProvider,  # noqa
 )
 from afterimage.storage import BaseStorage, JSONLStorage, SQLStorage  # noqa
-from afterimage.structured_generator import StructuredGenerator, AsyncStructuredGenerator  # noqa
+from afterimage.structured_generator import (
+    StructuredGenerator,
+    AsyncStructuredGenerator,
+)  # noqa
 from afterimage.types import Document, PersonaEntry  # noqa
 
 try:

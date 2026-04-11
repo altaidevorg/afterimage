@@ -32,6 +32,15 @@ AfterImage Documentation
 
 .. toctree::
    :maxdepth: 2
+   :caption: Export & datasets
+
+   Export & integration <EXPORT>
+   JSONL source schema <EXPORT_DATA_SHAPE>
+   Local models <LOCAL_MODELS>
+   Preference (DPO) data <PREFERENCE_DATA>
+
+.. toctree::
+   :maxdepth: 2
    :caption: API Reference
 
    api/index

@@ -1,6 +1,7 @@
 from .instruction_generator_callbacks import (
     ContextualInstructionGeneratorCallback,  # noqa
     PersonaInstructionGeneratorCallback,  # noqa
+    SimpleInstructionGeneratorCallback,  # noqa
     ToolCallingInstructionGeneratorCallback,  # noqa
 )
 from .respondent_prompt_modifiers import (

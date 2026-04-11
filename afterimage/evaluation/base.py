@@ -108,9 +108,7 @@ class CompositeEvaluator:
             for metric, fb in result.feedback.items():
                 combined_feedback[metric].append(fb)
 
-        feedback_merged = {
-            k: "; ".join(v) for k, v in combined_feedback.items()
-        }
+        feedback_merged = {k: "; ".join(v) for k, v in combined_feedback.items()}
 
         overall = self._aggregate_overall(dict(combined_scores))
 
@@ -124,7 +122,9 @@ class CompositeEvaluator:
             ),
         )
 
-    def _aggregate_overall(self, combined_scores: Dict[EvaluationMetric, float]) -> float:
+    def _aggregate_overall(
+        self, combined_scores: Dict[EvaluationMetric, float]
+    ) -> float:
         if not combined_scores:
             return 0.0
         if self.aggregation_mode == AggregationMode.MIN:

@@ -122,7 +122,9 @@ async def main():
         )
 
         # Get metrics for the last one hour
-        generation_time = monitor.get_metrics("generation_time", window=timedelta(hours=1))
+        generation_time = monitor.get_metrics(
+            "generation_time", window=timedelta(hours=1)
+        )
         print(f"Avg. generation time: {generation_time['mean']:.2f} secs")
 
         # Generate visualizations

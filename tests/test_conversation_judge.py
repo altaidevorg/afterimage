@@ -12,8 +12,6 @@ from afterimage.evaluator import ConversationJudge, ConversationJudgeConfig
 from afterimage.types import (
     ConversationEntry,
     ConversationWithContext,
-    EvaluationEntrySchema,
-    EvaluationSchema,
     GradeSchema,
     Role,
 )
@@ -35,7 +33,9 @@ class _FixedMetricEvaluator:
         self._metric = metric
         self._score = score
 
-    async def aevaluate(self, conversation: ConversationWithContext) -> EvaluationResult:
+    async def aevaluate(
+        self, conversation: ConversationWithContext
+    ) -> EvaluationResult:
         return EvaluationResult(
             scores={self._metric: self._score},
             feedback={self._metric: "test"},
