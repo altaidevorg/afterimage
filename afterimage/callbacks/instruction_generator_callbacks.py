@@ -356,7 +356,7 @@ Ask the questions in the same language as this context.
         except Exception as e:
             if self.monitor:
                 self.monitor.log_error(
-                    message="Error while trying to crosspondent prompt in instruction generator callback",
+                    message="Error while trying to create coresspondent prompt in instruction generator callback",
                     error=e,
                     metadata={
                         "operation": "correspondent_prompt_generation",

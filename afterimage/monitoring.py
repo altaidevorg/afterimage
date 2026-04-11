@@ -146,7 +146,7 @@ class GenerationMonitor:
         self.log_dir = (
             Path(log_dir)
             if log_dir
-            else Path("monitoring") / datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            else Path(".afterimage-monitoring") / datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         )
         self.log_dir.mkdir(exist_ok=True, parents=True)
 

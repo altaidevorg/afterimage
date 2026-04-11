@@ -26,6 +26,7 @@ checkpoints/
 
 # monitoring
 monitoring/
+.afterimage-monitoring
 logs/
 plots/
 *_logs/

@@ -21,7 +21,7 @@ async def main():
     ]
 
     # Initialize monitor and storage
-    monitor = GenerationMonitor(log_dir="persona_monitoring_logs")
+    monitor = GenerationMonitor()
     storage = JSONLStorage(documents_path="docs_with_generated_personas.jsonl")
 
     # Initialize PersonaGenerator
