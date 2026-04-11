@@ -1,6 +1,11 @@
 Instruction Generators
 ======================
 
+.. autoclass:: afterimage.SimpleInstructionGeneratorCallback
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 .. autoclass:: afterimage.ContextualInstructionGeneratorCallback
    :members:
    :undoc-members:

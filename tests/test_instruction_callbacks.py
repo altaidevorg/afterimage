@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 from afterimage.callbacks.instruction_generator_callbacks import (
     ContextualInstructionGeneratorCallback,
     PersonaInstructionGeneratorCallback,
+    SimpleInstructionGeneratorCallback,
     ToolCallingInstructionGeneratorCallback,
     LLMFactory,
 )
@@ -89,6 +90,27 @@ def patch_llm_factory(mock_llm_factory):
     LLMFactory.create = factory.create
     yield
     LLMFactory.create = original
+
+
+def test_simple_callback_generate():
+    callback = SimpleInstructionGeneratorCallback(api_key="test_key")
+    result = callback.generate("Ask something interesting.")
+    assert result.instructions == ["Test instruction"]
+    assert result.context == ""
+    assert result.context_id is None
+    assert result.context_ids == []
+    assert result.persona is None
+    assert not hasattr(callback, "provider")
+
+
+@pytest.mark.asyncio
+async def test_simple_callback_agenerate():
+    callback = SimpleInstructionGeneratorCallback(api_key="test_key")
+    result = await callback.agenerate("Ask something interesting.")
+    assert result.instructions == ["Test instruction"]
+    assert result.context == ""
+    assert result.context_id is None
+    assert result.context_ids == []
 
 
 def test_contextual_callback_generate(documents):

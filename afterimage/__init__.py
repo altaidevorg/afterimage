@@ -10,6 +10,7 @@ from afterimage.callbacks import (
     PersonaInstructionGeneratorCallback,  # noqa
     PersonaUsageStoppingCallback,  # noqa
     RateLimitStoppingCallback,  # noqa
+    SimpleInstructionGeneratorCallback,  # noqa
     ToolCallingInstructionGeneratorCallback,  # noqa
     WithContextRespondentPromptModifier,  # noqa
     WithRAGRespondentPromptModifier,  # noqa
