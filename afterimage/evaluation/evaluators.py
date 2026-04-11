@@ -479,7 +479,9 @@ class HelpfulnessEvaluator(AsyncLLMBaseEvaluator):
                 )
 
             separator_str = "\n----\n"
-            pairs = separator_str.join(f"[{i+1}] Q: {q}\nA: {a}" for i, (q, a) in enumerate(pairs))
+            pairs = separator_str.join(
+                f"[{i + 1}] Q: {q}\nA: {a}" for i, (q, a) in enumerate(pairs)
+            )
             prompt = f"""Evaluate how helpful each answer is for its question (0-1 each).
 
 Context (reference):
