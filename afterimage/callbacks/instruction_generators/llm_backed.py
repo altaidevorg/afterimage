@@ -1,5 +1,5 @@
 import time
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from ...base import BaseInstructionGeneratorCallback
 from ...common import GeneratedInstructions, default_model_name, default_safety_settings
@@ -22,10 +22,11 @@ class LLMBackedInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
         api_key: str | SmartKeyPool,
         prompt: str,
         model_name: str | None = None,
-        model_provider_name: Literal["gemini", "openai", "deepseek"] = "gemini",
+        model_provider_name: Literal["gemini", "openai", "deepseek", "local"] = "gemini",
         n_instructions: int = 3,
         safety_settings: Optional[dict] = None,
         monitor: GenerationMonitor | None = None,
+        llm_create_extras: dict[str, Any] | None = None,
     ):
         assert api_key is not None, "You need to provide an API key"
         self.monitor = monitor
@@ -44,6 +45,7 @@ class LLMBackedInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
         self.safety_settings = (
             safety_settings if safety_settings is not None else default_safety_settings
         )
+        self._llm_create_extras = dict(llm_create_extras or ())
 
     def set_monitor(self, monitor: GenerationMonitor) -> None:
         self.monitor = monitor
@@ -55,6 +57,7 @@ class LLMBackedInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
             api_key=self.key_pool,
             system_instruction=system_instruction or self.prompt,
             safety_settings=self.safety_settings,
+            **self._llm_create_extras,
         )
 
     def _execute_generation(
@@ -167,6 +170,7 @@ class LLMBackedInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
                 self.model_name,
                 api_key=api_key,
                 safety_settings=self.safety_settings,
+                **self._llm_create_extras,
             )
 
             response = model.generate_content(prompt=prompt, temperature=0.7)
@@ -216,6 +220,7 @@ class LLMBackedInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
                 self.model_name,
                 api_key=api_key,
                 safety_settings=self.safety_settings,
+                **self._llm_create_extras,
             )
 
             response = await model.agenerate_content(prompt=prompt, temperature=0.7)

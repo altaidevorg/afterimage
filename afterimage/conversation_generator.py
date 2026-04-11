@@ -99,7 +99,7 @@ class ConversationGenerator(BaseGenerator):
         safety_settings: List[Dict[str, str]] | None = None,
         auto_improve: bool = False,
         evaluator_model_name: str | None = None,
-        model_provider_name: Literal["gemini", "openai", "deepseek"] = "gemini",
+        model_provider_name: Literal["gemini", "openai", "deepseek", "local"] = "gemini",
         embedding_provider: EmbeddingProvider | None = None,
         embedding_provider_config: dict[str, Any] | None = None,
         judge_config: ConversationJudgeConfig | None = None,
@@ -557,6 +557,7 @@ class ConversationGenerator(BaseGenerator):
         instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
         respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
         max_concurrency: int | None = None,
+        num_requested: int | None = None,
     ) -> None:
         """Generates multiple conversation dialogs until stopping criteria is met.
 
@@ -570,6 +571,9 @@ class ConversationGenerator(BaseGenerator):
                 Deprecated: Pass this to the constructor instead. Defaults to None.
             max_concurrency: Number of concurrent generations. Defaults to 8 for
                 DeepSeek and 4 for other providers.
+            num_requested: Hint for progress reporting (e.g. tqdm total). When omitted,
+                the first :class:`~afterimage.callbacks.FixedNumberStoppingCallback` in
+                the merged stopping list is used if present.
         """
         if instruction_generator_callback is not None:
             warnings.warn(
@@ -618,10 +622,17 @@ class ConversationGenerator(BaseGenerator):
             num_dialogs = 5
             final_stopping_criteria.append(FixedNumberStoppingCallback(n=num_dialogs))
 
+        effective_num_requested = num_requested
+        if effective_num_requested is None:
+            for c in final_stopping_criteria:
+                if isinstance(c, FixedNumberStoppingCallback):
+                    effective_num_requested = c.n
+                    break
+
         # Delegate to orchestrator
         await self._orchestrator.run(
             generator=self,
-            num_requested=num_dialogs,
+            num_requested=effective_num_requested,
             max_turns=max_turns,
             stopping_criteria=final_stopping_criteria,
             instruction_generator_callback=instruction_generator_callback,

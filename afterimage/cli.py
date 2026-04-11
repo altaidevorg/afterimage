@@ -59,18 +59,27 @@ def generate(config_path: str, dry_run: bool):
         click.secho(str(exc), fg="red", err=True)
         raise SystemExit(1)
 
-    click.echo(f"Generating {cfg.generation.num_dialogs} dialogs...")
+    from .config_to_generator import build_conversation_run
+
+    run = build_conversation_run(cfg)
+    if run.num_requested is not None:
+        click.echo(
+            f"Generating until stopping rules fire (progress target: {run.num_requested} conversations)..."
+        )
+    else:
+        click.echo(
+            "Generating until stopping rules fire (no fixed conversation count; progress bar is indeterminate)..."
+        )
     start = time.time()
 
     try:
-        from .config_to_generator import build_generator
-
-        gen = build_generator(cfg)
         asyncio.run(
-            gen.generate(
-                num_dialogs=cfg.generation.num_dialogs,
+            run.generator.generate(
+                num_dialogs=None,
                 max_turns=cfg.generation.max_turns,
                 max_concurrency=cfg.generation.max_concurrency,
+                stopping_criteria=run.stopping_criteria,
+                num_requested=run.num_requested,
             )
         )
     except ConnectionRefusedError:
@@ -86,10 +95,7 @@ def generate(config_path: str, dry_run: bool):
         raise SystemExit(1)
 
     elapsed = time.time() - start
-    click.secho(
-        f"Done! Generated {cfg.generation.num_dialogs} dialogs in {elapsed:.1f}s",
-        fg="green",
-    )
+    click.secho(f"Done! Finished in {elapsed:.1f}s", fg="green")
     click.echo(f"Output: {cfg.output.path}")
 
     # Post-generation hooks (fail-safe: never block generation)
@@ -105,8 +111,20 @@ def _print_plan(cfg: AfterImageConfig) -> None:
     click.echo(f"  Model:          {cfg.model.provider} / {cfg.model.model_name}")
     if cfg.model.base_url:
         click.echo(f"  Base URL:       {cfg.model.base_url}")
-    click.echo(f"  Dialogs:        {cfg.generation.num_dialogs}")
+    nd = cfg.generation.num_dialogs
+    click.echo(
+        f"  num_dialogs:    {nd if nd is not None else 'null (no extra fixed cap)'}"
+    )
     click.echo(f"  Max turns:      {cfg.generation.max_turns}")
+    if cfg.generation.stopping:
+        click.echo("  Stopping (OR; first satisfied rule ends the run):")
+        for rule in cfg.generation.stopping:
+            payload = rule.model_dump(exclude_none=True)
+            t = payload.pop("type", "?")
+            extra = ", ".join(f"{k}={v!r}" for k, v in payload.items())
+            click.echo(f"    - {t}" + (f"  {extra}" if extra else ""))
+    else:
+        click.echo("  Stopping:       (YAML rules only; fixed cap comes from num_dialogs)")
     conc = cfg.generation.max_concurrency or "provider default"
     click.echo(f"  Concurrency:    {conc}")
     if cfg.documents:
@@ -198,6 +216,17 @@ def validate(config_path: str):
             all_ok = False
     else:
         _check_ok("Documents (none configured)")
+
+    # 3b. Generator wiring (instruction path + stopping callbacks)
+    if all_ok:
+        try:
+            from .config_to_generator import build_conversation_run
+
+            build_conversation_run(cfg)
+            _check_ok("Generator wiring (instructions + stopping)")
+        except Exception as exc:
+            _check_fail("Generator wiring", str(exc))
+            all_ok = False
 
     # 4. Output directory writable
     output_dir = Path(cfg.output.path).parent

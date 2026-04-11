@@ -1,4 +1,4 @@
-from typing import Literal, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from ...key_management import SmartKeyPool
 from ...prompts import default_instruction_generation_prompt
@@ -33,12 +33,13 @@ class ContextualInstructionGeneratorCallback(LLMBackedInstructionGeneratorCallba
         documents: Union[list[str], DocumentProvider],
         prompt: str | None = None,
         model_name: str | None = None,
-        model_provider_name: Literal["gemini", "openai", "deepseek"] = "gemini",
+        model_provider_name: Literal["gemini", "openai", "deepseek", "local"] = "gemini",
         num_random_contexts: int = 1,
         n_instructions: int = 3,
         separator_text: str = "\n" + "-" * 80 + "\n\n",
         safety_settings: Optional[dict] = None,
         monitor: GenerationMonitor | None = None,
+        llm_create_extras: dict[str, Any] | None = None,
     ):
         base_prompt = (
             prompt if prompt is not None else default_instruction_generation_prompt
@@ -51,6 +52,7 @@ class ContextualInstructionGeneratorCallback(LLMBackedInstructionGeneratorCallba
             n_instructions=n_instructions,
             safety_settings=safety_settings,
             monitor=monitor,
+            llm_create_extras=llm_create_extras,
         )
         self.provider = (
             documents

@@ -2,7 +2,7 @@ import math
 import random
 import threading
 from collections import Counter
-from typing import Literal, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from ...key_management import SmartKeyPool
 from ...prompts import default_persona_instruction_generation_prompt
@@ -41,12 +41,13 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
         documents: Union[list[str], DocumentProvider],
         prompt: str | None = None,
         model_name: str | None = None,
-        model_provider_name: Literal["gemini", "openai", "deepseek"] = "gemini",
+        model_provider_name: Literal["gemini", "openai", "deepseek", "local"] = "gemini",
         num_random_contexts: int = 1,
         n_instructions: int = 3,
         separator_text: str = "\n" + "-" * 80 + "\n\n",
         safety_settings: Optional[dict] = None,
         monitor: GenerationMonitor | None = None,
+        llm_create_extras: dict[str, Any] | None = None,
     ):
         super().__init__(
             api_key=api_key,
@@ -61,6 +62,7 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
             separator_text=separator_text,
             safety_settings=safety_settings,
             monitor=monitor,
+            llm_create_extras=llm_create_extras,
         )
         self._persona_target_per_document: int | None = None
         self._persona_selection_state: dict[str, PersonaSelectionState] = {}

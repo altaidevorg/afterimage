@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from ...key_management import SmartKeyPool
 from ...prompts import default_instruction_generation_prompt
@@ -27,10 +27,11 @@ class SimpleInstructionGeneratorCallback(LLMBackedInstructionGeneratorCallback):
         api_key: str | SmartKeyPool,
         prompt: str | None = None,
         model_name: str | None = None,
-        model_provider_name: Literal["gemini", "openai", "deepseek"] = "gemini",
+        model_provider_name: Literal["gemini", "openai", "deepseek", "local"] = "gemini",
         n_instructions: int = 3,
         safety_settings: Optional[dict] = None,
         monitor: GenerationMonitor | None = None,
+        llm_create_extras: dict[str, Any] | None = None,
     ):
         base_prompt = (
             prompt if prompt is not None else default_instruction_generation_prompt
@@ -43,6 +44,7 @@ class SimpleInstructionGeneratorCallback(LLMBackedInstructionGeneratorCallback):
             n_instructions=n_instructions,
             safety_settings=safety_settings,
             monitor=monitor,
+            llm_create_extras=llm_create_extras,
         )
 
     def generate(self, original_prompt):

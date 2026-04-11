@@ -8,21 +8,147 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Literal, Optional, Union
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
 
+class StoppingFixed(BaseModel):
+    """Stop after *n* conversations (same semantics as ``FixedNumberStoppingCallback``)."""
+
+    type: Literal["fixed"] = "fixed"
+    n: int = Field(..., ge=1, description="Stop when this many conversations are saved")
+
+
+class StoppingContextCoverage(BaseModel):
+    """Stop when document contexts have been used enough (requires ``documents``)."""
+
+    type: Literal["context_coverage"] = "context_coverage"
+    target_visits: int = Field(
+        default=1, ge=1, description="Each context id must appear at least this many times"
+    )
+    coverage_threshold: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Fraction of documents that must meet target_visits",
+    )
+
+
+class StoppingPersonaUsage(BaseModel):
+    """Stop after *n* unique personas have appeared (requires ``personas.enabled``)."""
+
+    type: Literal["persona_usage"] = "persona_usage"
+    n_personas: int = Field(..., ge=1)
+
+
+class StoppingBudget(BaseModel):
+    """Stop when cumulative token usage crosses a threshold (uses generation monitor)."""
+
+    type: Literal["budget"] = "budget"
+    max_prompt_tokens: Optional[int] = Field(default=None, ge=1)
+    max_completion_tokens: Optional[int] = Field(default=None, ge=1)
+    max_total_tokens: Optional[int] = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _at_least_one_limit(self):
+        if (
+            self.max_prompt_tokens is None
+            and self.max_completion_tokens is None
+            and self.max_total_tokens is None
+        ):
+            raise ValueError(
+                "generation.stopping budget: set at least one of "
+                "max_prompt_tokens, max_completion_tokens, max_total_tokens"
+            )
+        return self
+
+
+class StoppingRateLimit(BaseModel):
+    """Stop when recent error rate is too high."""
+
+    type: Literal["rate_limit"] = "rate_limit"
+    max_error_rate: float = Field(default=0.5, ge=0.0, le=1.0)
+    min_samples: int = Field(default=10, ge=1)
+
+
+class StoppingAll(BaseModel):
+    """AND-combine nested rules (maps to ``AndStoppingCallback``)."""
+
+    type: Literal["all"] = "all"
+    conditions: list["StoppingCriterionConfig"] = Field(
+        ...,
+        min_length=1,
+        description="All nested rules must signal stop before this rule stops",
+    )
+
+
+StoppingCriterionConfig = Annotated[
+    Union[
+        StoppingFixed,
+        StoppingContextCoverage,
+        StoppingPersonaUsage,
+        StoppingBudget,
+        StoppingRateLimit,
+        StoppingAll,
+    ],
+    Field(discriminator="type"),
+]
+
+StoppingAll.model_rebuild()
+
+
+def _stopping_nesting_depth(rules: list[StoppingCriterionConfig], depth: int = 0) -> int:
+    if depth > 8:
+        raise ValueError("generation.stopping: nesting deeper than 8 levels is not allowed")
+    max_d = depth
+    for rule in rules:
+        if isinstance(rule, StoppingAll):
+            max_d = max(max_d, _stopping_nesting_depth(rule.conditions, depth + 1))
+    return max_d
+
+
+def iter_stopping_rules(rules: list[StoppingCriterionConfig]):
+    """Flatten nested ``all`` groups for validation."""
+    for rule in rules:
+        yield rule
+        if isinstance(rule, StoppingAll):
+            yield from iter_stopping_rules(rule.conditions)
+
+
 class GenerationConfig(BaseModel):
     """Controls how many conversations to generate and concurrency."""
 
-    num_dialogs: int = Field(default=10, description="Number of dialogs to generate")
+    num_dialogs: Optional[int] = Field(
+        default=10,
+        description=(
+            "Adds a fixed-count stopping rule when set. Use null with generation.stopping "
+            "to rely only on custom stopping callbacks (e.g. budget)."
+        ),
+    )
     max_turns: int = Field(default=1, description="Maximum turns per dialog")
     max_concurrency: Optional[int] = Field(
         default=None,
         description="Max concurrent generations (provider default if omitted)",
     )
+    stopping: list[StoppingCriterionConfig] = Field(
+        default_factory=list,
+        description=(
+            "Extra stopping rules (OR semantics: any rule can end the run). "
+            "Use type 'all' to AND-combine nested rules."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _needs_a_stop_signal(self):
+        if not self.stopping and self.num_dialogs is None:
+            raise ValueError(
+                "generation: set num_dialogs or add at least one rule under generation.stopping"
+            )
+        if self.stopping:
+            _stopping_nesting_depth(self.stopping)
+        return self
 
 
 class ModelConfig(BaseModel):
@@ -201,6 +327,29 @@ class AfterImageConfig(BaseModel):
     preference: Optional[PreferenceGenerationConfig] = Field(
         default=None, description="Preference pair generation settings"
     )
+
+    @model_validator(mode="after")
+    def _documents_personas_and_stopping(self):
+        if self.personas.enabled and self.documents is None:
+            raise ValueError("personas.enabled requires a documents section in the config")
+
+        if self.documents is not None and not self.context.enabled:
+            raise ValueError(
+                "documents are configured but context.enabled is false; "
+                "set context.enabled: true for grounded generation, or remove documents "
+                "to use simple non-grounded generation"
+            )
+
+        for rule in iter_stopping_rules(self.generation.stopping):
+            if isinstance(rule, StoppingContextCoverage) and self.documents is None:
+                raise ValueError(
+                    "generation.stopping context_coverage requires a documents section"
+                )
+            if isinstance(rule, StoppingPersonaUsage) and not self.personas.enabled:
+                raise ValueError(
+                    "generation.stopping persona_usage requires personas.enabled: true"
+                )
+        return self
 
 
 def load_config(path: str | Path) -> AfterImageConfig:

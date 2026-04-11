@@ -156,7 +156,11 @@ class Orchestrator:
                             self._monitor.record_metric("error_rate", 1.0)
                         continue
 
-        pbar = tqdm(total=num_requested, desc="Generating...", unit="conversation")
+        pbar = tqdm(
+            total=num_requested if num_requested is not None else None,
+            desc="Generating...",
+            unit="conversation",
+        )
         tasks: list[asyncio.Task] = []
 
         for _ in range(resolved_max_concurrency):
