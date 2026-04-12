@@ -32,8 +32,10 @@ plots/
 *_logs/
 *.png
 *.log
-TODO.md
 
+# todos
+TODO.md
+generation_architecture_and_roadmap.md
 # outputs
 output/
 
