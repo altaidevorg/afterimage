@@ -1,6 +1,5 @@
 """Tests for SamplingStrategy."""
 
-
 from afterimage.sampling import SamplingStrategy
 from afterimage.callbacks import (
     ContextCoverageStoppingCallback,

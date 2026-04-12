@@ -1,6 +1,5 @@
 """Tests for HTML report generation."""
 
-
 import pytest
 
 from afterimage.analytics.models import (

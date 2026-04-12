@@ -175,6 +175,7 @@ class ModelConfig(BaseModel):
                 f"model.provider must be one of {sorted(MODEL_PROVIDER_NAMES)}, got {v!r}"
             )
         return v
+
     model_name: str = Field(default="gemini-2.0-flash", description="Model identifier")
     api_key_env: Optional[str] = Field(
         default=None, description="Environment variable name holding the API key"
