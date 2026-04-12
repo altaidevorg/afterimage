@@ -161,14 +161,12 @@ def build_conversation_run(config: AfterImageConfig) -> BuiltConversationRun:
         api_key=api_key,
         model_name=config.model.model_name,
         model_provider_name=provider_name,
+        llm_factory_kwargs=llm_extras if llm_extras else None,
         auto_improve=auto_improve,
         storage=storage,
         instruction_generator_callback=instruction_callback,
         respondent_prompt_modifier=respondent_prompt_modifier,
     )
-
-    if config.model.base_url:
-        gen._factory_kwargs["base_url"] = config.model.base_url
 
     stopping_criteria, num_requested = build_stopping_criteria(
         config, document_provider

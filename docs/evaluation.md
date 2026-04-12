@@ -42,7 +42,7 @@ from afterimage.providers import EmbeddingProviderFactory
 
 async def main():
     pool = SmartKeyPool.from_single_key("YOUR_KEY")
-    llm = LLMFactory.create("gemini", "gemini-2.0-flash", pool)
+    llm = LLMFactory.create(provider="gemini", model_name="gemini-2.0-flash", api_key=pool)
     embed = EmbeddingProviderFactory.create(
         {"type": "gemini", "model": "gemini-embedding-001"},
         key_pool=pool,
@@ -58,7 +58,7 @@ asyncio.run(main())
 
 ### With `ConversationGenerator` (auto-improve)
 
-Pass `auto_improve=True`. Optionally set `embedding_provider`, `embedding_provider_config`, or `judge_config` (`ConversationJudgeConfig`). For `ConversationJudge.from_factory`, `model_provider_name` must be `gemini`, `openai`, or `deepseek` (embeddings follow `default_embedding_provider_config` for that vendor).
+Pass `auto_improve=True`. Optionally set `embedding_provider`, `embedding_provider_config`, or `judge_config` (`ConversationJudgeConfig`). For `ConversationJudge.from_factory`, `model_provider_name` is a known chat vendor (`gemini`, `openai`, `deepseek`, `local`, `openrouter`); embeddings follow `default_embedding_provider_config` for that vendor unless you override the embedding config.
 
 ### Runnable example
 

@@ -2,7 +2,7 @@ import asyncio
 import logging
 import math
 import time
-from typing import Literal, Optional, Union
+from typing import Any, Optional, Union
 
 from tqdm import tqdm
 
@@ -20,7 +20,7 @@ from .prompts import (
 )
 from .providers import DocumentProvider, InMemoryDocumentProvider, LLMFactory
 from .storage import BaseStorage, JSONLStorage
-from .types import Document, PersonaEntry
+from .types import Document, ModelProviderName, PersonaEntry
 
 
 EXPECTED_PERSONA_COUNT = 5
@@ -37,7 +37,8 @@ class PersonaGenerator:
         api_key: str | SmartKeyPool,
         model_name: str | None = None,
         safety_settings: list[dict[str, str]] | None = None,
-        model_provider_name: Literal["gemini", "openai", "deepseek"] = "gemini",
+        model_provider_name: ModelProviderName = "gemini",
+        llm_factory_kwargs: dict[str, Any] | None = None,
         storage: Optional[BaseStorage] = None,
         monitor: Optional[GenerationMonitor] = None,
         max_concurrency: int | None = None,
@@ -49,6 +50,7 @@ class PersonaGenerator:
         )
 
         self.model_provider_name = model_provider_name
+        self.llm_factory_kwargs: dict[str, Any] = dict(llm_factory_kwargs or ())
         self.model_name = model_name if model_name is not None else default_model_name
         self.safety_settings = (
             safety_settings if safety_settings is not None else default_safety_settings
@@ -307,10 +309,11 @@ class PersonaGenerator:
     def generate_from_text(self, text: str) -> list[str]:
         api_key = self.key_pool.get_next_key()
         llm = LLMFactory.create(
-            self.model_provider_name,
-            self.model_name,
-            api_key,
+            provider=self.model_provider_name,
+            model_name=self.model_name,
+            api_key=api_key,
             safety_settings=self.safety_settings,
+            **self.llm_factory_kwargs,
         )
         start_time = time.time()
         try:
@@ -341,10 +344,11 @@ class PersonaGenerator:
         async with self.semaphore:
             api_key = await self.key_pool.aget_next_key()
             llm = LLMFactory.create(
-                self.model_provider_name,
-                self.model_name,
-                api_key,
+                provider=self.model_provider_name,
+                model_name=self.model_name,
+                api_key=api_key,
                 safety_settings=self.safety_settings,
+                **self.llm_factory_kwargs,
             )
             start_time = time.time()
             try:
@@ -374,10 +378,11 @@ class PersonaGenerator:
     def generate_from_persona(self, persona: str, generation: int = 1) -> list[str]:
         api_key = self.key_pool.get_next_key()
         llm = LLMFactory.create(
-            self.model_provider_name,
-            self.model_name,
-            api_key,
+            provider=self.model_provider_name,
+            model_name=self.model_name,
+            api_key=api_key,
             safety_settings=self.safety_settings,
+            **self.llm_factory_kwargs,
         )
         start_time = time.time()
         try:
@@ -412,10 +417,11 @@ class PersonaGenerator:
         async with self.semaphore:
             api_key = await self.key_pool.aget_next_key()
             llm = LLMFactory.create(
-                self.model_provider_name,
-                self.model_name,
-                api_key,
+                provider=self.model_provider_name,
+                model_name=self.model_name,
+                api_key=api_key,
                 safety_settings=self.safety_settings,
+                **self.llm_factory_kwargs,
             )
             start_time = time.time()
             try:

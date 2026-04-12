@@ -1,8 +1,9 @@
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 from ...key_management import SmartKeyPool
 from ...prompts import default_instruction_generation_prompt
 from ...monitoring import GenerationMonitor
+from ...types import ModelProviderName
 from .llm_backed import LLMBackedInstructionGeneratorCallback
 
 
@@ -27,9 +28,7 @@ class SimpleInstructionGeneratorCallback(LLMBackedInstructionGeneratorCallback):
         api_key: str | SmartKeyPool,
         prompt: str | None = None,
         model_name: str | None = None,
-        model_provider_name: Literal[
-            "gemini", "openai", "deepseek", "local"
-        ] = "gemini",
+        model_provider_name: ModelProviderName = "gemini",
         n_instructions: int = 3,
         safety_settings: Optional[dict] = None,
         monitor: GenerationMonitor | None = None,

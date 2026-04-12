@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Annotated, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from .types import MODEL_PROVIDER_NAMES, ModelProviderName
 
 
 class StoppingFixed(BaseModel):
@@ -160,9 +162,19 @@ class GenerationConfig(BaseModel):
 class ModelConfig(BaseModel):
     """LLM provider and model settings."""
 
-    provider: str = Field(
-        default="gemini", description="gemini | openai | deepseek | local"
+    provider: ModelProviderName = Field(
+        default="gemini",
+        description="gemini | openai | deepseek | local | openrouter",
     )
+
+    @field_validator("provider", mode="before")
+    @classmethod
+    def _provider_must_be_known(cls, v: str) -> str:
+        if v not in MODEL_PROVIDER_NAMES:
+            raise ValueError(
+                f"model.provider must be one of {sorted(MODEL_PROVIDER_NAMES)}, got {v!r}"
+            )
+        return v
     model_name: str = Field(default="gemini-2.0-flash", description="Model identifier")
     api_key_env: Optional[str] = Field(
         default=None, description="Environment variable name holding the API key"
@@ -430,6 +442,7 @@ def resolve_api_key(config: AfterImageConfig) -> str | None:
             "gemini": "GEMINI_API_KEY",
             "openai": "OPENAI_API_KEY",
             "deepseek": "DEEPSEEK_API_KEY",
+            "openrouter": "OPENROUTER_API_KEY",
         }
         env_var = defaults.get(config.model.provider)
         if env_var is None:

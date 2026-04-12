@@ -1,5 +1,5 @@
 import time
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 from ...base import BaseInstructionGeneratorCallback
 from ...common import GeneratedInstructions, default_model_name, default_safety_settings
@@ -7,6 +7,7 @@ from ...key_management import SmartKeyPool
 from ...monitoring import GenerationMonitor
 from ...prompts import get_correspondent_instruction_generation_prompt
 from ...providers.llm_providers import LLMFactory
+from ...types import ModelProviderName
 from ._utils import strip_user_system_prompt_tags, substitute_n_instructions_in_prompt
 from .schema import InstructionsSchema
 
@@ -22,9 +23,7 @@ class LLMBackedInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
         api_key: str | SmartKeyPool,
         prompt: str,
         model_name: str | None = None,
-        model_provider_name: Literal[
-            "gemini", "openai", "deepseek", "local"
-        ] = "gemini",
+        model_provider_name: ModelProviderName = "gemini",
         n_instructions: int = 3,
         safety_settings: Optional[dict] = None,
         monitor: GenerationMonitor | None = None,
@@ -52,14 +51,27 @@ class LLMBackedInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
     def set_monitor(self, monitor: GenerationMonitor) -> None:
         self.monitor = monitor
 
-    def _create_model(self, system_instruction=None):
+    def _create_llm(
+        self,
+        *,
+        model_name: str,
+        api_key: str | SmartKeyPool,
+        system_instruction: str | None,
+    ):
         return LLMFactory.create(
             provider=self.model_provider_name,
+            model_name=model_name,
+            api_key=api_key,
+            system_instruction=system_instruction,
+            safety_settings=self.safety_settings,
+            **self._llm_create_extras,
+        )
+
+    def _create_model(self, system_instruction=None):
+        return self._create_llm(
             model_name=self.model_name,
             api_key=self.key_pool,
             system_instruction=system_instruction or self.prompt,
-            safety_settings=self.safety_settings,
-            **self._llm_create_extras,
         )
 
     def _execute_generation(
@@ -167,12 +179,10 @@ class LLMBackedInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
                 assistant_prompt=respondent_prompt
             )
             api_key = self.key_pool.get_next_key()
-            model = LLMFactory.create(
-                self.model_provider_name,
-                self.model_name,
+            model = self._create_llm(
+                model_name=self.model_name,
                 api_key=api_key,
-                safety_settings=self.safety_settings,
-                **self._llm_create_extras,
+                system_instruction=None,
             )
 
             response = model.generate_content(prompt=prompt, temperature=0.7)
@@ -217,12 +227,10 @@ class LLMBackedInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
                 assistant_prompt=respondent_prompt
             )
             api_key = await self.key_pool.aget_next_key()
-            model = LLMFactory.create(
-                self.model_provider_name,
-                self.model_name,
+            model = self._create_llm(
+                model_name=self.model_name,
                 api_key=api_key,
-                safety_settings=self.safety_settings,
-                **self._llm_create_extras,
+                system_instruction=None,
             )
 
             response = await model.agenerate_content(prompt=prompt, temperature=0.7)

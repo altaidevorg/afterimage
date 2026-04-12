@@ -2,13 +2,25 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Generic, List, Optional, TypedDict, TypeVar
+from typing import Any, Dict, Generic, List, Literal, Optional, TypeAlias, TypedDict, TypeVar
 
 from pydantic import BaseModel, Field
 
 from .metadata_utils import extract_unique_context_ids
 
 T = TypeVar("T")
+
+ModelProviderName: TypeAlias = Literal[
+    "gemini",
+    "openai",
+    "deepseek",
+    "local",
+    "openrouter",
+]
+
+MODEL_PROVIDER_NAMES: frozenset[str] = frozenset(
+    ("gemini", "openai", "deepseek", "local", "openrouter")
+)
 
 
 class GradeSchema(str, Enum):

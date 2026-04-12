@@ -1,7 +1,7 @@
 import asyncio
 import traceback
 import warnings
-from typing import AsyncGenerator, Dict, List, Literal, Optional, Type, TypeVar
+from typing import Any, AsyncGenerator, Dict, List, Optional, Type, TypeVar
 import time
 import logging
 
@@ -24,7 +24,7 @@ from .key_management import SmartKeyPool
 from .providers import LLMFactory
 from .monitoring import GenerationMonitor
 from .storage import BaseStorage, JSONLStorage
-from .types import StructuredGenerationRow, GenerationState
+from .types import GenerationState, ModelProviderName, StructuredGenerationRow
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -41,7 +41,8 @@ class StructuredGenerator(BaseGenerator):
         api_key: str | SmartKeyPool,
         model_name: str | None = None,
         safety_settings: List[Dict[str, str]] | None = None,
-        model_provider_name: Literal["gemini", "openai", "deepseek"] = "gemini",
+        model_provider_name: ModelProviderName = "gemini",
+        llm_factory_kwargs: dict[str, Any] | None = None,
         storage: Optional[BaseStorage] = None,
         monitor: Optional[GenerationMonitor] = None,
         instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
@@ -56,7 +57,8 @@ class StructuredGenerator(BaseGenerator):
             api_key: API key or SmartKeyPool.
             model_name: Model name to use.
             safety_settings: Safety settings.
-            model_provider_name: Provider name ("gemini" or "openai").
+            model_provider_name: Chat provider (``gemini``, ``openai``, ``deepseek``, ``local``, ``openrouter``).
+            llm_factory_kwargs: Extra arguments for :meth:`~afterimage.providers.llm_providers.LLMFactory.create` (e.g. ``base_url``).
             storage: Storage implementation.
             monitor: GenerationMonitor.
             instruction_generator_callback: Callback to generate instructions/inputs.
@@ -79,6 +81,7 @@ class StructuredGenerator(BaseGenerator):
             else SmartKeyPool.from_single_key(api_key)
         )
         self.model_provider_name = model_provider_name
+        self.llm_factory_kwargs: dict[str, Any] = dict(llm_factory_kwargs or ())
         self.model_name = model_name if model_name is not None else default_model_name
         self.monitor.log_info(
             "Model info set",
@@ -197,11 +200,12 @@ class StructuredGenerator(BaseGenerator):
             try:
                 api_key = await self.key_pool.aget_next_key()
                 model = LLMFactory.create(
-                    self.model_provider_name,
-                    self.model_name,
+                    provider=self.model_provider_name,
+                    model_name=self.model_name,
                     api_key=api_key,
                     system_instruction=current_respondent_prompt,
                     safety_settings=self.safety_settings,
+                    **self.llm_factory_kwargs,
                 )
 
                 output = await model.agenerate_structured(

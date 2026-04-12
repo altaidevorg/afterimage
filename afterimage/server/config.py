@@ -21,6 +21,7 @@ class ServerConfig(BaseSettings):
     gemini_api_key: str | None = None
     deepseek_api_key: str | None = None
     openai_api_key: str | None = None
+    openrouter_api_key: str | None = None
 
     @model_validator(mode="after")
     def _fill_bare_key_fallbacks(self) -> "ServerConfig":
@@ -48,6 +49,8 @@ class ServerConfig(BaseSettings):
             self.deepseek_api_key = _get("DEEPSEEK_API_KEY")
         if not self.openai_api_key:
             self.openai_api_key = _get("OPENAI_API_KEY")
+        if not self.openrouter_api_key:
+            self.openrouter_api_key = _get("OPENROUTER_API_KEY")
         return self
 
     # Server
@@ -78,7 +81,14 @@ class ServerConfig(BaseSettings):
             return self.deepseek_api_key
         if provider == "openai":
             return self.openai_api_key
-        return self.gemini_api_key or self.openai_api_key or self.deepseek_api_key
+        if provider == "openrouter":
+            return self.openrouter_api_key
+        return (
+            self.gemini_api_key
+            or self.openai_api_key
+            or self.deepseek_api_key
+            or self.openrouter_api_key
+        )
 
 
 _config: ServerConfig | None = None

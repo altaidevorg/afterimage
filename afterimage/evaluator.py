@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Optional
 
 from .evaluation import (
     AggregationMode,
@@ -27,16 +27,21 @@ from .types import (
     EvaluationEntrySchema,
     EvaluationSchema,
     GradeSchema,
+    ModelProviderName,
 )
 
 
+_OPENROUTER_EMBEDDINGS_BASE = "https://openrouter.ai/api/v1"
+
+
 def default_embedding_provider_config(
-    model_provider_name: Literal["gemini", "openai", "deepseek"],
+    model_provider_name: ModelProviderName,
 ) -> dict[str, Any]:
     """Default embedding backend for auto-improve when none is supplied.
 
     Uses the same API vendor as chat when possible; DeepSeek has no public
-    embedding API in this stack, so local SentenceTransformer is used.
+    embedding API in this stack, so a local SentenceTransformer worker pool is
+    used. For ``local`` chat, the same process-based default applies.
 
     Args:
         model_provider_name: Active LLM provider for generation.
@@ -46,11 +51,17 @@ def default_embedding_provider_config(
     """
     if model_provider_name == "gemini":
         return {"type": "gemini", "model": "gemini-embedding-001"}
-    if model_provider_name == "deepseek":
+    if model_provider_name in ("deepseek", "local"):
         return {
             "type": "process",
             "model": "altaidevorg/bge-m3-distill-8l",
             "workers": 1,
+        }
+    if model_provider_name == "openrouter":
+        return {
+            "type": "openai",
+            "model": "openai/text-embedding-3-small",
+            "base_url": _OPENROUTER_EMBEDDINGS_BASE,
         }
     return {"type": "openai", "model": "text-embedding-3-small"}
 
@@ -123,7 +134,7 @@ class ConversationJudge:
         llm: LLMProvider,
         *,
         key_pool: SmartKeyPool,
-        model_provider_name: Literal["gemini", "openai", "deepseek"],
+        model_provider_name: ModelProviderName,
         embedding_provider_config: Optional[dict[str, Any]] = None,
         monitor: Optional[GenerationMonitor] = None,
         config: Optional[ConversationJudgeConfig] = None,

@@ -1,6 +1,6 @@
 import json
 import random
-from typing import List, Literal, Optional, Type, Union
+from typing import Any, List, Optional, Type, Union
 
 from pydantic import BaseModel
 
@@ -8,6 +8,7 @@ from ...key_management import SmartKeyPool
 from ...prompts import default_tool_calling_persona_instruction_generation_prompt
 from ...monitoring import GenerationMonitor
 from ...providers import DocumentProvider
+from ...types import ModelProviderName
 from ._utils import context_ids_from_documents, persona_fields_from_candidate
 from .persona import PersonaInstructionGeneratorCallback
 
@@ -40,13 +41,14 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
         documents: Union[list[str], DocumentProvider],
         prompt: str | None = None,
         model_name: str | None = None,
-        model_provider_name: Literal["gemini", "openai", "deepseek"] = "gemini",
+        model_provider_name: ModelProviderName = "gemini",
         num_random_contexts: int = 1,
         n_instructions: int = 3,
         num_tools_to_sample: int = 2,
         separator_text: str = "\n" + "-" * 80 + "\n\n",
         safety_settings: Optional[dict] = None,
         monitor: GenerationMonitor | None = None,
+        llm_create_extras: dict[str, Any] | None = None,
     ):
         super().__init__(
             api_key=api_key,
@@ -61,6 +63,7 @@ class ToolCallingInstructionGeneratorCallback(PersonaInstructionGeneratorCallbac
             separator_text=separator_text,
             safety_settings=safety_settings,
             monitor=monitor,
+            llm_create_extras=llm_create_extras,
         )
         self.tools = self._normalize_tools(tools)
         self.num_tools_to_sample = num_tools_to_sample

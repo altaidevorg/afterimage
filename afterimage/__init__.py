@@ -53,7 +53,12 @@ from afterimage.structured_generator import (
     StructuredGenerator,
     AsyncStructuredGenerator,
 )  # noqa
-from afterimage.types import Document, PersonaEntry  # noqa
+from afterimage.types import (  # noqa
+    MODEL_PROVIDER_NAMES,
+    Document,
+    ModelProviderName,
+    PersonaEntry,
+)
 
 try:
     __version__ = importlib.metadata.version("afterimage")

@@ -35,4 +35,7 @@ def resolve_generation_max_concurrency(
     if model_provider_name == "deepseek":
         return deepseek_default_max_concurrency
 
+    if model_provider_name == "local":
+        return 8
+
     return default_max_concurrency

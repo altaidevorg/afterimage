@@ -68,7 +68,7 @@ The code is organized into the following directories and files:
         - `__init__.py`: Exposes provider classes.
         - `document_providers.py`: Document source implementations (Memory, File, Directory, Qdrant).
             Providers expose weighted random sampling plus document usage reporting for context coverage management, with target usage counts inferred from stopping callbacks when available.
-        - `llm_providers.py`: LLM provider abstractions (Gemini, OpenAI, DeepSeek) and `LLMFactory`.
+        - `llm_providers.py`: LLM provider abstractions (Gemini, OpenAI, DeepSeek, OpenRouter, local OpenAI-compatible) and `LLMFactory`.
         - `local_provider.py`: `LocalLLMProvider` for OpenAI-compatible local servers (vLLM, Ollama, llama.cpp).
         - `embedding_providers.py`: Async embedding providers (OpenAI, Gemini, process pool) and factory.
 - `examples/configs/`: YAML config examples (`basic.yaml`, `rag.yaml`, `local.yaml`).
