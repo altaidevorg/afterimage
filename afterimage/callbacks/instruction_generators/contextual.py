@@ -1,10 +1,10 @@
-from typing import Any, Literal, Optional, Union
+from typing import Any, Optional, Union
 
 from ...key_management import SmartKeyPool
 from ...prompts import default_instruction_generation_prompt
 from ...monitoring import GenerationMonitor
 from ...providers import DocumentProvider, InMemoryDocumentProvider
-from ...types import Document
+from ...types import Document, ModelProviderName
 from ._utils import context_ids_from_documents
 from .llm_backed import LLMBackedInstructionGeneratorCallback
 
@@ -33,9 +33,7 @@ class ContextualInstructionGeneratorCallback(LLMBackedInstructionGeneratorCallba
         documents: Union[list[str], DocumentProvider],
         prompt: str | None = None,
         model_name: str | None = None,
-        model_provider_name: Literal[
-            "gemini", "openai", "deepseek", "local"
-        ] = "gemini",
+        model_provider_name: ModelProviderName = "gemini",
         num_random_contexts: int = 1,
         n_instructions: int = 3,
         separator_text: str = "\n" + "-" * 80 + "\n\n",

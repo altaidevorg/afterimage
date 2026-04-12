@@ -1,6 +1,5 @@
 """Tests for ShareGPT exporter."""
 
-
 import pytest
 
 from afterimage.integrations.sharegpt import ShareGPTExporter

@@ -77,7 +77,7 @@ class TestSingleFormat:
         assert result.exit_code == 0
         out_file = tmp_path / "exports" / "dataset_sharegpt.jsonl"
         assert out_file.exists()
-        rows = [json.loads(l) for l in out_file.read_text().strip().split("\n")]
+        rows = [json.loads(line) for line in out_file.read_text().strip().split("\n")]
         assert len(rows) == 3
         assert rows[0]["conversations"][0]["from"] == "human"
 

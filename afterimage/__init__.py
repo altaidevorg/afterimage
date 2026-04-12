@@ -50,10 +50,15 @@ from afterimage.providers import (
 )
 from afterimage.storage import BaseStorage, JSONLStorage, SQLStorage  # noqa
 from afterimage.structured_generator import (
-    StructuredGenerator,
-    AsyncStructuredGenerator,
-)  # noqa
-from afterimage.types import Document, PersonaEntry  # noqa
+    AsyncStructuredGenerator as AsyncStructuredGenerator,
+    StructuredGenerator as StructuredGenerator,
+)
+from afterimage.types import (  # noqa
+    MODEL_PROVIDER_NAMES,
+    Document,
+    ModelProviderName,
+    PersonaEntry,
+)
 
 try:
     __version__ = importlib.metadata.version("afterimage")

@@ -47,7 +47,9 @@ async def main() -> None:
         return
 
     pool = SmartKeyPool.from_single_key(api_key)
-    llm = LLMFactory.create("gemini", "gemini-2.0-flash", api_key=pool)
+    llm = LLMFactory.create(
+        provider="gemini", model_name="gemini-2.0-flash", api_key=pool
+    )
     embedding = EmbeddingProviderFactory.create(
         {"type": "gemini", "model": "gemini-embedding-001"},
         key_pool=pool,

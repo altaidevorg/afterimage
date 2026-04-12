@@ -9,7 +9,8 @@ from pydantic import BaseModel
 
 from ..common import default_safety_settings
 from ..key_management import SmartKeyPool
-from ..types import ConversationEntry
+from ..types import MODEL_PROVIDER_NAMES, ConversationEntry, ModelProviderName
+from .local_provider import LocalLLMProvider
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -882,6 +883,27 @@ class OpenAIProvider(LLMProvider):
             raise
 
 
+class OpenRouterProvider(OpenAIProvider):
+    """OpenRouter (OpenAI-compatible chat and structured output where the upstream model supports it)."""
+
+    BASE_URL = "https://openrouter.ai/api/v1"
+
+    def __init__(
+        self,
+        api_key: str | SmartKeyPool,
+        model_name: str = "openai/gpt-4o-mini",
+        system_instruction: Optional[str] = None,
+        **kwargs,
+    ):
+        super().__init__(
+            api_key=api_key,
+            model_name=model_name,
+            base_url=self.BASE_URL,
+            system_instruction=system_instruction,
+            **kwargs,
+        )
+
+
 class DeepSeekProvider(OpenAIProvider):
     """DeepSeek implementation using OpenAI-compatible API."""
 
@@ -992,25 +1014,31 @@ class LLMFactory:
 
     @staticmethod
     def create(
-        provider: str,
+        *,
+        provider: ModelProviderName,
         model_name: Optional[str] = None,
         api_key: Optional[str | SmartKeyPool] = None,
         system_instruction: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMProvider:
-        from .local_provider import LocalLLMProvider
 
-        providers = {
+        if provider not in MODEL_PROVIDER_NAMES:
+            raise ValueError(
+                f"Unknown provider: {provider!r}. "
+                f"Expected one of: {', '.join(sorted(MODEL_PROVIDER_NAMES))}"
+            )
+
+        providers: dict[str, type] = {
             "gemini": GeminiProvider,
             "openai": OpenAIProvider,
             "deepseek": DeepSeekProvider,
+            "openrouter": OpenRouterProvider,
             "local": LocalLLMProvider,
         }
 
-        if provider not in providers:
+        provider_cls = providers.get(provider)
+        if provider_cls is None:
             raise ValueError(f"Unknown provider: {provider}")
-
-        provider_cls = providers[provider]
 
         if provider == "local":
             # LocalLLMProvider has a different constructor signature

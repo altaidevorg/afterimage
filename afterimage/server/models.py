@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from afterimage.types import ModelProviderName
+
 
 # ---------------------------------------------------------------------------
 # Enums / literals
@@ -52,7 +54,7 @@ class GenerationRequest(BaseModel):
 
     # Model configuration
     model_name: str = "gemini-2.0-flash"
-    model_provider_name: str = "gemini"
+    model_provider_name: ModelProviderName = "gemini"
 
     # Output format
     output_format: Literal["jsonl", "json"] = "jsonl"

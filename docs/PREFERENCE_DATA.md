@@ -180,7 +180,7 @@ from afterimage.providers import InMemoryDocumentProvider, LLMFactory
 
 async def main():
     pool = SmartKeyPool.from_single_key(os.environ["OPENAI_API_KEY"])
-    llm = LLMFactory.create("openai", "gpt-4o-mini", pool)
+    llm = LLMFactory.create(provider="openai", model_name="gpt-4o-mini", api_key=pool)
     judge = ConversationJudge.from_factory(
         llm,
         key_pool=pool,

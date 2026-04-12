@@ -79,11 +79,12 @@ All settings are read from environment variables with the `AFTERIMAGE_` prefix, 
 | `AFTERIMAGE_GEMINI_API_KEY` | — | Gemini API key (also read as `GEMINI_API_KEY`) |
 | `AFTERIMAGE_DEEPSEEK_API_KEY` | — | DeepSeek API key (also read as `DEEPSEEK_API_KEY`) |
 | `AFTERIMAGE_OPENAI_API_KEY` | — | OpenAI API key (also read as `OPENAI_API_KEY`) |
+| `AFTERIMAGE_OPENROUTER_API_KEY` | — | OpenRouter API key (also read as `OPENROUTER_API_KEY`) |
 | `AFTERIMAGE_HOST` | `0.0.0.0` | Bind address |
 | `AFTERIMAGE_PORT` | `8000` | Listen port |
 | `AFTERIMAGE_WORKERS` | `1` | Uvicorn worker count |
 | `AFTERIMAGE_DEFAULT_MODEL` | `gemini-2.0-flash` | Default LLM model |
-| `AFTERIMAGE_DEFAULT_PROVIDER` | `gemini` | Default provider (`gemini`, `openai`, `deepseek`) |
+| `AFTERIMAGE_DEFAULT_PROVIDER` | `gemini` | Default provider (`gemini`, `openai`, `deepseek`, `openrouter`) |
 | `AFTERIMAGE_MAX_CONCURRENT_JOBS` | `3` | Max parallel generation jobs |
 | `AFTERIMAGE_MAX_DIALOGS_PER_REQUEST` | `1000` | Upper limit on `num_dialogs` per request |
 | `AFTERIMAGE_RESULTS_DIR` | `./results` | Directory where result files are written |
@@ -122,7 +123,7 @@ The request body for `POST /api/v1/generate`. At least one of `document_text` or
 | `use_personas` | `boolean` | `true` | Generate diverse user personas from the document |
 | `persona_iterations` | `integer` | `0` | Extra persona refinement passes (0 = single pass) |
 | `model_name` | `string` | `"gemini-2.0-flash"` | LLM model identifier |
-| `model_provider_name` | `string` | `"gemini"` | Provider: `"gemini"`, `"openai"`, or `"deepseek"` |
+| `model_provider_name` | `string` | `"gemini"` | Provider: `"gemini"`, `"openai"`, `"deepseek"`, `"local"`, or `"openrouter"` |
 | `output_format` | `"jsonl" \| "json"` | `"jsonl"` | Result file format |
 | `include_system_prompt_parts` | `boolean` | `true` | Include auto-generated prompt parts in the JSON result |
 

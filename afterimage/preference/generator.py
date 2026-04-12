@@ -57,11 +57,11 @@ class PreferenceGenerator:
 
         # Build primary LLM from the generator's settings
         self._primary_llm = LLMFactory.create(
-            self._gen.model_provider_name,
-            self._gen.model_name,
+            provider=self._gen.model_provider_name,
+            model_name=self._gen.model_name,
             api_key=self._gen.key_pool,
             system_instruction=self._gen.respondent_prompt,
-            **getattr(self._gen, "_factory_kwargs", {}),
+            **self._gen.llm_factory_kwargs,
         )
 
     # ------------------------------------------------------------------

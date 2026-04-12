@@ -1,9 +1,8 @@
-"""Conversation generator — thin facade over Orchestrator, SamplingStrategy, and QualityGate.
+"""Conversation generator — coordinates orchestration, sampling, and quality evaluation.
 
-Maintains the exact same public API as before the refactoring. Internally
-delegates concurrency to :class:`~afterimage.orchestrator.Orchestrator`,
-sampling configuration to :class:`~afterimage.sampling.SamplingStrategy`,
-and quality evaluation to :class:`~afterimage.quality_gate.QualityGate`.
+Delegates concurrency to :class:`~afterimage.orchestrator.Orchestrator`,
+sampling to :class:`~afterimage.sampling.SamplingStrategy`, and quality
+evaluation to :class:`~afterimage.quality_gate.QualityGate`.
 """
 
 import asyncio
@@ -11,7 +10,7 @@ import logging
 import random
 import time
 import warnings
-from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Union
+from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
 from .base import (
     BaseGenerator,
@@ -44,6 +43,7 @@ from .types import (
     ConversationEntry,
     ConversationWithContext,
     EvaluatedConversationWithContext,
+    ModelProviderName,
     Role,
 )
 
@@ -62,10 +62,11 @@ class ConversationGenerator(BaseGenerator):
         safety_settings: Safety settings for the model
         auto_improve: Whether to try to improve low-quality generations
         evaluator_model_name: Model name for the evaluator LLM when auto_improve is True.
+        model_provider_name: Chat LLM vendor: ``gemini``, ``openai``, ``deepseek``, ``local`` (OpenAI-compatible server), or ``openrouter``.
+        llm_factory_kwargs: Extra keyword arguments passed to :meth:`~afterimage.providers.llm_providers.LLMFactory.create` for every LLM built by this generator (for example ``base_url`` for compatible endpoints).
         embedding_provider: Optional shared :class:`~afterimage.providers.embedding_providers.EmbeddingProvider` for embedding metrics.
         embedding_provider_config: JSON-style config for :class:`~afterimage.providers.embedding_providers.EmbeddingProviderFactory` when ``embedding_provider`` is omitted (defaults by chat provider).
         judge_config: Optional :class:`~afterimage.evaluator.ConversationJudgeConfig` (aggregation and grade thresholds).
-        model_provider_name: Provider used for accessing LLMs. Supported values are `"gemini"`, `"openai"`, and `"deepseek"`.
         storage: Storage implementation for saving conversations.
                 If `None`, creates JSONLStorage with datetime-based filename.
         monitor: GenerationMonitor instance for tracking generation metrics.
@@ -99,9 +100,8 @@ class ConversationGenerator(BaseGenerator):
         safety_settings: List[Dict[str, str]] | None = None,
         auto_improve: bool = False,
         evaluator_model_name: str | None = None,
-        model_provider_name: Literal[
-            "gemini", "openai", "deepseek", "local"
-        ] = "gemini",
+        model_provider_name: ModelProviderName = "gemini",
+        llm_factory_kwargs: dict[str, Any] | None = None,
         embedding_provider: EmbeddingProvider | None = None,
         embedding_provider_config: dict[str, Any] | None = None,
         judge_config: ConversationJudgeConfig | None = None,
@@ -120,6 +120,7 @@ class ConversationGenerator(BaseGenerator):
             else SmartKeyPool.from_single_key(api_key)
         )
 
+        self.llm_factory_kwargs: dict[str, Any] = dict(llm_factory_kwargs or ())
         self.model_provider_name = model_provider_name
         self.model_name = model_name if model_name is not None else default_model_name
         self.monitor.log_info(
@@ -170,10 +171,11 @@ class ConversationGenerator(BaseGenerator):
                 else self.model_name
             )
             evaluator_llm = LLMFactory.create(
-                self.model_provider_name,
-                evaluator_model_name,
-                self.key_pool,
+                provider=self.model_provider_name,
+                model_name=evaluator_model_name,
+                api_key=self.key_pool,
                 safety_settings=self.safety_settings,
+                **self.llm_factory_kwargs,
             )
             if embedding_provider is not None:
                 self.evaluator = ConversationJudge(
@@ -208,7 +210,6 @@ class ConversationGenerator(BaseGenerator):
         )
 
         self.initiators = []
-        self._factory_kwargs: dict = {}  # extra kwargs for LLMFactory.create (e.g. base_url)
         self.storage = storage or JSONLStorage()
 
         if (
@@ -227,11 +228,11 @@ class ConversationGenerator(BaseGenerator):
             )
             api_key = await self.key_pool.aget_next_key()
             model = LLMFactory.create(
-                self.model_provider_name,
-                self.model_name,
+                provider=self.model_provider_name,
+                model_name=self.model_name,
                 api_key=api_key,
                 safety_settings=self.safety_settings,
-                **self._factory_kwargs,
+                **self.llm_factory_kwargs,
             )
 
             response = await model.agenerate_content(prompt=prompt, temperature=0.7)
@@ -276,12 +277,12 @@ class ConversationGenerator(BaseGenerator):
         try:
             api_key = await self.key_pool.aget_next_key()
             model = LLMFactory.create(
-                self.model_provider_name,
-                self.model_name,
+                provider=self.model_provider_name,
+                model_name=self.model_name,
                 api_key=api_key,
                 system_instruction=prompt,
                 safety_settings=self.safety_settings,
-                **self._factory_kwargs,
+                **self.llm_factory_kwargs,
             )
 
             chat = await model.astart_chat()

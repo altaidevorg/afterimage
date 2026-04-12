@@ -682,22 +682,22 @@ def preference(
             if isinstance(api_key, str)
             else api_key
         )
+        llm_extras: dict = {}
+        if cfg.model.base_url:
+            llm_extras["base_url"] = cfg.model.base_url
         judge_llm = LLMFactory.create(
-            cfg.model.provider if cfg.model.provider != "local" else "local",
-            cfg.model.model_name,
+            provider=cfg.model.provider,
+            model_name=cfg.model.model_name,
             api_key=key_pool,
+            **llm_extras,
         )
         from .evaluator import default_embedding_provider_config
 
-        embed_cfg = default_embedding_provider_config(
-            cfg.model.provider if cfg.model.provider != "local" else "openai"
-        )
+        embed_cfg = default_embedding_provider_config(cfg.model.provider)
         judge = ConversationJudge.from_factory(
             judge_llm,
             key_pool=key_pool,
-            model_provider_name=(
-                cfg.model.provider if cfg.model.provider != "local" else "openai"
-            ),
+            model_provider_name=cfg.model.provider,
             embedding_provider_config=embed_cfg,
         )
 

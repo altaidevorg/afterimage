@@ -3,7 +3,7 @@
 import pytest
 
 from afterimage.providers.local_provider import LocalLLMProvider, _REQUEST_TIMEOUT
-from afterimage.providers.llm_providers import LLMFactory
+from afterimage.providers.llm_providers import LLMFactory, OpenRouterProvider
 
 
 class TestLocalLLMProviderInit:
@@ -54,7 +54,7 @@ class TestLocalLLMProviderConnectionError:
 class TestLLMFactoryLocal:
     def test_factory_creates_local_provider(self):
         provider = LLMFactory.create(
-            "local",
+            provider="local",
             model_name="test-model",
             base_url="http://localhost:8000/v1",
         )
@@ -64,7 +64,7 @@ class TestLLMFactoryLocal:
 
     def test_factory_local_default_api_key(self):
         provider = LLMFactory.create(
-            "local",
+            provider="local",
             base_url="http://localhost:8000/v1",
         )
         assert provider.api_key == "not-needed"
@@ -74,7 +74,7 @@ class TestLLMFactoryLocal:
 
         pool = SmartKeyPool.from_single_key("test-key")
         provider = LLMFactory.create(
-            "local",
+            provider="local",
             api_key=pool,
             base_url="http://localhost:8000/v1",
         )
@@ -83,12 +83,24 @@ class TestLLMFactoryLocal:
 
     def test_factory_local_with_system_instruction(self):
         provider = LLMFactory.create(
-            "local",
+            provider="local",
             model_name="my-model",
             base_url="http://localhost:8000/v1",
             system_instruction="You are a helper.",
         )
         assert provider.system_instruction == "You are a helper."
+
+
+class TestLLMFactoryOpenRouter:
+    def test_factory_creates_openrouter_provider(self):
+        provider = LLMFactory.create(
+            provider="openrouter",
+            model_name="openai/gpt-4o-mini",
+            api_key="test-key",
+        )
+        assert isinstance(provider, OpenRouterProvider)
+        assert provider.base_url == "https://openrouter.ai/api/v1"
+        assert provider.model_name == "openai/gpt-4o-mini"
 
 
 class TestLocalLLMProviderChatSession:

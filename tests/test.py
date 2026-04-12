@@ -3,7 +3,6 @@ from google.genai import types
 from pydantic import BaseModel
 
 
-
 class TurkishFood(BaseModel):
     dish_name: str
     ingredients: list[str]

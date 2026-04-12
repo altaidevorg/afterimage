@@ -2,13 +2,13 @@ import math
 import random
 import threading
 from collections import Counter
-from typing import Any, Literal, Optional, Union
+from typing import Any, Optional, Union
 
 from ...key_management import SmartKeyPool
 from ...prompts import default_persona_instruction_generation_prompt
 from ...monitoring import GenerationMonitor
 from ...providers import DocumentProvider
-from ...types import Document
+from ...types import Document, ModelProviderName
 from ._utils import context_ids_from_documents, persona_fields_from_candidate
 from .contextual import ContextualInstructionGeneratorCallback
 from .persona_sampling import PersonaCandidate, PersonaSelectionState
@@ -41,9 +41,7 @@ class PersonaInstructionGeneratorCallback(ContextualInstructionGeneratorCallback
         documents: Union[list[str], DocumentProvider],
         prompt: str | None = None,
         model_name: str | None = None,
-        model_provider_name: Literal[
-            "gemini", "openai", "deepseek", "local"
-        ] = "gemini",
+        model_provider_name: ModelProviderName = "gemini",
         num_random_contexts: int = 1,
         n_instructions: int = 3,
         separator_text: str = "\n" + "-" * 80 + "\n\n",
