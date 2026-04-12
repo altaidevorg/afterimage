@@ -10,7 +10,6 @@ from pydantic import BaseModel
 from ..common import default_safety_settings
 from ..key_management import SmartKeyPool
 from ..types import MODEL_PROVIDER_NAMES, ConversationEntry, ModelProviderName
-from .local_provider import LocalLLMProvider
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -1028,19 +1027,10 @@ class LLMFactory:
                 f"Expected one of: {', '.join(sorted(MODEL_PROVIDER_NAMES))}"
             )
 
-        providers: dict[str, type] = {
-            "gemini": GeminiProvider,
-            "openai": OpenAIProvider,
-            "deepseek": DeepSeekProvider,
-            "openrouter": OpenRouterProvider,
-            "local": LocalLLMProvider,
-        }
-
-        provider_cls = providers.get(provider)
-        if provider_cls is None:
-            raise ValueError(f"Unknown provider: {provider}")
-
         if provider == "local":
+            # Import here to avoid circular import: local_provider imports from this module.
+            from .local_provider import LocalLLMProvider
+
             # LocalLLMProvider has a different constructor signature
             base_url = kwargs.pop("base_url", None) or "http://localhost:8000/v1"
             local_api_key = api_key if isinstance(api_key, str) else "not-needed"
@@ -1054,7 +1044,18 @@ class LLMFactory:
             }
             if model_name is not None:
                 init_kwargs["model_name"] = model_name
-            return provider_cls(**init_kwargs)
+            return LocalLLMProvider(**init_kwargs)
+
+        providers: dict[str, type] = {
+            "gemini": GeminiProvider,
+            "openai": OpenAIProvider,
+            "deepseek": DeepSeekProvider,
+            "openrouter": OpenRouterProvider,
+        }
+
+        provider_cls = providers.get(provider)
+        if provider_cls is None:
+            raise ValueError(f"Unknown provider: {provider}")
 
         init_kwargs = {
             "api_key": api_key,
