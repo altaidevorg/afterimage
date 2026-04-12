@@ -61,7 +61,7 @@ class PreferenceGenerator:
             model_name=self._gen.model_name,
             api_key=self._gen.key_pool,
             system_instruction=self._gen.respondent_prompt,
-            **getattr(self._gen, "llm_factory_kwargs", {}),
+            **self._gen.llm_factory_kwargs,
         )
 
     # ------------------------------------------------------------------

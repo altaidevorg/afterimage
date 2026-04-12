@@ -42,6 +42,9 @@ def default_embedding_provider_config(
     Uses the same API vendor as chat when possible; DeepSeek has no public
     embedding API in this stack, so a local SentenceTransformer worker pool is
     used. For ``local`` chat, the same process-based default applies.
+    For those process defaults, the Hugging Face id ``altaidevorg/bge-m3-distill-8l``
+    is Alt AI’s open-source distilled BGE-M3 (multilingual, ~2.5× faster than full
+    BGE-M3 with similar quality).
 
     Args:
         model_provider_name: Active LLM provider for generation.
