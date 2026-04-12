@@ -1,6 +1,6 @@
 [project]
 name = "afterimage"
-version = "0.14.0"
+version = "0.14.1"
 keywords = ["afterimage", "dataset-generation", "synthetic-dataset", "tool-calling", "structured-output", "preference-data", "persona-driven"]
 authors = [
     { name = "Yusuf Sarıgöz", email = "yusuf@altai.dev"}
