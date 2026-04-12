@@ -99,3 +99,10 @@ python_functions = ["test_*"]
 markers = [
     "integration: marks tests that call real APIs (deselect with '-m \"not integration\"')",
 ]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+extend-exclude = ["examples"]
+# Lint uses Ruff defaults (E4, E7, E9, F). Add [tool.ruff.lint] with extend-select later
+# (e.g. "I", "UP", "B") when you want isort / pyupgrade / bugbear across the tree.

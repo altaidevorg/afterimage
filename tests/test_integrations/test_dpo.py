@@ -103,6 +103,6 @@ class TestDPO:
             for r in rows:
                 f.write(json.dumps(r) + "\n")
 
-        result = exporter.export_file(inp, out, system_prompt="Be helpful.")
+        exporter.export_file(inp, out, system_prompt="Be helpful.")
         pair = json.loads(out.read_text().strip())
         assert pair["prompt"].startswith("Be helpful.")

@@ -1,4 +1,4 @@
-name: Ruff
+name: Ruff format
 
 on:
   push:
@@ -7,12 +7,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ruff-${{ github.workflow }}-${{ github.ref }}
+  group: ruff-format-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   format:
-    name: Format
+    name: Check formatting
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
