@@ -1,4 +1,5 @@
 from abc import abstractmethod
+import os
 from pathlib import Path
 from typing import List, Optional, Protocol, Dict, Any
 import json
@@ -61,7 +62,14 @@ class BaseStorage(Protocol):
 
 
 class JSONLStorage(BaseStorage):
-    """Stores conversations and documents in JSONL format."""
+    """Stores conversations and documents in JSONL format.
+
+    When ``conversations_path`` / ``documents_path`` are omitted, filenames default to
+    ``{prefix}_{timestamp}.jsonl`` in the process working directory. If the environment
+    variable ``AFTERIMAGE_JSONL_DIR`` is set, those defaults are created under that
+    directory instead (the directory is created if missing). The pytest suite sets this
+    so runs do not litter the repository root.
+    """
 
     def __init__(
         self,
@@ -94,7 +102,13 @@ class JSONLStorage(BaseStorage):
     @staticmethod
     def _get_default_path(prefix: str) -> Path:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return Path(f"{prefix}_{timestamp}.jsonl")
+        name = f"{prefix}_{timestamp}.jsonl"
+        base = os.environ.get("AFTERIMAGE_JSONL_DIR")
+        if base:
+            p = Path(base)
+            p.mkdir(parents=True, exist_ok=True)
+            return p / name
+        return Path(name)
 
     def save_conversations(
         self,

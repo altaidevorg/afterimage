@@ -16,6 +16,10 @@ from afterimage.callbacks import (
     WithRAGRespondentPromptModifier,  # noqa
 )
 from afterimage.conversation_generator import ConversationGenerator  # noqa
+from afterimage.conversation_turn_hooks import (  # noqa
+    ConversationTurnContext,
+    ConversationTurnHooks,
+)
 from afterimage.evaluator import (
     ConversationJudge,  # noqa
     ConversationJudgeConfig,  # noqa
