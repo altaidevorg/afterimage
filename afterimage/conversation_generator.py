@@ -75,7 +75,7 @@ def format_correspondent_followup_user_message(assistant_reply: str) -> str:
         "chat unless a code-switch is natural for that user.\n"
         "- Do not invent a new job, company, or scenario unless it truly follows "
         "from what you already said.\n"
-        "- No preamble (e.g. no \"As a user\" or \"Here is my question\").\n\n"
+        '- No preamble (e.g. no "As a user" or "Here is my question").\n\n'
         "<assistant_last_message>\n"
         f"{text}\n"
         "</assistant_last_message>\n"
