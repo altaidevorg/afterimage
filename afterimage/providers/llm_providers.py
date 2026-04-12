@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from ..common import default_safety_settings
 from ..key_management import SmartKeyPool
 from ..types import MODEL_PROVIDER_NAMES, ConversationEntry, ModelProviderName
+from .local_provider import LocalLLMProvider
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -1020,8 +1021,7 @@ class LLMFactory:
         system_instruction: Optional[str] = None,
         **kwargs: Any,
     ) -> LLMProvider:
-        from .local_provider import LocalLLMProvider
-
+        
         if provider not in MODEL_PROVIDER_NAMES:
             raise ValueError(
                 f"Unknown provider: {provider!r}. "

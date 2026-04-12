@@ -6,7 +6,7 @@ from ...common import GeneratedInstructions, default_model_name, default_safety_
 from ...key_management import SmartKeyPool
 from ...monitoring import GenerationMonitor
 from ...prompts import get_correspondent_instruction_generation_prompt
-from ...providers.llm_providers import LLMFactory
+from ...providers.llm_providers import LLMFactory, LLMProvider
 from ...types import ModelProviderName
 from ._utils import strip_user_system_prompt_tags, substitute_n_instructions_in_prompt
 from .schema import InstructionsSchema
@@ -57,7 +57,7 @@ class LLMBackedInstructionGeneratorCallback(BaseInstructionGeneratorCallback):
         model_name: str,
         api_key: str | SmartKeyPool,
         system_instruction: str | None,
-    ):
+    ) -> LLMProvider:
         return LLMFactory.create(
             provider=self.model_provider_name,
             model_name=model_name,
