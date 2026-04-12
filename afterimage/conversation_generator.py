@@ -19,6 +19,7 @@ from .base import (
     BaseStoppingCallback,
 )
 from .callbacks import FixedNumberStoppingCallback
+from .conversation_turn_hooks import ConversationTurnContext, ConversationTurnHooks
 from .common import (
     default_model_name,
     default_safety_settings,
@@ -48,6 +49,39 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def format_correspondent_followup_user_message(assistant_reply: str) -> str:
+    """Shape the respondent's last reply for the correspondent chat on turn 2+.
+
+    The correspondent model plays the *human user*. Feeding the raw assistant
+    reply as the next user message often causes role drift (assistant voice,
+    new persona, language switches). This wrapper keeps the contract explicit.
+    """
+    text = (assistant_reply or "").strip()
+    return (
+        "The assistant (the domain expert you are talking to) has just replied "
+        "to you below.\n\n"
+        "Stay the same human user you were in the previous turns of this chat. "
+        "Write only your next short message to them: a natural follow-up question "
+        "or request.\n\n"
+        "Rules:\n"
+        "- If your earlier user messages in this chat were not in English, "
+        "write your next message in that same language. Do not switch to English "
+        "unless your own previous user turns were already English.\n"
+        "- Do not answer for the assistant, give bullet tutorials, or use an "
+        "assistant voice.\n"
+        "- Use the same natural language as your earlier user messages in this "
+        "chat unless a code-switch is natural for that user.\n"
+        "- Do not invent a new job, company, or scenario unless it truly follows "
+        "from what you already said.\n"
+        '- No preamble (e.g. no "As a user" or "Here is my question").\n\n'
+        "<assistant_last_message>\n"
+        f"{text}\n"
+        "</assistant_last_message>\n"
+        "---\n\n"
+        "Your next message as the user (one turn only):"
+    )
 
 
 class ConversationGenerator(BaseGenerator):
@@ -109,6 +143,7 @@ class ConversationGenerator(BaseGenerator):
         monitor: Optional[GenerationMonitor] = None,
         instruction_generator_callback: BaseInstructionGeneratorCallback | None = None,
         respondent_prompt_modifier: BaseRespondentPromptModifierCallback | None = None,
+        turn_hooks: ConversationTurnHooks | None = None,
     ):
         self.monitor: GenerationMonitor = (
             monitor or GenerationMonitor()
@@ -160,6 +195,7 @@ class ConversationGenerator(BaseGenerator):
 
         self.instruction_generator_callback = instruction_generator_callback
         self.respondent_prompt_modifier = respondent_prompt_modifier
+        self.turn_hooks = turn_hooks
 
         # --- Quality gate (wraps evaluator) ---
         self._quality_gate = QualityGate(evaluator=None)
@@ -385,6 +421,22 @@ class ConversationGenerator(BaseGenerator):
             )
             raise
 
+    def _turn_context(
+        self,
+        conversation: List[ConversationEntry],
+        planned_turns: int,
+        correspondent_prompt: str,
+        respondent_prompt: str,
+    ) -> ConversationTurnContext:
+        completed = sum(1 for e in conversation if e.role == Role.ASSISTANT)
+        return ConversationTurnContext(
+            planned_turns=planned_turns,
+            respondent_turns_completed=completed,
+            conversation=tuple(conversation),
+            respondent_system_prompt=respondent_prompt,
+            correspondent_system_prompt=correspondent_prompt,
+        )
+
     async def go(
         self,
         turns: int = 1,
@@ -396,6 +448,8 @@ class ConversationGenerator(BaseGenerator):
         """Simulates a multi-turn conversation between the correspondent and respondent."""
         start_time = time.time()
         conversation = []
+        th = self.turn_hooks
+        first_correspondent_message = "Ask your first question."
 
         try:
             if correspondent_prompt is None:
@@ -412,25 +466,89 @@ class ConversationGenerator(BaseGenerator):
             correspondent = await self.create_model(correspondent_prompt)
             respondent = await self.create_model(respondent_prompt)
 
-            question = first_question or await self.ask(
-                correspondent, "Ask your first question."
-            )
+            if first_question is None:
+                if th:
+                    await th.before_correspondent_completion(
+                        self._turn_context(
+                            conversation,
+                            turns,
+                            correspondent_prompt,
+                            respondent_prompt,
+                        ),
+                        first_correspondent_message,
+                    )
+                question = await self.ask(correspondent, first_correspondent_message)
+            else:
+                question = first_question
             self.initiators.append(question)
             conversation.append(ConversationEntry(role=Role.USER, content=question))
+            if th:
+                await th.after_correspondent_completion(
+                    self._turn_context(
+                        conversation,
+                        turns,
+                        correspondent_prompt,
+                        respondent_prompt,
+                    ),
+                    question,
+                )
 
             for turn in range(turns):
+                if th:
+                    await th.before_respondent_completion(
+                        self._turn_context(
+                            conversation,
+                            turns,
+                            correspondent_prompt,
+                            respondent_prompt,
+                        ),
+                        question,
+                    )
                 answer_entry = await self.answer(respondent, question)
                 conversation.append(answer_entry)
+                if th:
+                    await th.after_respondent_completion(
+                        self._turn_context(
+                            conversation,
+                            turns,
+                            correspondent_prompt,
+                            respondent_prompt,
+                        ),
+                        answer_entry,
+                    )
 
                 if (turn + 1) == turns:
                     break
                 else:
-                    question = await self.ask(correspondent, answer_entry)
+                    followup = format_correspondent_followup_user_message(
+                        answer_entry.content
+                    )
+                    if th:
+                        await th.before_correspondent_completion(
+                            self._turn_context(
+                                conversation,
+                                turns,
+                                correspondent_prompt,
+                                respondent_prompt,
+                            ),
+                            followup,
+                        )
+                    question = await self.ask(correspondent, followup)
 
                     conversation.append(
                         ConversationEntry(role=Role.USER, content=question)
                     )
                     self.initiators.append(question)
+                    if th:
+                        await th.after_correspondent_completion(
+                            self._turn_context(
+                                conversation,
+                                turns,
+                                correspondent_prompt,
+                                respondent_prompt,
+                            ),
+                            question,
+                        )
 
             self.monitor.track_generation(
                 duration=time.time() - start_time,

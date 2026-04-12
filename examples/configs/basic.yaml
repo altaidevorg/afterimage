@@ -10,13 +10,13 @@
 generation:
   # Number of conversations to generate
   num_dialogs: 10
-  # Each conversation is a single turn (one question, one answer)
-  max_turns: 1
+  # Max turns per dialog; each run samples uniformly from 1..max_turns (see ConversationGenerator).
+  max_turns: 3
 
 model:
   # LLM provider: gemini, openai, deepseek, or local
   provider: gemini
-  # Model identifier (provider-specific)
+  # Model identifier (provider-specific). gemini-2.5-flash works well for multi-turn; 2.0-flash may skew non-English more often.
   model_name: gemini-2.5-flash
   # Environment variable holding the API key
   api_key_env: GEMINI_API_KEY

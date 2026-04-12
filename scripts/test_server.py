@@ -383,7 +383,7 @@ async def test_download_result(
                 f"content-type={content_type}  conversations={len(data['conversations'])}",
             )
         else:
-            lines = [l for l in resp.text.strip().splitlines() if l.strip()]
+            lines = [line for line in resp.text.strip().splitlines() if line.strip()]
             _assert(len(lines) > 0, "JSONL result is empty")
             first = json.loads(lines[0])
             _assert(
