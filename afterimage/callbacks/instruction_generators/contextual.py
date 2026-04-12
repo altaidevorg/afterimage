@@ -69,11 +69,23 @@ class ContextualInstructionGeneratorCallback(LLMBackedInstructionGeneratorCallba
         return self.separator_text.join(contexts)
 
     def _format_contextual_prompt(self, original_prompt: str, full_context: str) -> str:
+        if full_context.strip():
+            lang_rule = (
+                "When the context contains readable natural-language prose, ask every "
+                "question in that language."
+            )
+        else:
+            lang_rule = (
+                "The context is empty: write every question in the same natural language "
+                "as the **correspondent (simulated user) system prompt** at the start of "
+                "this message. If that text does not clearly establish one language, "
+                "use **English**."
+            )
         return f"""{original_prompt}
 ----------------------------
 
 ## Context
-Ask the questions in the same language as this context.
+{lang_rule}
 <context>
 {full_context}
 </context>

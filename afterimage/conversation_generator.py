@@ -50,6 +50,39 @@ from .types import (
 logger = logging.getLogger(__name__)
 
 
+def format_correspondent_followup_user_message(assistant_reply: str) -> str:
+    """Shape the respondent's last reply for the correspondent chat on turn 2+.
+
+    The correspondent model plays the *human user*. Feeding the raw assistant
+    reply as the next user message often causes role drift (assistant voice,
+    new persona, language switches). This wrapper keeps the contract explicit.
+    """
+    text = (assistant_reply or "").strip()
+    return (
+        "The assistant (the domain expert you are talking to) has just replied "
+        "to you below.\n\n"
+        "Stay the same human user you were in the previous turns of this chat. "
+        "Write only your next short message to them: a natural follow-up question "
+        "or request.\n\n"
+        "Rules:\n"
+        "- If your earlier user messages in this chat were not in English, "
+        "write your next message in that same language. Do not switch to English "
+        "unless your own previous user turns were already English.\n"
+        "- Do not answer for the assistant, give bullet tutorials, or use an "
+        "assistant voice.\n"
+        "- Use the same natural language as your earlier user messages in this "
+        "chat unless a code-switch is natural for that user.\n"
+        "- Do not invent a new job, company, or scenario unless it truly follows "
+        "from what you already said.\n"
+        "- No preamble (e.g. no \"As a user\" or \"Here is my question\").\n\n"
+        "Assistant's last message:\n"
+        "---\n"
+        f"{text}\n"
+        "---\n\n"
+        "Your next message as the user (one turn only):"
+    )
+
+
 class ConversationGenerator(BaseGenerator):
     """Generates conversations between a correspondent (question generator) and a respondent (answer generator) asynchronously.
 
@@ -425,7 +458,10 @@ class ConversationGenerator(BaseGenerator):
                 if (turn + 1) == turns:
                     break
                 else:
-                    question = await self.ask(correspondent, answer_entry)
+                    followup = format_correspondent_followup_user_message(
+                        answer_entry.content
+                    )
+                    question = await self.ask(correspondent, followup)
 
                     conversation.append(
                         ConversationEntry(role=Role.USER, content=question)

@@ -61,16 +61,20 @@ Now, write the corresponding user system prompt for the following assistant syst
 ### Assistant system prompt
 <assistant_system_prompt>
 {new_assistant_prompt}
-</assistant_system_prompt
+</assistant_system_prompt>
 
 # Rules
 1. Always write the user system prompt in the same language as the given assistant system prompt.
 2. Remind it that you are an expert in the topic, domain or task mentioned in the system prompt for the assistant.
 3. Remind it to act as a real user and ask realistic questions or give realistic instructions.
-4. You can also give it some hins or examples.
+4. You can also give it some hints or examples.
 5. Make it very clear that it should roleplay a user that seeks information in that particular domain and that you will answer questions or respond to instructions.
 6. Remind it to never break the game.
 7. Write only the the system prompt for the user and nothing else. Do not add preamble, explanations, commentary or addendum of any other kind.
+8. For multi-turn chats: each user message must stay in the same human user persona and the same primary language as the first user message, unless a natural code-switch fits that persona.
+9. The user must never reply in the assistant's voice (no bullet-point lectures, no \"As an AI\", no closing offers like a support agent).
+10. Follow-up questions must continue the same thread (same implied company, role, and domain); do not jump to unrelated industries or new fictional CEOs.
+11. The user system prompt must be written in the **same natural language as the assistant system prompt** whenever that assistant prompt is clearly one language (e.g. English in, English user-role prompt out). Do not switch to another locale "for variety."
 """
 
 
@@ -81,7 +85,8 @@ These questions should be relevant to the topic discussed in the context and phr
 Be creative and thoughtful to ensure the questions align with the nuances and details of the context, making them meaningful and easy to understand for anyone exploring the topic.
 Under no circumstances should you refer to or mention about the context provided directly.
 Instead, ask questions or give instructions as if they come from someone who do not have access to the context provided.
-Always ensure that the questions are written in the same language as the context provided."""
+
+Language: When the context includes readable natural-language prose, write every question in that language. When the context is empty or has no clear human language, match the dominant natural language of the **correspondent (simulated user) system prompt** included in the same user message above the context block. If that prompt is also ambiguous, use **English**."""
 
 default_persona_instruction_generation_prompt = """You are an expert actor and roleplayer.
 You will be given a persona description and a context.
@@ -94,7 +99,8 @@ These questions should be relevant to the topic discussed in the context and phr
 Be creative and thoughtful to ensure the questions align with the nuances and details of the context, making them meaningful and easy to understand for anyone exploring the topic.
 Under no circumstances should you refer to or mention about the context provided directly.
 Instead, ask questions or give instructions as if they come from someone who do not have access to the context provided.
-Always ensure that the questions are written in the same language as the context provided."""
+
+Language: When the context includes readable natural-language prose, write every question in that language. When the context is empty or has no clear human language, follow the persona's implied locale if obvious; otherwise match the dominant language of the **correspondent (simulated user) briefing** in the same request; if still ambiguous, use **English**."""
 
 default_tool_calling_instruction_generation_prompt = """You are an expert user experience designer and quality assurance engineer specializing in tool-calling systems.
 Your task is to generate {n_instructions} realistic user instructions that precisely require calling one or more of the tools provided below.
@@ -117,7 +123,7 @@ Use the following context to make the instructions realistic and grounded in the
 3. **Variety**: Try to target different tools if multiple are provided. Combine tools if it makes sense (e.g., "It's cold and dark, fix it").
 4. **Tone**: Keep it conversational and realistic for a user interacting with an AI assistant.
 5. **No Meta-Talk**: Do not mention the tools, descriptions, or the context. Just write the user's request.
-6. **Language**: Always write the instruction in the same language as the context provided."""
+6. **Language**: When the context includes readable natural-language prose, write in that language. When the context is empty or language-neutral, use **English** unless the tool names or domain clearly imply another single language."""
 
 default_tool_calling_persona_instruction_generation_prompt = """You are an expert actor and roleplayer specializing in simulating diverse user personas for tool-calling systems.
 Your task is to roleplay as the person described in the persona and generate {n_instructions} realistic user instructions that precisely require calling one or more of the tools provided below.
@@ -143,7 +149,7 @@ Use the following context to make the instructions realistic, grounded in the do
 3. **Implicit Parameters**: People don't often speak in JSON. Frame the instructions naturally according to the persona.
 4. **Variety**: Try to target different tools if multiple are provided. Combine tools if it makes sense.
 5. **No Meta-Talk**: Do not mention the tools, descriptions, the context, or even the persona description itself. Just write the user's request.
-6. **Language**: Always write the instruction in the same language as the context provided."""
+6. **Language**: When the context includes readable natural-language prose, write in that language. When the context is empty or language-neutral, match the persona's implied locale; if none, use **English**."""
 
 default_respondent_prompt_with_context = """{prompt}
 
@@ -158,7 +164,7 @@ The following text chunk or chunks are provided to help you answer the questions
 ## Rules
 1. Your answers must be based on the information provided in the context above. However, under no circumstances should you explicitly mention or refer to the context itself in your responses.  
 2. You must not use phrases like 'I cannot do this,' 'Consult an expert,' or 'I cannot provide advice on this matter.' Instead, craft clear, thoughtful, and contextually relevant answers to the best of your ability.  
-3. Always respond in the same language as the context and the question, ensuring linguistic consistency.  
+3. Always respond in the same language as the context and the question when the context carries readable prose; if the context is empty or language-neutral, answer in the same language as the user's question, or **English** if the question language is unclear.
 
 Your primary goal is to deliver accurate, contextually grounded, and professional answers that meet the needs of the question."""
 
