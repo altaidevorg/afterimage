@@ -114,9 +114,7 @@ async def test_first_question_skips_before_first_correspondent_ask():
 
     hooks = _HookRecorder()
     original = llm_providers.LLMFactory.create
-    llm_providers.LLMFactory.create = MagicMock(
-        return_value=_SeqLLM([], ["only asst"])
-    )
+    llm_providers.LLMFactory.create = MagicMock(return_value=_SeqLLM([], ["only asst"]))
     try:
         gen = ConversationGenerator(
             respondent_prompt="You are assistant.",
