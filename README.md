@@ -4,6 +4,8 @@
 [![Ruff format](https://github.com/altaidevorg/afterimage/actions/workflows/ruff-format.yml/badge.svg)](https://github.com/altaidevorg/afterimage/actions/workflows/ruff-format.yml)
 [![Ruff lint](https://github.com/altaidevorg/afterimage/actions/workflows/ruff-lint.yml/badge.svg)](https://github.com/altaidevorg/afterimage/actions/workflows/ruff-lint.yml)
 [![Documentation](https://img.shields.io/badge/docs-afterimage.altai.dev-0066cc)](https://afterimage.altai.dev)
+[![PyPI](https://img.shields.io/pypi/v/afterimage)](https://pypi.org/project/afterimage)
+[![Medium](https://img.shields.io/badge/Medium-Blog-12100E?logo=medium&logoColor=white)](https://medium.com/altai-dev/afterimage-is-now-open-source-for-infrastructure-level-dataset-generation-e729507c3b03)
 
 **AfterImage** is a Python library and CLI for generating **synthetic conversational datasets** with modern LLMs (Gemini, OpenAI-compatible APIs, DeepSeek, and local OpenAI-compatible servers). It is built so you can **start with a YAML file and one command**, then **compose** callbacks, document providers, storage, evaluation, and export pipelines as your needs grow—from quick experiments to large, production-style runs.
 
