@@ -1,0 +1,71 @@
+# AfterImage — instructions for coding agents
+
+You are helping a user work with **AfterImage**: a Python library and CLI for synthetic conversational datasets (multi-turn chat, tool calling, structured outputs, personas, RAG-style grounding, export, preference / DPO-style pairs). Requires **Python 3.11+**. PyPI name: `afterimage`. Source: https://github.com/altaidevorg/afterimage
+
+## What you should do first
+
+Install the package for the environment you are using, then fetch the Markdown guides below (raw URLs) before editing code or configs. Use absolute URLs as written.
+
+## Install
+
+Run one of:
+
+- `pip install afterimage`
+- `uv add afterimage`
+
+Optional extras (see `https://raw.githubusercontent.com/altaidevorg/afterimage/main/pyproject.toml`): `embeddings-local`, `server`, `training`. Example: `pip install "afterimage[embeddings-local]"`.
+
+Ensure API keys exist in the environment when examples require them (e.g. `GEMINI_API_KEY` for the stock YAML samples).
+
+## CLI you can run or suggest
+
+- `afterimage generate -c examples/configs/basic.yaml`
+- `afterimage generate -c <path/to/config.yaml> --dry-run`
+- `afterimage export -i <dataset.jsonl> -f sharegpt -f messages` — also `afterimage export --list-formats`
+- `afterimage preference -c <config.yaml>`
+
+## Documentation (fetch as Markdown — GitHub raw)
+
+Use the `main` ref below unless the user’s task names another branch or tag; substitute that ref in the URL path when needed.
+
+- Overview — scope and mental model: https://raw.githubusercontent.com/altaidevorg/afterimage/main/docs/overview.md
+- Quickstart — narrative API walkthrough: https://raw.githubusercontent.com/altaidevorg/afterimage/main/docs/README.md
+- Conversation generation: https://raw.githubusercontent.com/altaidevorg/afterimage/main/docs/conversation_generation.md
+- Structured generation: https://raw.githubusercontent.com/altaidevorg/afterimage/main/docs/structured_generation.md
+- Persona generation: https://raw.githubusercontent.com/altaidevorg/afterimage/main/docs/persona_generation.md
+- Monitoring: https://raw.githubusercontent.com/altaidevorg/afterimage/main/docs/monitoring.md
+- Evaluation: https://raw.githubusercontent.com/altaidevorg/afterimage/main/docs/evaluation.md
+- Advanced usage: https://raw.githubusercontent.com/altaidevorg/afterimage/main/docs/advanced_usage.md
+- Architecture: https://raw.githubusercontent.com/altaidevorg/afterimage/main/docs/architecture.md
+- Export and integration: https://raw.githubusercontent.com/altaidevorg/afterimage/main/docs/EXPORT.md
+- JSONL schema: https://raw.githubusercontent.com/altaidevorg/afterimage/main/docs/EXPORT_DATA_SHAPE.md
+- Local / OpenAI-compatible servers: https://raw.githubusercontent.com/altaidevorg/afterimage/main/docs/LOCAL_MODELS.md
+- Preference (DPO-style) data: https://raw.githubusercontent.com/altaidevorg/afterimage/main/docs/PREFERENCE_DATA.md
+
+## Examples (GitHub raw)
+
+YAML (CLI configs):
+
+- https://raw.githubusercontent.com/altaidevorg/afterimage/main/examples/configs/basic.yaml
+- https://raw.githubusercontent.com/altaidevorg/afterimage/main/examples/configs/rag.yaml
+- https://raw.githubusercontent.com/altaidevorg/afterimage/main/examples/configs/local.yaml
+- https://raw.githubusercontent.com/altaidevorg/afterimage/main/examples/configs/stopping_budget.yaml
+
+Python (API patterns):
+
+- https://raw.githubusercontent.com/altaidevorg/afterimage/main/examples/turn_hooks_demo.py
+- https://raw.githubusercontent.com/altaidevorg/afterimage/main/examples/structured_generation_demo.py
+- https://raw.githubusercontent.com/altaidevorg/afterimage/main/examples/tool_calling_generator.py
+- https://raw.githubusercontent.com/altaidevorg/afterimage/main/examples/generate_with_monitoring.py
+- https://raw.githubusercontent.com/altaidevorg/afterimage/main/examples/conversation_judge_demo.py
+- https://raw.githubusercontent.com/altaidevorg/afterimage/main/examples/generate_personas.py
+- https://raw.githubusercontent.com/altaidevorg/afterimage/main/examples/customer_support_generator.py
+- https://raw.githubusercontent.com/altaidevorg/afterimage/main/examples/demo_ui/README.md
+
+## When the repository is already checked out
+
+Read `https://raw.githubusercontent.com/altaidevorg/afterimage/main/.agents/skills/afterimage-dataset-generation/SKILL.md` for repository-specific agent workflows (or open the same path under `.agents/skills/` in the workspace if present).
+
+## Canonical browsable documentation (HTML, search, API reference)
+
+Open **https://afterimage.altai.dev/** for the full Sphinx site. This file is also mirrored at **https://afterimage.altai.dev/llms.txt** and at **https://raw.githubusercontent.com/altaidevorg/afterimage/main/docs/llms.txt**.

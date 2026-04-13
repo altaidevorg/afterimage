@@ -21,11 +21,24 @@ That split keeps onboarding shallow while leaving room for **scale** (concurrenc
 
 ## Installation
 
+
+### For AI assistants
+
+If you want your agent to generate datasets for you, just copy everything inside the fence into your agent:
+
+```
+Read https://afterimage.altai.dev/llms.txt and follow it for installing AfterImage, documentation links, and examples.
+```
+
+### For humans
+
 The package can be installed from PyPI as **`afterimage`**.
 
 ```bash
 uv add afterimage
 ```
+
+or
 
 ```bash
 pip install afterimage

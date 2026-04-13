@@ -57,6 +57,9 @@ html_theme = "sphinx_rtd_theme"
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 
+# Plain-text index for coding agents (served at site root as /llms.txt).
+html_extra_path = ["llms.txt"]
+
 # -- Options for Myst Parser -------------------------------------------------
 myst_enable_extensions = [
     "colon_fence",
