@@ -104,4 +104,4 @@ More examples live under [`examples/configs/`](examples/configs/). In-depth guid
 
 ## License
 
-MIT (see PyPI package metadata and `pyproject.toml` classifiers).
+Apache License 2.0 (see the `LICENSE` file and PyPI package metadata).
