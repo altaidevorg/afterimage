@@ -81,9 +81,18 @@ Your documents  +  LLM  →  Realistic, diverse, quality-filtered training data
 
 ## Installation
 
+**If you want your agent to do it for you:** Just copy and paste the following to your agent:
+
+```
+Read https://afterimage.altai.dev/llms.txt and follow it for installing AfterImage, documentation links, and examples.
+```
+
+**If you are doing it yourself:**
+
 ```bash
 pip install afterimage
 # or with uv (recommended)
+
 uv add afterimage
 ```
 
@@ -443,7 +452,3 @@ Open an issue before submitting significant changes — it helps align on design
 Built by [Altai Dev](https://altai.dev) · [Documentation](https://afterimage.altai.dev) · [PyPI](https://pypi.org/project/afterimage) · [Blog](https://medium.com/altai-dev/afterimage-is-now-open-source-for-infrastructure-level-dataset-generation-e729507c3b03)
 
 </div>
-
----
-
-> **For AI agents:** To use AfterImage from an agent context, read `https://afterimage.altai.dev/llms.txt` for installation instructions, all documentation links, and runnable examples.
