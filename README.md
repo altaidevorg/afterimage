@@ -21,6 +21,10 @@ from a single YAML file or a composable Python API.
 
 ---
 
+![How Afterimage works](docs/how_it_works.png)
+
+> Demonstration of a typical conversational dataset generation, where Afterimage simulates both sides of the conversation.
+
 ![AfterImage demo — Credit Risk Management Q&A Bot](docs/credit_risk_demo.gif)
 
 > Generating a document-grounded Q&A dataset from BIS credit risk principles → ShareGPT format
