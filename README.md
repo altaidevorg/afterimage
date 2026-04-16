@@ -21,8 +21,6 @@ from a single YAML file or a composable Python API.
 
 ---
 
-![How Afterimage works](docs/how_it_works.png)
-
 > Demonstration of a typical conversational dataset generation, where Afterimage simulates both sides of the conversation.
 
 ![AfterImage demo — Credit Risk Management Q&A Bot](docs/credit_risk_demo.gif)
@@ -311,30 +309,11 @@ afterimage export -i output/dataset.jsonl -f sharegpt -f messages --split 0.9
 
 ---
 
-## How It Works
+## How AfterImage Works
 
 AfterImage runs a two-agent loop per dialog:
 
-```
-┌────────────────────────────────────────────────────────────┐
-│                     ConversationGenerator                   │
-│                                                            │
-│   ┌──────────────────┐          ┌───────────────────────┐  │
-│   │   Correspondent   │─────────▶│      Respondent       │  │
-│   │  (user simulator) │◀─────────│  (assistant model)    │  │
-│   └──────────────────┘          └───────────────────────┘  │
-│           │                               │                 │
-│   InstructionGenerator           Document Context           │
-│   PersonaCallback                (RAG retrieval)            │
-│   StoppingCriteria               QualityGate + Judge        │
-│           │                               │                 │
-│           └────────────┬──────────────────┘                 │
-│                        ▼                                    │
-│               Storage  (JSONL / SQL)                        │
-│                        ▼                                    │
-│            Export  →  Training Framework                    │
-└────────────────────────────────────────────────────────────┘
-```
+![AfterImage Dialog-Level Workflow](docs/workflow-diagram.jpg)
 
 1. **Correspondent** generates user questions — driven by personas, document context, or custom instruction callbacks
 2. **Respondent** answers — with optional RAG context injected per turn
