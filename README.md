@@ -311,7 +311,7 @@ afterimage export -i output/dataset.jsonl -f sharegpt -f messages --split 0.9
 
 ---
 
-## How It Works
+## How AfterImage Works
 
 AfterImage runs a two-agent loop per dialog:
 
