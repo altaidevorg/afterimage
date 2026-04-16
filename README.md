@@ -315,26 +315,7 @@ afterimage export -i output/dataset.jsonl -f sharegpt -f messages --split 0.9
 
 AfterImage runs a two-agent loop per dialog:
 
-```
-┌────────────────────────────────────────────────────────────┐
-│                     ConversationGenerator                   │
-│                                                            │
-│   ┌──────────────────┐          ┌───────────────────────┐  │
-│   │   Correspondent   │─────────▶│      Respondent       │  │
-│   │  (user simulator) │◀─────────│  (assistant model)    │  │
-│   └──────────────────┘          └───────────────────────┘  │
-│           │                               │                 │
-│   InstructionGenerator           Document Context           │
-│   PersonaCallback                (RAG retrieval)            │
-│   StoppingCriteria               QualityGate + Judge        │
-│           │                               │                 │
-│           └────────────┬──────────────────┘                 │
-│                        ▼                                    │
-│               Storage  (JSONL / SQL)                        │
-│                        ▼                                    │
-│            Export  →  Training Framework                    │
-└────────────────────────────────────────────────────────────┘
-```
+![AfterImage Dialog-Level Workflow](docs/workflow-diagram.jpg)
 
 1. **Correspondent** generates user questions — driven by personas, document context, or custom instruction callbacks
 2. **Respondent** answers — with optional RAG context injected per turn
