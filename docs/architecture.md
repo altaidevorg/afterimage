@@ -17,6 +17,8 @@ Afterimage is designed as a modular pipeline for synthetic data generation. The 
 3.  **Prompt Modifiers (`BaseRespondentPromptModifierCallback`)**: Strategies for "What to know".
     *   Responsible for modifying the system prompt of the assistant at runtime.
     *   Used for RAG (injecting context) or Persona adoption.
+    *   **Session-scoped retrieval:** `WithRAGRespondentPromptModifier` runs once per sampled instruction (before the multi-turn `go()` loop). Retrieved text is fixed for that dialog unless you add per-turn hooks or a future session driver (see *Conversation Generation* docs).
+    *   **Retriever protocol:** Implement `get_context(query) -> str`, optionally `aget_context`, and optionally `get_context_with_metadata` / `aget_context_with_metadata` returning `RetrievalResult` (`afterimage.retrievers`) so hit ids and scores can appear under `GeneratedResponsePrompt.metadata["retrieval"]`. The canonical empty-hit string is `NO_RETRIEVAL_CONTEXT`.
 4.  **Storage (`BaseStorage`)**: Persistence layer.
     *   Decoupled from generation logic.
     *   Can be swapped (JSONL vs SQL) without changing the generator.

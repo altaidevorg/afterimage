@@ -4,7 +4,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from afterimage.retrievers import ChainedRetriever, EnsembleRetriever, QdrantRetriever
+from afterimage.retrievers import (
+    NO_RETRIEVAL_CONTEXT,
+    ChainedRetriever,
+    EnsembleRetriever,
+    QdrantRetriever,
+)
 
 
 @pytest.mark.asyncio
@@ -12,6 +17,8 @@ async def test_qdrant_retriever_aget_context_uses_embedding_provider():
     mock_client = MagicMock()
     hit = MagicMock()
     hit.payload = {"content": "retrieved chunk"}
+    hit.id = "pt-1"
+    hit.score = 0.91
     mock_client.search.return_value = [hit]
 
     embed = MagicMock()
@@ -33,6 +40,12 @@ async def test_qdrant_retriever_aget_context_uses_embedding_provider():
     call_kw = mock_client.search.call_args.kwargs
     assert call_kw["collection_name"] == "mycollection"
     assert call_kw["query_vector"] == [0.25, 0.5, 0.75]
+
+    detail = await r.aget_context_with_metadata("user question")
+    assert "retrieved chunk" in detail.context
+    assert detail.metadata["hits"][0]["id"] == "pt-1"
+    assert detail.metadata["hits"][0]["score"] == 0.91
+    assert detail.metadata["collection_name"] == "mycollection"
 
 
 class _SyncShort:
@@ -84,8 +97,8 @@ async def test_ensemble_retriever_aget_context_parallel_weighted_merge():
 @pytest.mark.asyncio
 async def test_ensemble_retriever_aget_context_all_empty():
     empty = MagicMock()
-    empty.aget_context = AsyncMock(return_value="No relevant context found.")
+    empty.aget_context = AsyncMock(return_value=NO_RETRIEVAL_CONTEXT)
 
     ens = EnsembleRetriever([(empty, 1.0)])
     out = await ens.aget_context("q")
-    assert out == "No relevant context found."
+    assert out == NO_RETRIEVAL_CONTEXT

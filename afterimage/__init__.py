@@ -35,6 +35,14 @@ from afterimage.monitoring import (
     TokenUsageReport,  # noqa
 )
 from afterimage.persona_generator import PersonaGenerator  # noqa
+from afterimage.retrievers import (  # noqa
+    NO_RETRIEVAL_CONTEXT,
+    RETRIEVAL_METADATA_KEY,
+    RetrievalResult,
+    StaticContextRetriever,
+    aget_retrieval_result,
+    get_retrieval_result_sync,
+)
 from afterimage.providers import (
     ChatSession,  # noqa
     DirectoryDocumentProvider,  # noqa

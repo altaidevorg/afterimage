@@ -4,12 +4,32 @@ import asyncio
 import time
 from abc import abstractmethod
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, List, Optional, Protocol, Tuple, Union, runtime_checkable
 
 from qdrant_client import QdrantClient
 
 from .providers.embedding_providers import EmbeddingProvider
+
+# Canonical empty-hit message returned by built-in retrievers (single source of truth).
+NO_RETRIEVAL_CONTEXT = "No relevant context found."
+
+# Key used under :attr:`~afterimage.types.GeneratedResponsePrompt.metadata` for
+# retriever diagnostics (e.g. hit ids and scores).
+RETRIEVAL_METADATA_KEY = "retrieval"
+
+
+def is_no_retrieval_context(text: str) -> bool:
+    """Return True if *text* is empty or exactly :data:`NO_RETRIEVAL_CONTEXT`."""
+    return not text or text == NO_RETRIEVAL_CONTEXT
+
+
+@dataclass(frozen=True)
+class RetrievalResult:
+    """Retriever output: prompt-safe *context* string plus optional *metadata*."""
+
+    context: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def _require_sentence_transformers():
@@ -26,7 +46,26 @@ def _require_sentence_transformers():
 
 @runtime_checkable
 class ContextRetriever(Protocol):
-    """Protocol defining the interface for context retrieval strategies."""
+    """Protocol for context retrieval used by :class:`~afterimage.callbacks.WithRAGRespondentPromptModifier`.
+
+    **Required**
+
+    * :meth:`get_context` — synchronous retrieval returning a string (may run network or
+      local vector search). For async-only backends, document behavior; prefer implementing
+      :meth:`aget_context` and calling it from generation code paths.
+
+    **Optional (duck-typed, not enforced by structural typing)**
+
+    * :meth:`aget_context` — async retrieval; preferred when the generator runs under
+      ``asyncio`` so embeddings and I/O do not block the event loop.
+    * :meth:`get_context_with_metadata` / :meth:`aget_context_with_metadata` — return a
+      :class:`RetrievalResult` so citation-style fields (ids, scores) can flow into
+      :attr:`afterimage.types.GeneratedResponsePrompt.metadata` under
+      :data:`RETRIEVAL_METADATA_KEY`.
+
+    Retrievers that need more than ``(query: str)`` (locale, budgets, auth) should be
+    **configured objects** holding that state, not free functions.
+    """
 
     @abstractmethod
     def get_context(self, query: str) -> str:
@@ -43,6 +82,71 @@ async def _aget_or_thread(retriever: ContextRetriever, query: str) -> str:
     if hasattr(retriever, "aget_context"):
         return await retriever.aget_context(query)  # type: ignore[union-attr]
     return await asyncio.to_thread(retriever.get_context, query)
+
+
+def get_retrieval_result_sync(retriever: ContextRetriever, query: str) -> RetrievalResult:
+    """Sync retrieval; prefers :meth:`get_context_with_metadata` when implemented."""
+    if hasattr(retriever, "get_context_with_metadata"):
+        out = retriever.get_context_with_metadata(query)  # type: ignore[union-attr]
+        if not isinstance(out, RetrievalResult):
+            raise TypeError(
+                "get_context_with_metadata must return afterimage.retrievers.RetrievalResult"
+            )
+        return out
+    return RetrievalResult(context=retriever.get_context(query), metadata={})
+
+
+async def aget_retrieval_result(
+    retriever: ContextRetriever, query: str
+) -> RetrievalResult:
+    """Async retrieval; prefers ``aget_context_with_metadata`` then ``get_context_with_metadata``."""
+    if hasattr(retriever, "aget_context_with_metadata"):
+        out = await retriever.aget_context_with_metadata(query)  # type: ignore[union-attr]
+        if not isinstance(out, RetrievalResult):
+            raise TypeError(
+                "aget_context_with_metadata must return afterimage.retrievers.RetrievalResult"
+            )
+        return out
+    if hasattr(retriever, "get_context_with_metadata"):
+        out = await asyncio.to_thread(
+            retriever.get_context_with_metadata,  # type: ignore[union-attr]
+            query,
+        )
+        if not isinstance(out, RetrievalResult):
+            raise TypeError(
+                "get_context_with_metadata must return afterimage.retrievers.RetrievalResult"
+            )
+        return out
+    text = await _aget_or_thread(retriever, query)
+    return RetrievalResult(context=text, metadata={})
+
+
+class StaticContextRetriever:
+    """Returns a fixed context string (and optional metadata) for every query.
+
+    Useful in tests and minimal tutorials without Qdrant or embeddings.
+    """
+
+    def __init__(
+        self,
+        context: str,
+        *,
+        metadata: Optional[dict[str, Any]] = None,
+    ):
+        self._context = context
+        self._metadata = dict(metadata) if metadata else {}
+
+    def get_context(self, query: str) -> str:
+        return self._context
+
+    def get_context_with_metadata(self, query: str) -> RetrievalResult:
+        return RetrievalResult(context=self._context, metadata=dict(self._metadata))
+
+    async def aget_context(self, query: str) -> str:
+        return self._context
+
+    async def aget_context_with_metadata(self, query: str) -> RetrievalResult:
+        return RetrievalResult(context=self._context, metadata=dict(self._metadata))
 
 
 @dataclass
@@ -131,7 +235,7 @@ class ChainedRetriever(ContextRetriever):
 
         for retriever in self.retrievers:
             context = retriever.get_context(query)
-            if context and context != "No relevant context found.":
+            if context and not is_no_retrieval_context(context):
                 contexts.append(context)
 
             combined = self.separator.join(contexts)
@@ -139,7 +243,7 @@ class ChainedRetriever(ContextRetriever):
                 return combined
 
         return (
-            self.separator.join(contexts) if contexts else "No relevant context found."
+            self.separator.join(contexts) if contexts else NO_RETRIEVAL_CONTEXT
         )
 
     async def aget_context(self, query: str) -> str:
@@ -148,7 +252,7 @@ class ChainedRetriever(ContextRetriever):
 
         for retriever in self.retrievers:
             context = await _aget_or_thread(retriever, query)
-            if context and context != "No relevant context found.":
+            if context and not is_no_retrieval_context(context):
                 contexts.append(context)
 
             combined = self.separator.join(contexts)
@@ -156,7 +260,7 @@ class ChainedRetriever(ContextRetriever):
                 return combined
 
         return (
-            self.separator.join(contexts) if contexts else "No relevant context found."
+            self.separator.join(contexts) if contexts else NO_RETRIEVAL_CONTEXT
         )
 
 
@@ -185,11 +289,11 @@ class EnsembleRetriever(ContextRetriever):
         for retriever, weight in self.retrievers:
             if weight > 0:
                 context = retriever.get_context(query)
-                if context and context != "No relevant context found.":
+                if context and not is_no_retrieval_context(context):
                     all_contexts.append((context, weight))
 
         if not all_contexts:
-            return "No relevant context found."
+            return NO_RETRIEVAL_CONTEXT
 
         if self.method == "weighted_merge":
             sorted_contexts = sorted(all_contexts, key=lambda x: x[1], reverse=True)
@@ -209,7 +313,7 @@ class EnsembleRetriever(ContextRetriever):
             retriever: ContextRetriever, weight: float
         ) -> Optional[Tuple[str, float]]:
             context = await _aget_or_thread(retriever, query)
-            if context and context != "No relevant context found.":
+            if context and not is_no_retrieval_context(context):
                 return (context, weight)
             return None
 
@@ -218,7 +322,7 @@ class EnsembleRetriever(ContextRetriever):
         all_contexts = [x for x in results if x is not None]
 
         if not all_contexts:
-            return "No relevant context found."
+            return NO_RETRIEVAL_CONTEXT
 
         if self.method == "weighted_merge":
             sorted_contexts = sorted(all_contexts, key=lambda x: x[1], reverse=True)
@@ -275,25 +379,37 @@ class QdrantRetriever(ContextRetriever):
             else:
                 self._st_model = embedding_model
 
-    def _search_with_vector(self, query_vector: list[float]) -> str:
+    def _search_results_to_retrieval(self, search_results: List[Any]) -> RetrievalResult:
+        contexts: list[str] = []
+        hits: list[dict[str, Any]] = []
+        for result in search_results:
+            if self.payload_key not in result.payload:
+                continue
+            raw = result.payload[self.payload_key]
+            contexts.append(str(raw))
+            hits.append(
+                {
+                    "id": getattr(result, "id", None),
+                    "score": getattr(result, "score", None),
+                }
+            )
+        joined = self.separator.join(contexts) if contexts else NO_RETRIEVAL_CONTEXT
+        metadata: dict[str, Any] = (
+            {"hits": hits, "collection_name": self.collection_name} if hits else {}
+        )
+        return RetrievalResult(context=joined, metadata=metadata)
+
+    def _search_vector_sync(self, query_vector: list[float]) -> RetrievalResult:
         search_results = self.client.search(
             collection_name=self.collection_name,
             query_vector=query_vector,
             limit=self.limit,
             score_threshold=self.score_threshold,
         )
+        return self._search_results_to_retrieval(search_results)
 
-        contexts = []
-        for result in search_results:
-            if self.payload_key in result.payload:
-                contexts.append(result.payload[self.payload_key])
-
-        return (
-            self.separator.join(contexts) if contexts else "No relevant context found."
-        )
-
-    async def aget_context(self, query: str) -> str:
-        """Retrieve context; uses ``embedding_provider.embed`` or encodes in a thread."""
+    async def aget_context_with_metadata(self, query: str) -> RetrievalResult:
+        """Vector search returning context text plus hit ids and scores."""
         if self._embedding_provider is not None:
             vectors = await self._embedding_provider.embed([query])
             query_vector = vectors[0]
@@ -301,23 +417,37 @@ class QdrantRetriever(ContextRetriever):
             query_vector = await asyncio.to_thread(
                 lambda: self._st_model.encode(query).tolist()
             )
-        return self._search_with_vector(query_vector)
+        search_results = self.client.search(
+            collection_name=self.collection_name,
+            query_vector=query_vector,
+            limit=self.limit,
+            score_threshold=self.score_threshold,
+        )
+        return self._search_results_to_retrieval(search_results)
 
-    def get_context(self, query: str) -> str:
-        """Sync retrieval.
+    async def aget_context(self, query: str) -> str:
+        """Retrieve context; uses ``embedding_provider.embed`` or encodes in a thread."""
+        return (await self.aget_context_with_metadata(query)).context
 
-        When using ``embedding_provider``, this uses :func:`asyncio.run` only if no event
-        loop is running; inside ``async def`` code, use :meth:`aget_context` instead.
+    def get_context_with_metadata(self, query: str) -> RetrievalResult:
+        """Sync vector search with structured metadata.
+
+        When using ``embedding_provider``, uses :func:`asyncio.run` only if no event
+        loop is running; inside ``async def`` code, use :meth:`aget_context_with_metadata`.
         """
         if self._embedding_provider is not None:
             try:
                 asyncio.get_running_loop()
             except RuntimeError:
-                return asyncio.run(self.aget_context(query))
+                return asyncio.run(self.aget_context_with_metadata(query))
             raise RuntimeError(
-                "QdrantRetriever with embedding_provider cannot use get_context() "
-                "while an asyncio event loop is running; await aget_context() instead."
+                "QdrantRetriever with embedding_provider cannot use get_context_with_metadata() "
+                "while an asyncio event loop is running; await aget_context_with_metadata() instead."
             )
 
         query_vector = self._st_model.encode(query).tolist()
-        return self._search_with_vector(query_vector)
+        return self._search_vector_sync(query_vector)
+
+    def get_context(self, query: str) -> str:
+        """Sync retrieval; delegates to :meth:`get_context_with_metadata`."""
+        return self.get_context_with_metadata(query).context

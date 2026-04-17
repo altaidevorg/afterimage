@@ -1,4 +1,3 @@
-import asyncio
 from typing import Optional
 
 from ..base import (
@@ -8,7 +7,13 @@ from ..prompts import (
     default_rag_respondent_prompt_with_context,
     default_respondent_prompt_with_context,
 )
-from ..retrievers import ContextRetriever
+from ..retrievers import (
+    ContextRetriever,
+    RETRIEVAL_METADATA_KEY,
+    RetrievalResult,
+    aget_retrieval_result,
+    get_retrieval_result_sync,
+)
 from ..types import (
     GeneratedResponsePrompt,
 )
@@ -30,6 +35,19 @@ class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
         self.should_inject_prompt = "{prompt}" in self.prompt_template
         self.should_inject_context = "{context}" in self.prompt_template
 
+    def _apply_prompt_template(
+        self, respondent_prompt: str, additional_context: str
+    ) -> str:
+        if self.should_inject_prompt and self.should_inject_context:
+            return self.prompt_template.format(
+                prompt=respondent_prompt, context=additional_context
+            )
+        if self.should_inject_prompt:
+            return self.prompt_template.format(prompt=respondent_prompt)
+        if self.should_inject_context:
+            return self.prompt_template.format(context=additional_context)
+        return respondent_prompt
+
     def generate(
         self, respondent_prompt: str, context: str, instruction: str
     ) -> GeneratedResponsePrompt:
@@ -44,17 +62,9 @@ class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
             GeneratedResponsePrompt containing the modified prompt and context
         """
         additional_context = self._maybe_augment_context(instruction, context)
-
-        if self.should_inject_prompt and self.should_inject_context:
-            modified_prompt = self.prompt_template.format(
-                prompt=respondent_prompt, context=additional_context
-            )
-        elif self.should_inject_prompt:
-            modified_prompt = self.prompt_template.format(prompt=respondent_prompt)
-        elif self.should_inject_context:
-            modified_prompt = self.prompt_template.format(context=additional_context)
-        else:
-            modified_prompt = respondent_prompt
+        modified_prompt = self._apply_prompt_template(
+            respondent_prompt, additional_context
+        )
 
         return GeneratedResponsePrompt(
             prompt=modified_prompt,
@@ -70,16 +80,9 @@ class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
         else:
             additional_context = self._maybe_augment_context(instruction, context)
 
-        if self.should_inject_prompt and self.should_inject_context:
-            modified_prompt = self.prompt_template.format(
-                prompt=respondent_prompt, context=additional_context
-            )
-        elif self.should_inject_prompt:
-            modified_prompt = self.prompt_template.format(prompt=respondent_prompt)
-        elif self.should_inject_context:
-            modified_prompt = self.prompt_template.format(context=additional_context)
-        else:
-            modified_prompt = respondent_prompt
+        modified_prompt = self._apply_prompt_template(
+            respondent_prompt, additional_context
+        )
 
         return GeneratedResponsePrompt(
             prompt=modified_prompt,
@@ -89,6 +92,10 @@ class WithContextRespondentPromptModifier(BaseRespondentPromptModifierCallback):
 
 class WithRAGRespondentPromptModifier(WithContextRespondentPromptModifier):
     """Modifies respondent prompt by adding relevant context using a retrieval strategy.
+
+    Uses :func:`afterimage.retrievers.aget_retrieval_result` / ``get_retrieval_result_sync``
+    so retrievers may optionally implement ``*_context_with_metadata`` and attach
+    citation-style fields under ``GeneratedResponsePrompt.metadata[RETRIEVAL_METADATA_KEY]``.
 
     Args:
         retriever: Strategy for retrieving relevant context
@@ -106,37 +113,61 @@ class WithRAGRespondentPromptModifier(WithContextRespondentPromptModifier):
         )
         self.retriever = retriever
 
-    def augment_context(self, instruction: str, current_context: str) -> str:
-        """Augment existing context with relevant information using the retriever.
-
-        Args:
-            instruction: The current instruction/question
-            current_context: Any existing context
-
-        Returns:
-            str: Combined context from both sources
-        """
-        rag_context = self.retriever.get_context(instruction)
-
+    @staticmethod
+    def _merge_rag_into_instruction_context(
+        rag_text: str, current_context: str
+    ) -> str:
         if current_context:
             return (
-                f"{current_context}\n\nAdditional relevant information:\n{rag_context}"
+                f"{current_context}\n\nAdditional relevant information:\n{rag_text}"
             )
-        return rag_context
+        return rag_text
+
+    def _build_from_retrieval(
+        self,
+        respondent_prompt: str,
+        instruction_context: str,
+        result: RetrievalResult,
+    ) -> GeneratedResponsePrompt:
+        additional_context = self._merge_rag_into_instruction_context(
+            result.context, instruction_context
+        )
+        modified_prompt = self._apply_prompt_template(
+            respondent_prompt, additional_context
+        )
+        meta = (
+            {RETRIEVAL_METADATA_KEY: result.metadata} if result.metadata else {}
+        )
+        return GeneratedResponsePrompt(
+            prompt=modified_prompt,
+            context=additional_context,
+            metadata=meta,
+        )
+
+    def augment_context(self, instruction: str, current_context: str) -> str:
+        """Augment existing context with relevant information using the retriever."""
+        result = get_retrieval_result_sync(self.retriever, instruction)
+        return self._merge_rag_into_instruction_context(
+            result.context, current_context
+        )
 
     async def augment_context_async(
         self, instruction: str, current_context: str
     ) -> str:
-        """Async RAG augmentation; prefers ``retriever.aget_context`` when defined."""
-        if hasattr(self.retriever, "aget_context"):
-            rag_context = await self.retriever.aget_context(instruction)  # type: ignore[union-attr]
-        else:
-            rag_context = await asyncio.to_thread(
-                self.retriever.get_context, instruction
-            )
+        """Async RAG augmentation; uses the same resolution as :meth:`agenerate`."""
+        result = await aget_retrieval_result(self.retriever, instruction)
+        return self._merge_rag_into_instruction_context(
+            result.context, current_context
+        )
 
-        if current_context:
-            return (
-                f"{current_context}\n\nAdditional relevant information:\n{rag_context}"
-            )
-        return rag_context
+    def generate(
+        self, respondent_prompt: str, context: str, instruction: str
+    ) -> GeneratedResponsePrompt:
+        result = get_retrieval_result_sync(self.retriever, instruction)
+        return self._build_from_retrieval(respondent_prompt, context, result)
+
+    async def agenerate(
+        self, respondent_prompt: str, context: str, instruction: str
+    ) -> GeneratedResponsePrompt:
+        result = await aget_retrieval_result(self.retriever, instruction)
+        return self._build_from_retrieval(respondent_prompt, context, result)

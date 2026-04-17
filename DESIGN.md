@@ -56,7 +56,7 @@ The code is organized into the following directories and files:
     - `persona_generator.py`: **[NEW]** Logic for generating personas from documents.
     - `prompts.py`: Default prompts (instruction generation, respondent persona etc.).
     - `quality.py`: Quality checking logic.
-    - `retrievers.py`: Context retrieval strategies for RAG.
+    - `retrievers.py`: Context retrieval strategies for RAG (`ContextRetriever`, `RetrievalResult`, optional `*_context_with_metadata`, `QdrantRetriever`, `StaticContextRetriever`, composite retrievers).
     - `storage.py`: Storage backends (JSONL, SQL).
     - `types.py`: Data models using Pydantic.
     - `evaluation/`: The new evaluation framework.
