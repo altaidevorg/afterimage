@@ -84,7 +84,9 @@ async def _aget_or_thread(retriever: ContextRetriever, query: str) -> str:
     return await asyncio.to_thread(retriever.get_context, query)
 
 
-def get_retrieval_result_sync(retriever: ContextRetriever, query: str) -> RetrievalResult:
+def get_retrieval_result_sync(
+    retriever: ContextRetriever, query: str
+) -> RetrievalResult:
     """Sync retrieval; prefers :meth:`get_context_with_metadata` when implemented."""
     if hasattr(retriever, "get_context_with_metadata"):
         out = retriever.get_context_with_metadata(query)  # type: ignore[union-attr]
@@ -242,9 +244,7 @@ class ChainedRetriever(ContextRetriever):
             if len(combined) >= self.min_length:
                 return combined
 
-        return (
-            self.separator.join(contexts) if contexts else NO_RETRIEVAL_CONTEXT
-        )
+        return self.separator.join(contexts) if contexts else NO_RETRIEVAL_CONTEXT
 
     async def aget_context(self, query: str) -> str:
         """Sequential retrieval; each stage uses ``aget_context`` when available."""
@@ -259,9 +259,7 @@ class ChainedRetriever(ContextRetriever):
             if len(combined) >= self.min_length:
                 return combined
 
-        return (
-            self.separator.join(contexts) if contexts else NO_RETRIEVAL_CONTEXT
-        )
+        return self.separator.join(contexts) if contexts else NO_RETRIEVAL_CONTEXT
 
 
 class EnsembleRetriever(ContextRetriever):
@@ -379,7 +377,9 @@ class QdrantRetriever(ContextRetriever):
             else:
                 self._st_model = embedding_model
 
-    def _search_results_to_retrieval(self, search_results: List[Any]) -> RetrievalResult:
+    def _search_results_to_retrieval(
+        self, search_results: List[Any]
+    ) -> RetrievalResult:
         contexts: list[str] = []
         hits: list[dict[str, Any]] = []
         for result in search_results:

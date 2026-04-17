@@ -414,6 +414,7 @@ afterimage/              Core library
 
 examples/
 ├── configs/             Ready-to-run YAML configs (basic, RAG, local, budget)
+├── caselaw_rag/       Qdrant + HF CAP embeddings tutorial (index + generate)
 ├── demo_ui/             Gradio web UI — interactive generation + fine-tuning
 └── *.py                 Python API usage examples
 

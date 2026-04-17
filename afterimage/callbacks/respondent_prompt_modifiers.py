@@ -114,13 +114,9 @@ class WithRAGRespondentPromptModifier(WithContextRespondentPromptModifier):
         self.retriever = retriever
 
     @staticmethod
-    def _merge_rag_into_instruction_context(
-        rag_text: str, current_context: str
-    ) -> str:
+    def _merge_rag_into_instruction_context(rag_text: str, current_context: str) -> str:
         if current_context:
-            return (
-                f"{current_context}\n\nAdditional relevant information:\n{rag_text}"
-            )
+            return f"{current_context}\n\nAdditional relevant information:\n{rag_text}"
         return rag_text
 
     def _build_from_retrieval(
@@ -135,9 +131,7 @@ class WithRAGRespondentPromptModifier(WithContextRespondentPromptModifier):
         modified_prompt = self._apply_prompt_template(
             respondent_prompt, additional_context
         )
-        meta = (
-            {RETRIEVAL_METADATA_KEY: result.metadata} if result.metadata else {}
-        )
+        meta = {RETRIEVAL_METADATA_KEY: result.metadata} if result.metadata else {}
         return GeneratedResponsePrompt(
             prompt=modified_prompt,
             context=additional_context,
@@ -147,18 +141,14 @@ class WithRAGRespondentPromptModifier(WithContextRespondentPromptModifier):
     def augment_context(self, instruction: str, current_context: str) -> str:
         """Augment existing context with relevant information using the retriever."""
         result = get_retrieval_result_sync(self.retriever, instruction)
-        return self._merge_rag_into_instruction_context(
-            result.context, current_context
-        )
+        return self._merge_rag_into_instruction_context(result.context, current_context)
 
     async def augment_context_async(
         self, instruction: str, current_context: str
     ) -> str:
         """Async RAG augmentation; uses the same resolution as :meth:`agenerate`."""
         result = await aget_retrieval_result(self.retriever, instruction)
-        return self._merge_rag_into_instruction_context(
-            result.context, current_context
-        )
+        return self._merge_rag_into_instruction_context(result.context, current_context)
 
     def generate(
         self, respondent_prompt: str, context: str, instruction: str

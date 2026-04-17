@@ -80,7 +80,7 @@ These modify the assistant's system prompt at runtime, usually to inject context
 ### RAG: document context vs vector retrieval
 
 *   **Document-grounded YAML flow:** Configs such as `examples/configs/rag.yaml` pair a **document provider** with `WithContextRespondentPromptModifier`. The assistant sees the same sampled document text the instruction generator used—simple and fast, no vector DB required.
-*   **Vector / hybrid RAG in Python:** Compose `QdrantRetriever` (or any `ContextRetriever`) with `WithRAGRespondentPromptModifier`, as in `examples/generate_caselaw_rag.py`. The CLI `config_to_generator` path does not yet wire vector retrievers; build the modifier in code when you need query-time retrieval.
+*   **Vector / hybrid RAG in Python:** Compose `QdrantRetriever` (or any `ContextRetriever`) with `WithRAGRespondentPromptModifier`, as in `examples/caselaw_rag/` (see `README.md` there). The CLI `config_to_generator` path does not yet wire vector retrievers; build the modifier in code when you need query-time retrieval.
 *   **Session-scoped vs per-turn:** Respondent prompt modifiers run **once per generated instruction**, before `go()`. That matches **briefing-style** RAG (one context block for the whole dialog). **Per-turn** retrieval (fresh evidence after each user turn) is not handled by the modifier alone; use `ConversationTurnHooks` for logging or orchestration, or a future dedicated session driver.
 
 ### Retriever metadata (citations)
