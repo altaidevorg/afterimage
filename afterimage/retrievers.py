@@ -5,7 +5,16 @@ import time
 from abc import abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Protocol, Sequence, Tuple, Union, runtime_checkable
+from typing import (
+    Any,
+    List,
+    Optional,
+    Protocol,
+    Sequence,
+    Tuple,
+    Union,
+    runtime_checkable,
+)
 
 from qdrant_client import AsyncQdrantClient, QdrantClient
 
