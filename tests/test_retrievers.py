@@ -4,7 +4,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from afterimage.retrievers import ChainedRetriever, EnsembleRetriever, QdrantRetriever
+from afterimage.retrievers import (
+    NO_RETRIEVAL_CONTEXT,
+    ChainedRetriever,
+    EnsembleRetriever,
+    QdrantRetriever,
+)
 
 
 @pytest.mark.asyncio
@@ -12,7 +17,11 @@ async def test_qdrant_retriever_aget_context_uses_embedding_provider():
     mock_client = MagicMock()
     hit = MagicMock()
     hit.payload = {"content": "retrieved chunk"}
-    mock_client.search.return_value = [hit]
+    hit.id = "pt-1"
+    hit.score = 0.91
+    mock_resp = MagicMock()
+    mock_resp.points = [hit]
+    mock_client.query_points.return_value = mock_resp
 
     embed = MagicMock()
     embed.embed = AsyncMock(return_value=[[0.25, 0.5, 0.75]])
@@ -29,10 +38,49 @@ async def test_qdrant_retriever_aget_context_uses_embedding_provider():
 
     assert "retrieved chunk" in out
     embed.embed.assert_awaited_once_with(["user question"])
-    mock_client.search.assert_called_once()
-    call_kw = mock_client.search.call_args.kwargs
+    mock_client.query_points.assert_called()
+    call_kw = mock_client.query_points.call_args.kwargs
     assert call_kw["collection_name"] == "mycollection"
-    assert call_kw["query_vector"] == [0.25, 0.5, 0.75]
+    assert call_kw["query"] == [0.25, 0.5, 0.75]
+
+    detail = await r.aget_context_with_metadata("user question")
+    assert "retrieved chunk" in detail.context
+    assert detail.metadata["hits"][0]["id"] == "pt-1"
+    assert detail.metadata["hits"][0]["score"] == 0.91
+    assert detail.metadata["collection_name"] == "mycollection"
+
+
+@pytest.mark.asyncio
+async def test_qdrant_retriever_aget_uses_async_client_when_provided():
+    mock_sync = MagicMock()
+    mock_async = MagicMock()
+    hit = MagicMock()
+    hit.payload = {"text": "async chunk"}
+    hit.id = 42
+    hit.score = 0.8
+    mock_resp = MagicMock()
+    mock_resp.points = [hit]
+    mock_async.query_points = AsyncMock(return_value=mock_resp)
+
+    embed = MagicMock()
+    embed.embed = AsyncMock(return_value=[[0.1, 0.2, 0.3]])
+
+    r = QdrantRetriever(
+        mock_sync,
+        "col",
+        embedding_provider=embed,
+        async_client=mock_async,
+        payload_key="text",
+        limit=5,
+        score_threshold=0.0,
+    )
+    out = await r.aget_context("q")
+    assert "async chunk" in out
+    mock_async.query_points.assert_awaited()
+    mock_sync.query_points.assert_not_called()
+    aq = mock_async.query_points.call_args.kwargs
+    assert aq["collection_name"] == "col"
+    assert aq["query"] == [0.1, 0.2, 0.3]
 
 
 class _SyncShort:
@@ -84,8 +132,8 @@ async def test_ensemble_retriever_aget_context_parallel_weighted_merge():
 @pytest.mark.asyncio
 async def test_ensemble_retriever_aget_context_all_empty():
     empty = MagicMock()
-    empty.aget_context = AsyncMock(return_value="No relevant context found.")
+    empty.aget_context = AsyncMock(return_value=NO_RETRIEVAL_CONTEXT)
 
     ens = EnsembleRetriever([(empty, 1.0)])
     out = await ens.aget_context("q")
-    assert out == "No relevant context found."
+    assert out == NO_RETRIEVAL_CONTEXT

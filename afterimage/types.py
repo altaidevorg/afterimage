@@ -116,7 +116,13 @@ class GeneratedResponsePrompt(BaseModel):
     )
     metadata: dict[str, Any] = Field(
         default_factory=dict,
-        description="Additional metadata about respondent promp generation",
+        description=(
+            "Additional metadata about respondent prompt generation. "
+            "When using :class:`~afterimage.callbacks.WithRAGRespondentPromptModifier`, "
+            "retrievers that implement ``get_context_with_metadata`` / "
+            "``aget_context_with_metadata`` may attach citation-style payloads under "
+            "the key ``retrieval`` (see :data:`afterimage.retrievers.RETRIEVAL_METADATA_KEY`)."
+        ),
     )
 
 

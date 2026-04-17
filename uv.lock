@@ -36,8 +36,8 @@ wheels = [
 
 [[package]]
 name = "afterimage"
-version = "0.14.2"
-source = { virtual = "." }
+version = "0.14.5"
+source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "filelock" },
