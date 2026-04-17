@@ -29,7 +29,7 @@ from afterimage import (
 from afterimage.providers import QdrantDocumentProvider
 from afterimage.retrievers import QdrantRetriever
 from afterimage.storage import JSONLStorage
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient, QdrantClient
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_OUT = HERE / "output" / "conversations.jsonl"
@@ -138,11 +138,11 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _qdrant_client(url: str, api_key: str | None) -> QdrantClient:
+def _qdrant_kwargs(url: str, api_key: str | None) -> dict:
     kwargs: dict = {"url": url, "timeout": 120.0}
     if api_key:
         kwargs["api_key"] = api_key
-    return QdrantClient(**kwargs)
+    return kwargs
 
 
 async def _async_main(args: argparse.Namespace) -> None:
@@ -163,7 +163,9 @@ async def _async_main(args: argparse.Namespace) -> None:
         metrics_interval=60,
     )
 
-    qd = _qdrant_client(args.qdrant_url, args.qdrant_api_key)
+    qd_kw = _qdrant_kwargs(args.qdrant_url, args.qdrant_api_key)
+    qd = QdrantClient(**qd_kw)
+    qd_async = AsyncQdrantClient(**qd_kw)
     documents = QdrantDocumentProvider(
         client=qd,
         collection_name=args.collection,
@@ -190,6 +192,7 @@ async def _async_main(args: argparse.Namespace) -> None:
         client=qd,
         collection_name=args.collection,
         embedding_provider=embedding_provider,
+        async_client=qd_async,
         payload_key=args.content_key,
         limit=3,
     )
@@ -228,6 +231,7 @@ async def _async_main(args: argparse.Namespace) -> None:
         monitor.visualize_metrics(save_dir=str(args.plots_dir))
     finally:
         await embedding_provider.aclose()
+        await qd_async.close()
         monitor.shutdown()
 
 

@@ -5,9 +5,9 @@ import time
 from abc import abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Protocol, Tuple, Union, runtime_checkable
+from typing import Any, List, Optional, Protocol, Sequence, Tuple, Union, runtime_checkable
 
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient, QdrantClient
 
 from .providers.embedding_providers import EmbeddingProvider
 
@@ -340,6 +340,14 @@ class QdrantRetriever(ContextRetriever):
     Pass exactly one of ``embedding_provider`` (recommended; API or process pool) or
     ``embedding_model`` (HuggingFace id, or loaded SentenceTransformer — requires
     ``embeddings-local`` extra when loading by id).
+
+    For **async** generation (``aget_context`` / ``aget_context_with_metadata``), pass
+    ``async_client`` — a :class:`qdrant_client.AsyncQdrantClient` — so vector search uses
+    native async ``query_points`` and does not block the event loop on HTTP I/O. The
+    sync ``client`` is still used for :meth:`get_context` / :meth:`get_context_with_metadata`
+    when no event loop restriction applies; those calls use ``query_points`` on the sync
+    client (or ``asyncio.to_thread`` when only the sync client is available inside async
+    retrieval).
     """
 
     def __init__(
@@ -349,6 +357,7 @@ class QdrantRetriever(ContextRetriever):
         embedding_model: Union[str, Any, None] = None,
         *,
         embedding_provider: EmbeddingProvider | None = None,
+        async_client: AsyncQdrantClient | None = None,
         payload_key: str = "text",
         limit: int = 3,
         score_threshold: float = 0.5,
@@ -360,6 +369,7 @@ class QdrantRetriever(ContextRetriever):
             raise ValueError("Pass embedding_provider or embedding_model")
 
         self.client = client
+        self._async_client = async_client
         self.collection_name = collection_name
         self.payload_key = payload_key
         self.limit = limit
@@ -377,15 +387,16 @@ class QdrantRetriever(ContextRetriever):
             else:
                 self._st_model = embedding_model
 
-    def _search_results_to_retrieval(
-        self, search_results: List[Any]
-    ) -> RetrievalResult:
+    def _points_to_retrieval(self, points: Sequence[Any] | None) -> RetrievalResult:
+        if not points:
+            return RetrievalResult(context=NO_RETRIEVAL_CONTEXT, metadata={})
         contexts: list[str] = []
         hits: list[dict[str, Any]] = []
-        for result in search_results:
-            if self.payload_key not in result.payload:
+        for result in points:
+            payload = getattr(result, "payload", None) or {}
+            if self.payload_key not in payload:
                 continue
-            raw = result.payload[self.payload_key]
+            raw = payload[self.payload_key]
             contexts.append(str(raw))
             hits.append(
                 {
@@ -399,14 +410,25 @@ class QdrantRetriever(ContextRetriever):
         )
         return RetrievalResult(context=joined, metadata=metadata)
 
-    def _search_vector_sync(self, query_vector: list[float]) -> RetrievalResult:
-        search_results = self.client.search(
+    def _query_points_sync(self, query_vector: list[float]) -> RetrievalResult:
+        resp = self.client.query_points(
             collection_name=self.collection_name,
-            query_vector=query_vector,
+            query=query_vector,
             limit=self.limit,
             score_threshold=self.score_threshold,
         )
-        return self._search_results_to_retrieval(search_results)
+        return self._points_to_retrieval(resp.points)
+
+    async def _query_points_async(self, query_vector: list[float]) -> RetrievalResult:
+        if self._async_client is not None:
+            resp = await self._async_client.query_points(
+                collection_name=self.collection_name,
+                query=query_vector,
+                limit=self.limit,
+                score_threshold=self.score_threshold,
+            )
+            return self._points_to_retrieval(resp.points)
+        return await asyncio.to_thread(self._query_points_sync, query_vector)
 
     async def aget_context_with_metadata(self, query: str) -> RetrievalResult:
         """Vector search returning context text plus hit ids and scores."""
@@ -417,13 +439,7 @@ class QdrantRetriever(ContextRetriever):
             query_vector = await asyncio.to_thread(
                 lambda: self._st_model.encode(query).tolist()
             )
-        search_results = self.client.search(
-            collection_name=self.collection_name,
-            query_vector=query_vector,
-            limit=self.limit,
-            score_threshold=self.score_threshold,
-        )
-        return self._search_results_to_retrieval(search_results)
+        return await self._query_points_async(query_vector)
 
     async def aget_context(self, query: str) -> str:
         """Retrieve context; uses ``embedding_provider.embed`` or encodes in a thread."""
@@ -446,7 +462,7 @@ class QdrantRetriever(ContextRetriever):
             )
 
         query_vector = self._st_model.encode(query).tolist()
-        return self._search_vector_sync(query_vector)
+        return self._query_points_sync(query_vector)
 
     def get_context(self, query: str) -> str:
         """Sync retrieval; delegates to :meth:`get_context_with_metadata`."""
