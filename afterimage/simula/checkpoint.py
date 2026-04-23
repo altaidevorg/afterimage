@@ -15,6 +15,7 @@ On-disk layout (``format_version`` ``1.0``)::
         run_config.json        # optional :class:`OpenSimulaRunConfig` JSON (typed metadata + knobs)
 
 ``huggingface-hub`` is used for optional push/pull of the ``opensimula/`` subtree.
+:meth:`Checkpointer.push_to_hub` also writes ``README.md`` (custom or auto-generated dataset card).
 """
 
 from __future__ import annotations
@@ -154,6 +155,96 @@ class OpenSimulaRunConfig(BaseModel):
             if out.get("name") in (None, "") and legacy not in (None, ""):
                 out["name"] = str(legacy)
         return out
+
+
+AFTERIMAGE_REPO_URL = "https://github.com/altaidevorg/afterimage"
+SIMULA_TMLR_PDF_URL = "https://openreview.net/pdf?id=NALsdGEPhB"
+SIMULA_MECHANISM_BLOG_URL = (
+    "https://research.google/blog/designing-synthetic-datasets-for-the-real-world-"
+    "mechanism-design-and-reasoning-from-first-principles/"
+)
+
+
+def _read_optional_run_config(odir: Path) -> OpenSimulaRunConfig | None:
+    p = odir / RUN_CONFIG_FILENAME
+    if not p.is_file():
+        return None
+    try:
+        return OpenSimulaRunConfig.model_validate(json.loads(p.read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, ValueError, OSError):
+        return None
+
+
+def _hub_dataset_tags(run: OpenSimulaRunConfig | None) -> list[str]:
+    """Tags for README frontmatter (deduplicated, stable order)."""
+    tags = ["afterimage", "simula", "opensimula"]
+    if run is None:
+        return tags
+    if run.num_choices is not None:
+        tags.extend(["mcq", "multiple-choice"])
+    if run.num_samples is not None and run.num_samples > 0:
+        tags.append("batch-generation")
+        if run.num_choices is None:
+            tags.extend(["single-qa", "question-answering"])
+    out: list[str] = []
+    seen: set[str] = set()
+    for t in tags:
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
+def _default_dataset_readme(
+    *,
+    manifest: OpenSimulaManifest,
+    run: OpenSimulaRunConfig | None,
+    repo_id: str,
+) -> str:
+    """Auto-generated ``README.md`` for Hub dataset (and other) repos."""
+    tag_lines = "\n".join(f"  - {t}" for t in _hub_dataset_tags(run))
+    name_note = ""
+    if run and run.name:
+        name_note = f" Run label: **{run.name}**."
+    if run and run.description and (not run.name or run.description != run.name):
+        name_note += f" {run.description}"
+
+    return f"""---
+tags:
+{tag_lines}
+---
+
+# OpenSimula checkpoint — `{repo_id}`
+
+This repository contains an **OpenSimula** checkpoint subtree (folder **`opensimula/`**)
+written by [**AfterImage**]({AFTERIMAGE_REPO_URL}).{name_note}
+
+## AfterImage
+
+[**AfterImage**]({AFTERIMAGE_REPO_URL}) is an open-source Python library for synthetic dataset
+generation at scale—conversational data, tool calling, structured outputs, preference pairs,
+personas, and more. **OpenSimula** lives under `afterimage.simula` as an experimental,
+Simula-inspired pipeline (taxonomy → strategies → meta-prompts → critics).
+
+## OpenSimula (Simula-inspired)
+
+**OpenSimula** follows mechanism-design ideas from Davidson et al.,
+[*Reasoning-Driven Synthetic Data Generation and Evaluation* (TMLR)]({SIMULA_TMLR_PDF_URL}).
+It is **not** a Google product or reference port. For the broader framing, see Google's
+[research blog on mechanism design for synthetic data]({SIMULA_MECHANISM_BLOG_URL}).
+
+## Layout
+
+| Path | Role |
+|------|------|
+| `opensimula/manifest.json` | Producer **`{manifest.producer}`**, format **`{manifest.format}`**, contract **`{manifest.format_version}`**. |
+| `opensimula/taxonomy_bundle.json` | Factors and factor taxonomies. |
+| `opensimula/sampling_strategy.json` | Weighted joint sampling strategies (if present). |
+| `opensimula/run_config.json` | Typed run metadata (`OpenSimulaRunConfig`, if present). |
+
+Download with `afterimage.simula.pull_checkpoint_from_hub` then `load_checkpoint` from a local
+directory to obtain `TaxonomyBundle`, `SamplingStrategySpec`, and `OpenSimulaRunConfig`.
+"""
 
 
 @dataclass(frozen=True)
@@ -324,11 +415,16 @@ class Checkpointer:
         commit_message: str | None = None,
         private: bool = False,
         path_in_repo: str = OPENSIMULA_SUBDIR,
+        dataset_card: str | None = None,
     ) -> str:
         """Upload ``<root>/opensimula/`` to the Hugging Face Hub (creates the repo if missing).
 
         Requires ``manifest.json`` on disk—for example after the ``with`` block exits or
         after :meth:`finalize`.
+
+        ``dataset_card`` becomes the repository ``README.md`` at the Hub root. When omitted
+        or blank, a default card is generated (YAML ``tags`` frontmatter plus a short
+        introduction with links to AfterImage and the Simula paper / blog).
         """
         from huggingface_hub import HfApi, create_repo
 
@@ -339,6 +435,14 @@ class Checkpointer:
                 "Finish saving (exit `with Checkpointer(...)` or call finalize()) before push_to_hub.",
             )
 
+        manifest = OpenSimulaManifest.model_validate_json(
+            manifest_path.read_text(encoding="utf-8"),
+        )
+        run = _read_optional_run_config(self._odir)
+        card = (dataset_card or "").strip()
+        if not card:
+            card = _default_dataset_readme(manifest=manifest, run=run, repo_id=repo_id)
+
         api = HfApi(token=token)
         create_repo(repo_id, repo_type=repo_type, private=private, exist_ok=True, token=token)
         api.upload_folder(
@@ -347,6 +451,17 @@ class Checkpointer:
             repo_id=repo_id,
             repo_type=repo_type,
             commit_message=commit_message or "Upload OpenSimula checkpoint (opensimula/)",
+            token=token,
+        )
+        readme_commit = (
+            f"{commit_message} — README.md" if commit_message else "Add OpenSimula dataset README"
+        )
+        api.upload_file(
+            path_or_fileobj=card.encode("utf-8"),
+            path_in_repo="README.md",
+            repo_id=repo_id,
+            repo_type=repo_type,
+            commit_message=readme_commit,
             token=token,
         )
         host = "https://huggingface.co"
@@ -466,6 +581,7 @@ def push_checkpoint_to_hub(
     commit_message: str | None = None,
     private: bool = False,
     path_in_repo: str = OPENSIMULA_SUBDIR,
+    dataset_card: str | None = None,
 ) -> str:
     """Upload local ``opensimula/`` to the Hub under ``path_in_repo`` (default ``opensimula``).
 
@@ -478,6 +594,7 @@ def push_checkpoint_to_hub(
         commit_message=commit_message,
         private=private,
         path_in_repo=path_in_repo,
+        dataset_card=dataset_card,
     )
 
 

@@ -51,7 +51,7 @@ All require `GEMINI_API_KEY` (or change `LLMFactory.create` to your provider).
 | `--num-samples N` | Number of independent (mix → meta → generate) pipelines. |
 | `--resume` | Expect an existing `opensimula/` under `output-dir`; skip taxonomy and `infer_strategies`, then only run sample generation. |
 | `--max-concurrency K` | Cap concurrent sample pipelines (each still does full LLM work). |
-| `--push-hf REPO_ID` | After a **fresh** save (no `--resume`), upload `opensimula/` to the dataset repo. Needs `HF_TOKEN` (or `HUGGINGFACE_HUB_TOKEN`). |
+| `--push-hf REPO_ID` | After a **fresh** save (no `--resume`), upload `opensimula/` to the dataset repo. Needs `HF_TOKEN` (or `HUGGINGFACE_HUB_TOKEN`). Also uploads **`README.md`** at the repo root: auto-generated (YAML `tags` + intro + links) unless you pass `dataset_card=` from Python via `Checkpointer.push_to_hub`. |
 
 ```bash
 python corpus_batch_qa.py --output-dir ./runs/corpus1 --num-samples 8 --max-concurrency 2
