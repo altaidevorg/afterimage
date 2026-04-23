@@ -8,7 +8,7 @@ import re
 from ..monitoring import GenerationMonitor
 from ..providers.llm_providers import LLMProvider
 from .llm_track import agenerate_structured_tracked
-from .sampling import factor_taxonomy_map, mix_factor_paths
+from .sampling import factor_taxonomy_map
 from .schemas_llm import ComplexifyResponse, ScenariosResponse
 from .types import MetaPrompt, Mix, TaxonomyBundle
 

@@ -2,7 +2,6 @@
 
 import random
 
-import pytest
 
 from afterimage.simula.sampling import sample_mix
 from afterimage.simula.types import (

@@ -86,7 +86,6 @@ def sample_mix(
             if not leaves:
                 raise ValueError(f"No leaves for factor {fid}")
             nid = rng.choice(leaves)
-            label = tax.nodes[nid].label
             entries.append(MixEntry(factor_id=fid, node_id=nid))
         if not chosen.forbidden_label_pairs:
             return Mix(entries=entries, strategy_name=chosen.name)
