@@ -3,20 +3,19 @@
 import pytest
 
 from afterimage.simula.evaluation import level_ratio_coverage
-from afterimage.simula.types import FactorTaxonomy, SimulaFactor, TaxonomyBundle, TaxonomyNode
+from afterimage.simula.types import (
+    FactorTaxonomy,
+    SimulaFactor,
+    TaxonomyBundle,
+    TaxonomyNode,
+)
 
 
 def _tiny_bundle() -> TaxonomyBundle:
     f = SimulaFactor(name="F")
-    root = TaxonomyNode(
-        id="r", factor_id=f.id, parent_id=None, depth=0, label="root"
-    )
-    a = TaxonomyNode(
-        id="a", factor_id=f.id, parent_id=root.id, depth=1, label="A"
-    )
-    b = TaxonomyNode(
-        id="b", factor_id=f.id, parent_id=root.id, depth=1, label="B"
-    )
+    root = TaxonomyNode(id="r", factor_id=f.id, parent_id=None, depth=0, label="root")
+    a = TaxonomyNode(id="a", factor_id=f.id, parent_id=root.id, depth=1, label="A")
+    b = TaxonomyNode(id="b", factor_id=f.id, parent_id=root.id, depth=1, label="B")
     tax = FactorTaxonomy(
         factor_id=f.id,
         root_id=root.id,

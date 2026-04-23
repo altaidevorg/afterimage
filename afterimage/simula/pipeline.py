@@ -31,6 +31,7 @@ from .types import (
     validate_factor_taxonomy,
 )
 
+
 class OpenSimula:
     """High-level API for Simula-style synthetic dataset mechanisms (experimental).
 

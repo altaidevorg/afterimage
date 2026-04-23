@@ -93,7 +93,9 @@ async def gate_mcq_with_double_critic(
     except Exception as e:
         logger.warning("double_critic gate: invalid MCQ JSON: %s", e)
         return False
-    v = await double_critique_mcq(llm, row=row, temperature=temperature, monitor=monitor)
+    v = await double_critique_mcq(
+        llm, row=row, temperature=temperature, monitor=monitor
+    )
     return accept_double_critique(v)
 
 
@@ -105,6 +107,8 @@ async def double_critique_mcq_with_context(
     temperature: float = 0.15,
     monitor: GenerationMonitor | None = None,
 ) -> bool:
-    v = await double_critique_mcq(llm, row=row, temperature=temperature, monitor=monitor)
+    v = await double_critique_mcq(
+        llm, row=row, temperature=temperature, monitor=monitor
+    )
     ctx.last_verdict = v
     return accept_double_critique(v)

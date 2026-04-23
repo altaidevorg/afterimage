@@ -255,7 +255,9 @@ class DataPointLineage(BaseModel):
         description="factor_id -> list of node ids from root to chosen leaf.",
     )
     expansion_trace_ids: list[str] = Field(default_factory=list)
-    requirement_critiques: list[RequirementCritiqueVerdict] = Field(default_factory=list)
+    requirement_critiques: list[RequirementCritiqueVerdict] = Field(
+        default_factory=list
+    )
     double_critique: DoubleCritiqueVerdict | None = None
 
 

@@ -299,8 +299,7 @@ class TaxonomyBuilder:
                 context = "\n\n".join(ctx_lines)
 
                 proposal_prompt = (
-                    context
-                    + "\n\nPropose a diverse set of child categories "
+                    context + "\n\nPropose a diverse set of child categories "
                     "(short labels). At least 3 children unless impossible."
                 )
 

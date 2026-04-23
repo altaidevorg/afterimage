@@ -36,7 +36,11 @@ async def agenerate_mcq_json(
         monitor,
         llm,
         operation="opensimula.task.mcq_generate",
-        metadata={"mix_id": mix.id, "meta_prompt_id": meta.id, "num_choices": num_choices},
+        metadata={
+            "mix_id": mix.id,
+            "meta_prompt_id": meta.id,
+            "num_choices": num_choices,
+        },
         prompt=prompt,
         schema=MCQGenResponse,
         temperature=temperature,

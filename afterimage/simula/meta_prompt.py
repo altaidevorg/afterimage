@@ -61,9 +61,7 @@ async def generate_scenarios(
     if len(scenarios) < K:
         raise ValueError(f"Model returned fewer than K={K} scenarios")
     scenarios = scenarios[:K]
-    return [
-        MetaPrompt(text=t, mix_id=mix.id, complexified=False) for t in scenarios
-    ]
+    return [MetaPrompt(text=t, mix_id=mix.id, complexified=False) for t in scenarios]
 
 
 async def complexify_meta_prompt(

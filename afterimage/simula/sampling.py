@@ -139,5 +139,7 @@ async def infer_sampling_strategies(
     for name, w, group in zip(
         p.strategy_names, p.strategy_weights, p.strategy_factor_groups, strict=True
     ):
-        rules.append(StrategyMixRule(name=name, weight=float(w), factor_ids=list(group)))
+        rules.append(
+            StrategyMixRule(name=name, weight=float(w), factor_ids=list(group))
+        )
     return SamplingStrategySpec(strategies=rules)

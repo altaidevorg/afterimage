@@ -51,7 +51,9 @@ def _minimal_bundle() -> TaxonomyBundle:
 def test_checkpointer_save_methods_roundtrip(tmp_path: Path) -> None:
     bundle = _minimal_bundle()
     strat = SamplingStrategySpec(
-        strategies=[StrategyMixRule(name="s1", weight=1.0, factor_ids=[bundle.factors[0].id])],
+        strategies=[
+            StrategyMixRule(name="s1", weight=1.0, factor_ids=[bundle.factors[0].id])
+        ],
     )
     with Checkpointer(tmp_path) as cp:
         bundle.save(cp)
@@ -88,7 +90,9 @@ def test_push_to_hub_requires_manifest(tmp_path: Path) -> None:
 def test_save_load_roundtrip(tmp_path: Path) -> None:
     bundle = _minimal_bundle()
     strat = SamplingStrategySpec(
-        strategies=[StrategyMixRule(name="s1", weight=1.0, factor_ids=[bundle.factors[0].id])],
+        strategies=[
+            StrategyMixRule(name="s1", weight=1.0, factor_ids=[bundle.factors[0].id])
+        ],
     )
     run_cfg = OpenSimulaRunConfig(
         name="roundtrip",
@@ -123,7 +127,9 @@ def test_save_without_optional_clears_stale_files(tmp_path: Path) -> None:
         bundle=bundle,
         sampling_strategy=SamplingStrategySpec(
             strategies=[
-                StrategyMixRule(name="s1", weight=1.0, factor_ids=[bundle.factors[0].id]),
+                StrategyMixRule(
+                    name="s1", weight=1.0, factor_ids=[bundle.factors[0].id]
+                ),
             ],
         ),
         run_config=OpenSimulaRunConfig(name="stale-test"),

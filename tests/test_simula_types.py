@@ -80,12 +80,8 @@ def test_validate_factor_taxonomy_ok():
 
 def test_validate_rejects_orphan():
     f = SimulaFactor(name="t")
-    root = TaxonomyNode(
-        id="r", factor_id=f.id, parent_id=None, depth=0, label="r"
-    )
-    bad = TaxonomyNode(
-        id="x", factor_id=f.id, parent_id="missing", depth=1, label="x"
-    )
+    root = TaxonomyNode(id="r", factor_id=f.id, parent_id=None, depth=0, label="r")
+    bad = TaxonomyNode(id="x", factor_id=f.id, parent_id="missing", depth=1, label="x")
     with pytest.raises(ValueError):
         validate_factor_taxonomy(
             FactorTaxonomy(

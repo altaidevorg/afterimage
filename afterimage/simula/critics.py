@@ -177,9 +177,7 @@ async def run_generation_pipeline(
     bundle: TaxonomyBundle,
     mix: Mix,
     meta: MetaPrompt,
-    generate_initial: Callable[
-        [LLMProvider], Coroutine[Any, Any, str]
-    ],
+    generate_initial: Callable[[LLMProvider], Coroutine[Any, Any, str]],
     task: SimulaTask,
     max_refine_rounds: int = 4,
     double_critic_temperature: float = 0.15,

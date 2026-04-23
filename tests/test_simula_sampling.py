@@ -29,7 +29,9 @@ def _bundle_two_factors() -> TaxonomyBundle:
     )
 
 
-def _linear_tax(factor_id: str, root_label: str, leaf_labels: list[str]) -> FactorTaxonomy:
+def _linear_tax(
+    factor_id: str, root_label: str, leaf_labels: list[str]
+) -> FactorTaxonomy:
     root = TaxonomyNode(
         id="r",
         factor_id=factor_id,

@@ -58,9 +58,7 @@ async def assign_datapoint_to_taxonomy(
     )
     ids = list(resp.parsed.assignments)
     if len(ids) != len(fo):
-        raise ValueError(
-            f"Expected {len(fo)} taxonomy assignments, got {len(ids)}"
-        )
+        raise ValueError(f"Expected {len(fo)} taxonomy assignments, got {len(ids)}")
     return {fo[i]: ids[i] for i in range(len(fo))}
 
 

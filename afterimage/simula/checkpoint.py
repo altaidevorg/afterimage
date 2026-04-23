@@ -170,7 +170,9 @@ def _read_optional_run_config(odir: Path) -> OpenSimulaRunConfig | None:
     if not p.is_file():
         return None
     try:
-        return OpenSimulaRunConfig.model_validate(json.loads(p.read_text(encoding="utf-8")))
+        return OpenSimulaRunConfig.model_validate(
+            json.loads(p.read_text(encoding="utf-8"))
+        )
     except (json.JSONDecodeError, ValueError, OSError):
         return None
 
@@ -330,7 +332,9 @@ class Checkpointer:
 
     def _require_context(self) -> None:
         if not self._entered:
-            raise RuntimeError("Use Checkpointer as a context manager: with Checkpointer(path) as cp: ...")
+            raise RuntimeError(
+                "Use Checkpointer as a context manager: with Checkpointer(path) as cp: ..."
+            )
 
     def write_taxonomy_bundle(self, bundle: TaxonomyBundle) -> None:
         """Write ``taxonomy_bundle.json`` and record digests for the manifest."""
@@ -339,14 +343,18 @@ class Checkpointer:
             _validate_bundle_trees(bundle)
 
         bundle_path = self._odir / TAXONOMY_BUNDLE_FILENAME
-        bundle_path.write_text(bundle.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        bundle_path.write_text(
+            bundle.model_dump_json(indent=2) + "\n", encoding="utf-8"
+        )
 
         inst_digest = sha256_text(bundle.instruction_y)
         roundtrip = TaxonomyBundle.model_validate_json(
             bundle_path.read_text(encoding="utf-8"),
         )
         if sha256_text(roundtrip.instruction_y) != inst_digest:
-            raise RuntimeError("taxonomy_bundle.json round-trip instruction_y digest mismatch")
+            raise RuntimeError(
+                "taxonomy_bundle.json round-trip instruction_y digest mismatch"
+            )
 
         self._bundle_written = True
         self._instruction_y_digest = inst_digest
@@ -356,7 +364,9 @@ class Checkpointer:
         """Write ``sampling_strategy.json`` (call after :meth:`write_taxonomy_bundle`)."""
         self._require_context()
         if not self._bundle_written:
-            raise RuntimeError("write_taxonomy_bundle (or bundle.save) before write_sampling_strategy")
+            raise RuntimeError(
+                "write_taxonomy_bundle (or bundle.save) before write_sampling_strategy"
+            )
 
         strat_path = self._odir / SAMPLING_STRATEGY_FILENAME
         strat_path.write_text(spec.model_dump_json(indent=2) + "\n", encoding="utf-8")
@@ -367,7 +377,9 @@ class Checkpointer:
         """Write ``run_config.json`` (call after :meth:`write_taxonomy_bundle`)."""
         self._require_context()
         if not self._bundle_written:
-            raise RuntimeError("write_taxonomy_bundle (or bundle.save) before write_run_config")
+            raise RuntimeError(
+                "write_taxonomy_bundle (or bundle.save) before write_run_config"
+            )
 
         run_path = self._odir / RUN_CONFIG_FILENAME
         raw = config.model_dump(mode="json", exclude_none=True)
@@ -385,7 +397,11 @@ class Checkpointer:
         return self.manifest
 
     def _write_manifest(self) -> None:
-        if not self._bundle_written or self._instruction_y_digest is None or self._bundle_digest is None:
+        if (
+            not self._bundle_written
+            or self._instruction_y_digest is None
+            or self._bundle_digest is None
+        ):
             raise RuntimeError("Cannot finalize: taxonomy bundle was not written")
 
         manifest = OpenSimulaManifest(
@@ -444,17 +460,22 @@ class Checkpointer:
             card = _default_dataset_readme(manifest=manifest, run=run, repo_id=repo_id)
 
         api = HfApi(token=token)
-        create_repo(repo_id, repo_type=repo_type, private=private, exist_ok=True, token=token)
+        create_repo(
+            repo_id, repo_type=repo_type, private=private, exist_ok=True, token=token
+        )
         api.upload_folder(
             folder_path=str(self._odir),
             path_in_repo=path_in_repo.strip("/") or OPENSIMULA_SUBDIR,
             repo_id=repo_id,
             repo_type=repo_type,
-            commit_message=commit_message or "Upload OpenSimula checkpoint (opensimula/)",
+            commit_message=commit_message
+            or "Upload OpenSimula checkpoint (opensimula/)",
             token=token,
         )
         readme_commit = (
-            f"{commit_message} — README.md" if commit_message else "Add OpenSimula dataset README"
+            f"{commit_message} — README.md"
+            if commit_message
+            else "Add OpenSimula dataset README"
         )
         api.upload_file(
             path_or_fileobj=card.encode("utf-8"),
@@ -535,7 +556,10 @@ def load_checkpoint(
             )
 
     bundle = TaxonomyBundle.model_validate_json(bundle_path.read_text(encoding="utf-8"))
-    if verify_digests and sha256_text(bundle.instruction_y) != manifest.instruction_y_sha256:
+    if (
+        verify_digests
+        and sha256_text(bundle.instruction_y) != manifest.instruction_y_sha256
+    ):
         raise ValueError("instruction_y digest does not match manifest")
 
     if validate_taxonomies:
