@@ -9,4 +9,4 @@ from afterimage.simula import OpenSimula, SimulaInstructionGeneratorCallback
 from afterimage.providers import LLMFactory, InMemoryDocumentProvider
 ```
 
-Use `OpenSimula` with any `LLMProvider` from `LLMFactory`. See `examples/simula/README.md` for a minimal end-to-end sketch.
+Use `OpenSimula` with any `LLMProvider` from `LLMFactory`. The **examples** under `examples/simula/` default to **`gemini-2.5-flash`** (cheap, paper-aligned teacher family) and document each parameter against the Simula paper. See `examples/simula/README.md`.
