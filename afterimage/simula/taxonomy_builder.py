@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 from ..providers import DocumentProvider
 from ..providers.llm_providers import LLMProvider
@@ -28,6 +29,14 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+def _taxonomy_status(message: str, *, show_progress: bool) -> None:
+    """INFO when not using tqdm; DEBUG when tqdm owns the console."""
+    if show_progress:
+        logger.debug(message)
+    else:
+        logger.info(message)
 
 
 def _ancestors(nodes: dict[str, TaxonomyNode], node_id: str) -> list[TaxonomyNode]:
@@ -71,11 +80,46 @@ class TaxonomyBuilder:
         document_provider: DocumentProvider | None = None,
         target_depth_D: int,
         proposal_N: int,
+        max_factors: int = 4,
+        max_children_per_node: int = 8,
+        max_frontier_per_depth: int = 16,
+        show_progress: bool = False,
     ) -> TaxonomyBundle:
+        """Build taxonomies with bounded cost.
+
+        Without caps, the model may return many factors and wide trees, producing
+        hundreds of sequential LLM calls (appearing to "hang"). ``max_factors``,
+        ``max_children_per_node``, and ``max_frontier_per_depth`` keep latency
+        predictable; raise them for fuller coverage when you accept longer runs.
+
+        When ``show_progress`` is True, renders a :mod:`tqdm` bar (requires tqdm
+        installed; already an afterimage dependency) and demotes duplicate log
+        lines to DEBUG.
+        """
+        tqdm_cls: Callable[..., Any] | None = None
+        if show_progress:
+            from tqdm.auto import tqdm as _tqdm
+
+            tqdm_cls = _tqdm
+
         doc_ctx = build_bounded_doc_context(document_provider)
         doc_block = doc_ctx.prompt_block()
         digests = digest_documents_for_bundle(list(doc_ctx.blocks))
 
+        _taxonomy_status(
+            "OpenSimula taxonomy: proposing factors (1 LLM call)...",
+            show_progress=show_progress,
+        )
+        p0 = (
+            tqdm_cls(
+                total=1,
+                desc="OpenSimula │ propose factors (y,S→fᵢ)",
+                unit="call",
+                dynamic_ncols=True,
+            )
+            if tqdm_cls
+            else None
+        )
         factors_out = await self._llm.agenerate_structured(
             prompt=self._prompt_propose_factors(instruction_y, doc_block),
             schema=FactorsResponse,
@@ -83,25 +127,71 @@ class TaxonomyBuilder:
         )
         fr = factors_out.parsed
         descriptions = list(fr.factor_descriptions or [])
+        raw_names = [name.strip() for name in fr.factors if name.strip()]
+        if len(raw_names) > max_factors:
+            logger.warning(
+                "Factor proposal returned %s factors; keeping first %s (max_factors).",
+                len(raw_names),
+                max_factors,
+            )
+            raw_names = raw_names[:max_factors]
         factors: list[SimulaFactor] = []
-        for i, name in enumerate(fr.factors):
+        for i, name in enumerate(raw_names):
             desc = descriptions[i] if i < len(descriptions) else None
-            factors.append(SimulaFactor(name=name.strip(), description=desc))
+            factors.append(SimulaFactor(name=name, description=desc))
+        if p0 is not None:
+            p0.update(1)
+            p0.close()
+
+        accepted_factors = [f for f in factors if f.accepted]
+        _taxonomy_status(
+            "OpenSimula taxonomy: expanding %s factor tree(s), D=%s N=%s "
+            "max_children=%s max_frontier=%s"
+            % (
+                len(accepted_factors),
+                target_depth_D,
+                proposal_N,
+                max_children_per_node,
+                max_frontier_per_depth,
+            ),
+            show_progress=show_progress,
+        )
+
+        p_trees = (
+            tqdm_cls(
+                total=len(accepted_factors),
+                desc="OpenSimula │ expand factor trees",
+                unit="tree",
+                dynamic_ncols=True,
+            )
+            if tqdm_cls and accepted_factors
+            else None
+        )
 
         taxonomies: list[FactorTaxonomy] = []
         for fac in factors:
             if not fac.accepted:
                 continue
+            if p_trees is not None:
+                p_trees.set_postfix_str(fac.name[:45], refresh=False)
             tax = await self._expand_factor_tree(
                 instruction_y=instruction_y,
                 doc_block=doc_block,
                 factor=fac,
                 target_depth_D=target_depth_D,
                 proposal_N=proposal_N,
+                max_children_per_node=max_children_per_node,
+                max_frontier_per_depth=max_frontier_per_depth,
+                show_progress=show_progress,
+                tqdm_cls=tqdm_cls,
             )
             taxonomies.append(tax)
+            if p_trees is not None:
+                p_trees.update(1)
+        if p_trees is not None:
+            p_trees.close()
 
-        return TaxonomyBundle(
+        bundle = TaxonomyBundle(
             instruction_y=instruction_y,
             document_digests=digests,
             target_depth_D=target_depth_D,
@@ -109,6 +199,11 @@ class TaxonomyBuilder:
             factors=factors,
             taxonomies=taxonomies,
         )
+        _taxonomy_status(
+            "OpenSimula taxonomy: finished %s factor tree(s)." % len(bundle.taxonomies),
+            show_progress=show_progress,
+        )
+        return bundle
 
     def _prompt_propose_factors(self, y: str, doc_block: str) -> str:
         return (
@@ -116,9 +211,9 @@ class TaxonomyBuilder:
             f"Dataset instructions (y):\n{y}\n\n"
             "Optional reference excerpts (S):\n"
             f"{doc_block or '(none)'}\n\n"
-            "Propose a small set of PRIME factors of variation (independent axes). "
-            "Each factor will become its own hierarchical taxonomy. "
-            "Return concise factor names (2–8 words each)."
+            "Propose **3 to 5** PRIME factors of variation (independent axes). "
+            "Each factor becomes its own hierarchical taxonomy (cost grows with count). "
+            "Return concise factor names (2–8 words each). Never more than five factors."
         )
 
     async def _expand_factor_tree(
@@ -129,6 +224,10 @@ class TaxonomyBuilder:
         factor: SimulaFactor,
         target_depth_D: int,
         proposal_N: int,
+        max_children_per_node: int,
+        max_frontier_per_depth: int,
+        show_progress: bool = False,
+        tqdm_cls: Callable[..., Any] | None = None,
     ) -> FactorTaxonomy:
         root = TaxonomyNode(
             factor_id=factor.id,
@@ -147,8 +246,38 @@ class TaxonomyBuilder:
         q_curr: list[str] = [root.id]
 
         for depth in range(1, target_depth_D + 1):
+            frontier = list(q_curr)
+            if len(frontier) > max_frontier_per_depth:
+                logger.warning(
+                    "OpenSimula taxonomy: factor=%r depth=%s frontier=%s nodes "
+                    "(cap %s); expanding first nodes only for bounded runtime.",
+                    factor.name,
+                    depth,
+                    len(frontier),
+                    max_frontier_per_depth,
+                )
+                frontier = frontier[:max_frontier_per_depth]
+            _taxonomy_status(
+                "OpenSimula taxonomy: factor=%r depth=%s expanding %s node(s)"
+                % (factor.name, depth, len(frontier)),
+                show_progress=show_progress,
+            )
+            desc = (
+                f"OpenSimula │ {str(factor.name)[:26]} │ depth {depth}/{target_depth_D}"
+            )
+            node_bar = (
+                tqdm_cls(
+                    total=len(frontier),
+                    desc=desc,
+                    unit="node",
+                    leave=False,
+                    dynamic_ncols=True,
+                )
+                if tqdm_cls and show_progress and frontier
+                else None
+            )
             q_next: list[str] = []
-            for nid in q_curr:
+            for nid in frontier:
                 anc = _ancestors(nodes, nid)
                 sib_labels = _sibling_labels(nodes, nid)
                 ctx_lines = [
@@ -165,19 +294,29 @@ class TaxonomyBuilder:
                 ]
                 context = "\n\n".join(ctx_lines)
 
-                raw_all: list[ChildProposalRaw] = []
-                for _ in range(proposal_N):
-                    prop = await self._llm.agenerate_structured(
-                        prompt=(
-                            context
-                            + "\n\nPropose a diverse set of child categories "
-                            "(short labels). At least 3 children unless impossible."
-                        ),
+                proposal_prompt = (
+                    context
+                    + "\n\nPropose a diverse set of child categories "
+                    "(short labels). At least 3 children unless impossible."
+                )
+
+                async def _one_proposal() -> ChildProposalsResponse:
+                    resp = await self._llm.agenerate_structured(
+                        prompt=proposal_prompt,
                         schema=ChildProposalsResponse,
                         temperature=min(0.9, self._temperature + 0.3),
                     )
-                    for c in prop.parsed.children:
-                        raw_all.append(ChildProposalRaw(label=c.strip(), description=None))
+                    return resp.parsed
+
+                proposal_parts = await asyncio.gather(
+                    *(_one_proposal() for _ in range(proposal_N))
+                )
+                raw_all: list[ChildProposalRaw] = []
+                for prop in proposal_parts:
+                    for c in prop.children:
+                        t = c.strip()
+                        if t:
+                            raw_all.append(ChildProposalRaw(label=t, description=None))
 
                 crit = await self._llm.agenerate_structured(
                     prompt=(
@@ -189,8 +328,18 @@ class TaxonomyBuilder:
                     schema=CriticChildrenResponse,
                     temperature=self._temperature,
                 )
-                refined_labels = [x.strip() for x in crit.parsed.refined_labels if x.strip()]
-                descs = list(crit.parsed.refined_descriptions or [])
+                refined_labels = [
+                    x.strip() for x in crit.parsed.refined_labels if x.strip()
+                ][:max_children_per_node]
+                if len(crit.parsed.refined_labels) > max_children_per_node:
+                    logger.debug(
+                        "Critic returned %s children; truncated to max_children_per_node=%s",
+                        len(crit.parsed.refined_labels),
+                        max_children_per_node,
+                    )
+                descs = list(crit.parsed.refined_descriptions or [])[
+                    :max_children_per_node
+                ]
                 refined_children: list[ChildProposalRaw] = []
                 for i, lab in enumerate(refined_labels):
                     d = descs[i] if i < len(descs) else None
@@ -217,8 +366,18 @@ class TaxonomyBuilder:
                     q_next.append(child.id)
 
                 traces.append(step)
+                if node_bar is not None:
+                    node_bar.set_postfix_str(nodes[nid].label[:32], refresh=False)
+                    node_bar.update(1)
+            if node_bar is not None:
+                node_bar.close()
 
             if depth < target_depth_D and q_next:
+                if tqdm_cls and show_progress:
+                    tqdm_cls.write(
+                        f"  OpenSimula │ plan depth {depth}→{depth + 1} "
+                        f"({factor.name[:40]}…, {len(q_next)} labels)"
+                    )
                 labels_block = "\n".join(f"- {nodes[cid].label}" for cid in q_next)
                 pl = await self._llm.agenerate_structured(
                     prompt=(

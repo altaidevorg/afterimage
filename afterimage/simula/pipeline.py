@@ -53,14 +53,27 @@ class OpenSimula:
         document_provider: DocumentProvider | None = None,
         target_depth_D: int = 3,
         proposal_N: int = 3,
+        max_factors: int = 4,
+        max_children_per_node: int = 8,
+        max_frontier_per_depth: int = 16,
+        show_progress: bool = False,
     ) -> TaxonomyBundle:
-        """Phase: global diversification — build factor taxonomies (Appendix B.4)."""
+        """Phase: global diversification — build factor taxonomies (Appendix B.4).
+
+        ``max_factors``, ``max_children_per_node``, and ``max_frontier_per_depth``
+        bound API cost. Without them, wide trees multiply into hundreds of sequential
+        LLM calls (minutes of silence).
+        """
         builder = TaxonomyBuilder(self._llm, temperature=self._temperature)
         return await builder.build(
             instruction_y,
             document_provider=document_provider,
             target_depth_D=target_depth_D,
             proposal_N=proposal_N,
+            max_factors=max_factors,
+            max_children_per_node=max_children_per_node,
+            max_frontier_per_depth=max_frontier_per_depth,
+            show_progress=show_progress,
         )
 
     @staticmethod

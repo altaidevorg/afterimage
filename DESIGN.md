@@ -60,7 +60,7 @@ The code is organized into the following directories and files:
     - `retrievers.py`: Context retrieval strategies for RAG (`ContextRetriever`, `RetrievalResult`, optional `*_context_with_metadata`, `QdrantRetriever`, `StaticContextRetriever`, composite retrievers).
     - `storage.py`: Storage backends (JSONL, SQL).
     - `types.py`: Data models using Pydantic.
-    - `simula/`: **OpenSimula (experimental)** — `OpenSimula` orchestrator, `taxonomy_builder`, `sampling`, `meta_prompt`, `critics`, `double_critic`, `evaluation`, `document_context`, and `tasks/` (single QA, MCQ, multiturn instruction callback).
+    - `simula/`: **OpenSimula (experimental)** — `OpenSimula` orchestrator, `taxonomy_builder` (optional `show_progress` + tqdm), `cli_logging` (`configure_example_console`, `silence_noisy_third_party_loggers`), `sampling`, `meta_prompt`, `critics`, `double_critic`, `evaluation`, `document_context`, and `tasks/` (single QA, MCQ, multiturn instruction callback).
     - `evaluation/`: The new evaluation framework.
         - `__init__.py`: Exposes evaluation classes.
         - `base.py`: Base classes for evaluators.

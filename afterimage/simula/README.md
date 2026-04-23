@@ -9,4 +9,4 @@ from afterimage.simula import OpenSimula, SimulaInstructionGeneratorCallback
 from afterimage.providers import LLMFactory, InMemoryDocumentProvider
 ```
 
-Use `OpenSimula` with any `LLMProvider` from `LLMFactory`. The **examples** under `examples/simula/` default to **`gemini-2.5-flash`** (cheap, paper-aligned teacher family) and document each parameter against the Simula paper. See `examples/simula/README.md`.
+Use `OpenSimula` with any `LLMProvider` from `LLMFactory`. The **examples** under `examples/simula/` default to **`gemini-2.5-flash`**, call `configure_example_console()` to hide `httpx` / `google_genai` noise, and pass `show_progress=True` to `build_taxonomy()` for tqdm. See `examples/simula/README.md`.

@@ -22,8 +22,12 @@ import asyncio
 import os
 import sys
 
+from tqdm.auto import tqdm
+
 from afterimage.providers import InMemoryDocumentProvider, LLMFactory
-from afterimage.simula import OpenSimula
+from afterimage.simula import OpenSimula, configure_example_console
+
+configure_example_console()
 
 # ---------------------------------------------------------------------------
 # Scenario: grounded Q&A for security awareness training (not legal advice).
@@ -54,8 +58,9 @@ for all people managers.\
 """,
 ]
 
-# D=3: enough depth for "topic → subtopic → leaf" without the cost of very deep trees.
-TARGET_DEPTH_D = 3
+# D=2: two expansion waves keeps first-run latency reasonable (depth 3 is fine if you
+# raise cost caps and accept several minutes of API calls).
+TARGET_DEPTH_D = 2
 # N=3: moderate Best-of-N for child proposals (Appendix B.4).
 PROPOSAL_N = 3
 # LLM temperature for all OpenSimula steps in this script (not the paper's hyperparam).
@@ -67,7 +72,7 @@ COMPLEXIFY_C = 0.28
 
 
 async def main() -> None:
-    print("Starting...")
+    print("Starting…", flush=True)
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         print("Set GEMINI_API_KEY to run this example.", file=sys.stderr)
@@ -79,26 +84,38 @@ async def main() -> None:
         api_key=api_key,
     )
     docs = InMemoryDocumentProvider(POLICY_EXCERPTS)
-    print("Document provider created")
+    print("Document provider ready.", flush=True)
 
     sim = OpenSimula(llm, temperature=OPEN_SIMULA_TEMPERATURE)
-    print("Simula created")
+    print("OpenSimula ready — taxonomy uses tqdm; httpx/google_genai logs are muted.\n", flush=True)
 
     bundle = await sim.build_taxonomy(
         INSTRUCTION_Y,
         document_provider=docs,
         target_depth_D=TARGET_DEPTH_D,
         proposal_N=PROPOSAL_N,
+        max_factors=4,
+        max_children_per_node=8,
+        max_frontier_per_depth=12,
+        show_progress=True,
     )
-    print("Bundle created")
+    print()
 
     OpenSimula.validate_taxonomy_bundle(bundle)
-    print("Bundle validated")
 
+    tail = tqdm(
+        total=4,
+        desc="OpenSimula │ after taxonomy",
+        unit="step",
+        dynamic_ncols=True,
+    )
+    tail.set_postfix_str("infer strategies (§2.2)")
     spec = await sim.infer_strategies(bundle)
-    print("Strategies infered")
+    tail.update(1)
+    tail.set_postfix_str("sample mix")
     mix = sim.sample_mix(bundle, spec)
-    print("Mix created")
+    tail.update(1)
+    tail.set_postfix_str(f"meta-prompts (K={META_PROMPT_K})")
     meta = await sim.draw_meta_prompt(
         instruction_y=bundle.instruction_y,
         bundle=bundle,
@@ -107,17 +124,19 @@ async def main() -> None:
         complexify_c=COMPLEXIFY_C,
         sequential=False,
     )
-    print("meta prompt created")
-
+    tail.update(1)
+    tail.set_postfix_str("single QA + critic")
     row = await sim.generate_single_qa_datapoint(
         instruction_y=bundle.instruction_y,
         bundle=bundle,
         mix=mix,
         meta=meta,
     )
-    print("single qa created")
+    tail.update(1)
+    tail.close()
+
     if row is None:
-        print("No row accepted (requirement critic or refine loop).")
+        print("No row accepted (requirement critic or refine loop).", flush=True)
     else:
         print(row.model_dump_json(indent=2))
 

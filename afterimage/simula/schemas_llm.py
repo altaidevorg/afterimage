@@ -9,7 +9,8 @@ class FactorsResponse(BaseModel):
     factors: list[str] = Field(
         ...,
         min_length=1,
-        description="Prime factors of variation (short names).",
+        max_length=5,
+        description="Prime factors of variation (short names); at most five orthogonal axes.",
     )
     factor_descriptions: list[str | None] = Field(
         default_factory=list,
@@ -20,6 +21,8 @@ class FactorsResponse(BaseModel):
 class ChildProposalsResponse(BaseModel):
     children: list[str] = Field(
         ...,
+        min_length=1,
+        max_length=24,
         description="Proposed child category labels for the current parent.",
     )
 
@@ -27,7 +30,7 @@ class ChildProposalsResponse(BaseModel):
 class CriticChildrenResponse(BaseModel):
     """Critic may merge/edit/add/remove children (paper Appendix B.4)."""
 
-    refined_labels: list[str] = Field(..., min_length=1)
+    refined_labels: list[str] = Field(..., min_length=1, max_length=16)
     refined_descriptions: list[str | None] = Field(default_factory=list)
 
 

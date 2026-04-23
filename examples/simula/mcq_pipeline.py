@@ -22,8 +22,12 @@ import asyncio
 import os
 import sys
 
+from tqdm.auto import tqdm
+
 from afterimage.providers import LLMFactory
-from afterimage.simula import OpenSimula
+from afterimage.simula import OpenSimula, configure_example_console
+
+configure_example_console()
 
 INSTRUCTION_Y = """\
 Generate synthetic **four-option multiple-choice questions** for an internal
@@ -33,7 +37,7 @@ that appear in typical engineering handbooks—not trivia about version numbers.
 Distractors should be plausible misconceptions. One correct option only.\
 """
 
-TARGET_DEPTH_D = 3
+TARGET_DEPTH_D = 2
 PROPOSAL_N = 3
 OPEN_SIMULA_TEMPERATURE = 0.4
 META_PROMPT_K = 6
@@ -56,16 +60,33 @@ async def main() -> None:
     sim = OpenSimula(llm, temperature=OPEN_SIMULA_TEMPERATURE)
 
     # No document provider: pure y-driven taxonomies (still valid in §2.1: y and/or S).
+    print("Building taxonomy (tqdm; httpx/google_genai muted)…\n", flush=True)
     bundle = await sim.build_taxonomy(
         INSTRUCTION_Y,
         document_provider=None,
         target_depth_D=TARGET_DEPTH_D,
         proposal_N=PROPOSAL_N,
+        max_factors=4,
+        max_children_per_node=8,
+        max_frontier_per_depth=12,
+        show_progress=True,
     )
+    print()
     OpenSimula.validate_taxonomy_bundle(bundle)
 
+    tail = tqdm(
+        total=4,
+        desc="OpenSimula │ after taxonomy",
+        unit="step",
+        dynamic_ncols=True,
+    )
+    tail.set_postfix_str("infer strategies")
     spec = await sim.infer_strategies(bundle)
+    tail.update(1)
+    tail.set_postfix_str("sample mix")
     mix = sim.sample_mix(bundle, spec)
+    tail.update(1)
+    tail.set_postfix_str("meta-prompts")
     meta = await sim.draw_meta_prompt(
         instruction_y=bundle.instruction_y,
         bundle=bundle,
@@ -74,7 +95,8 @@ async def main() -> None:
         complexify_c=COMPLEXIFY_C,
         sequential=False,
     )
-
+    tail.update(1)
+    tail.set_postfix_str("MCQ + critics")
     row = await sim.generate_mcq_datapoint(
         instruction_y=bundle.instruction_y,
         bundle=bundle,
@@ -82,6 +104,8 @@ async def main() -> None:
         meta=meta,
         num_choices=NUM_CHOICES,
     )
+    tail.update(1)
+    tail.close()
     if row is None:
         print("No MCQ accepted (requirement loop and/or double-critic).")
     else:
