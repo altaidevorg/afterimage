@@ -13,34 +13,57 @@ from afterimage.simula.taxonomy_builder import TaxonomyBuilder
 from afterimage.simula.types import validate_factor_taxonomy
 
 
+def _sr(parsed):
+    return StructuredLLMResponse(
+        text="",
+        prompt_token_count=0,
+        completion_token_count=0,
+        total_token_count=0,
+        finish_reason="stop",
+        model_name="fake",
+        raw_response=None,
+        parsed=parsed,
+    )
+
+
 @pytest.mark.asyncio
 async def test_taxonomy_builder_deterministic_depth2():
-    """D=2, N=1: minimal sequence of structured responses."""
-    seq = [
-        FactorsResponse(factors=["Axis"], factor_descriptions=["d"]),
-        ChildProposalsResponse(children=["u", "v"]),
-        CriticChildrenResponse(refined_labels=["u", "v"], refined_descriptions=[]),
-        PlanNextLevelResponse(plan="deeper"),
-        ChildProposalsResponse(children=["u1"]),
-        CriticChildrenResponse(refined_labels=["u1"], refined_descriptions=[]),
-        ChildProposalsResponse(children=["v1"]),
-        CriticChildrenResponse(refined_labels=["v1"], refined_descriptions=[]),
-    ]
-    it = iter(seq)
+    """D=2, N=1: minimal structured responses (prompt/schema dispatch; frontier is parallel)."""
 
     class FakeLLM:
         async def agenerate_structured(self, prompt, schema, temperature=0.7, **kwargs):
-            item = next(it)
-            return StructuredLLMResponse(
-                text="",
-                prompt_token_count=0,
-                completion_token_count=0,
-                total_token_count=0,
-                finish_reason="stop",
-                model_name="fake",
-                raw_response=None,
-                parsed=item,
-            )
+            if schema is FactorsResponse:
+                return _sr(
+                    FactorsResponse(factors=["Axis"], factor_descriptions=["d"]),
+                )
+            if schema is PlanNextLevelResponse:
+                return _sr(PlanNextLevelResponse(plan="deeper"))
+            if schema is ChildProposalsResponse:
+                if "Expand children of node label: u" in prompt:
+                    return _sr(ChildProposalsResponse(children=["u1"]))
+                if "Expand children of node label: v" in prompt:
+                    return _sr(ChildProposalsResponse(children=["v1"]))
+                return _sr(ChildProposalsResponse(children=["u", "v"]))
+            if schema is CriticChildrenResponse:
+                raw_tail = prompt.split("Raw child proposals", 1)[-1]
+                if "- u1" in raw_tail and "- v1" not in raw_tail:
+                    return _sr(
+                        CriticChildrenResponse(
+                            refined_labels=["u1"], refined_descriptions=[]
+                        ),
+                    )
+                if "- v1" in raw_tail and "- u1" not in raw_tail:
+                    return _sr(
+                        CriticChildrenResponse(
+                            refined_labels=["v1"], refined_descriptions=[]
+                        ),
+                    )
+                return _sr(
+                    CriticChildrenResponse(
+                        refined_labels=["u", "v"], refined_descriptions=[]
+                    ),
+                )
+            raise AssertionError(f"unexpected schema {schema}")
 
     b = TaxonomyBuilder(FakeLLM(), temperature=0.1)
     bundle = await b.build(

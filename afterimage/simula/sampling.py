@@ -61,30 +61,23 @@ def sample_mix(
     total = sum(weights)
     if total <= 0:
         raise ValueError("Strategy weights must sum to > 0")
-    r = rng.random() * total
-    acc = 0.0
-    chosen: StrategyMixRule | None = None
-    for s in strategies:
-        acc += s.weight
-        if r <= acc:
-            chosen = s
-            break
-    if chosen is None:
-        chosen = strategies[-1]
+    chosen = rng.choices(strategies, weights=weights, k=1)[0]
 
     ftmap = factor_taxonomy_map(bundle)
     for fid in chosen.factor_ids:
         if fid not in ftmap:
             raise ValueError(f"Unknown factor_id in strategy: {fid}")
 
+    factor_leaves = {fid: leaves_for_factor(ftmap[fid]) for fid in chosen.factor_ids}
+    for fid, leaves in factor_leaves.items():
+        if not leaves:
+            raise ValueError(f"No leaves for factor {fid}")
+
     for attempt in range(max_resamples):
         entries: list[MixEntry] = []
         ok = True
         for fid in chosen.factor_ids:
-            tax = ftmap[fid]
-            leaves = leaves_for_factor(tax)
-            if not leaves:
-                raise ValueError(f"No leaves for factor {fid}")
+            leaves = factor_leaves[fid]
             nid = rng.choice(leaves)
             entries.append(MixEntry(factor_id=fid, node_id=nid))
         if not chosen.forbidden_label_pairs:

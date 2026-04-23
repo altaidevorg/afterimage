@@ -11,6 +11,7 @@ from .checkpoint import (
     load_checkpoint,
     opensimula_dir,
     pull_checkpoint_from_hub,
+    apush_checkpoint_to_hub,
     push_checkpoint_to_hub,
     save_checkpoint,
 )
@@ -50,6 +51,7 @@ __all__ = [
     "load_checkpoint",
     "opensimula_dir",
     "pull_checkpoint_from_hub",
+    "apush_checkpoint_to_hub",
     "push_checkpoint_to_hub",
     "save_checkpoint",
     "append_datapoints_jsonl",

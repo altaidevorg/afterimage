@@ -281,7 +281,8 @@ class TaxonomyBuilder:
                 else None
             )
             q_next: list[str] = []
-            for nid in frontier:
+
+            async def _expand_frontier_node(nid: str) -> tuple[list[str], ExpansionStepTrace]:
                 anc = _ancestors(nodes, nid)
                 sib_labels = _sibling_labels(nodes, nid)
                 ctx_lines = [
@@ -374,6 +375,7 @@ class TaxonomyBuilder:
                 )
 
                 parent = nodes[nid]
+                new_ids: list[str] = []
                 for ch in refined_children:
                     child = TaxonomyNode(
                         factor_id=factor.id,
@@ -383,8 +385,14 @@ class TaxonomyBuilder:
                         description=ch.description,
                     )
                     nodes[child.id] = child
-                    q_next.append(child.id)
+                    new_ids.append(child.id)
+                return new_ids, step
 
+            frontier_results = await asyncio.gather(
+                *(_expand_frontier_node(nid) for nid in frontier)
+            )
+            for nid, (child_ids, step) in zip(frontier, frontier_results, strict=True):
+                q_next.extend(child_ids)
                 traces.append(step)
                 if node_bar is not None:
                     node_bar.set_postfix_str(nodes[nid].label[:32], refresh=False)

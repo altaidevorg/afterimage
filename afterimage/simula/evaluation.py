@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 from collections import defaultdict
@@ -122,34 +123,58 @@ async def elo_complexity_scores(
         return {}
     ratings = {i: 1500.0 for i in range(n)}
     rng = random.Random(42)
+
+    async def _one_elo_batch(
+        start: int, batch_idx: list[int], repeat_idx: int
+    ) -> tuple[int, list[int] | None]:
+        block = "\n\n".join(f"[{j}] {texts[j]}" for j in batch_idx)
+        k = len(batch_idx)
+        prompt = (
+            f"Dataset / task description:\n{instruction_y}\n\n"
+            "Items are listed below in batch order as [0], [1], ... up to ["
+            f"{k - 1}]. Order these positions from EASIEST to HARDEST by reasoning "
+            "complexity for a capable student model.\n\n"
+            f"{block}\n\n"
+            f"Return exactly {k} integers, each in 0..{k - 1}, sorted easiest-to-hardest."
+        )
+        resp = await agenerate_structured_tracked(
+            monitor,
+            llm,
+            operation="opensimula.eval.elo_complexity_batch",
+            metadata={"batch_start": start, "repeat": repeat_idx},
+            prompt=prompt,
+            schema=PairwiseComparisonBatch,
+            temperature=temperature,
+        )
+        ordering = list(resp.parsed.ordering)
+        if (
+            len(ordering) != k
+            or len(set(ordering)) != k
+            or any(not (0 <= i < k) for i in ordering)
+        ):
+            logger.warning("Invalid Elo ordering from model (expected permutation 0..%s): %s", k - 1, ordering)
+            return start, None
+        order = [batch_idx[i] for i in ordering]
+        return start, order
+
     for repeat_idx in range(repeats):
         perm = list(range(n))
         rng.shuffle(perm)
+        batch_jobs: list[tuple[int, list[int]]] = []
         for start in range(0, n, batch_size):
             batch_idx = perm[start : start + batch_size]
-            if len(batch_idx) < 2:
-                continue
-            block = "\n\n".join(f"[{j}] {texts[j]}" for j in batch_idx)
-            k = len(batch_idx)
-            prompt = (
-                f"Dataset / task description:\n{instruction_y}\n\n"
-                "Items are listed below in batch order as [0], [1], ... up to ["
-                f"{k - 1}]. Order these positions from EASIEST to HARDEST by reasoning "
-                "complexity for a capable student model.\n\n"
-                f"{block}\n\n"
-                f"Return exactly {k} integers, each in 0..{k - 1}, sorted easiest-to-hardest."
+            if len(batch_idx) >= 2:
+                batch_jobs.append((start, batch_idx))
+        if not batch_jobs:
+            continue
+        batch_results = await asyncio.gather(
+            *(
+                _one_elo_batch(start, batch_idx, repeat_idx)
+                for start, batch_idx in batch_jobs
             )
-            resp = await agenerate_structured_tracked(
-                monitor,
-                llm,
-                operation="opensimula.eval.elo_complexity_batch",
-                metadata={"batch_start": start, "repeat": repeat_idx},
-                prompt=prompt,
-                schema=PairwiseComparisonBatch,
-                temperature=temperature,
-            )
-            order = [batch_idx[i] for i in resp.parsed.ordering if 0 <= i < k]
-            if len(order) < 2:
+        )
+        for start, order in sorted(batch_results, key=lambda x: x[0]):
+            if order is None or len(order) < 2:
                 continue
             for a, b in zip(order[:-1], order[1:], strict=False):
                 _update_elo_pair(ratings, b, a, k=k_elo)

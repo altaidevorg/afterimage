@@ -76,3 +76,37 @@ async def test_elo_scores_mock():
         repeats=1,
     )
     assert scores[2] > scores[0]
+
+
+@pytest.mark.asyncio
+async def test_elo_scores_skips_invalid_ordering(caplog):
+    """Non-permutation orderings must not corrupt Elo updates."""
+    import logging
+
+    from afterimage.providers.llm_providers import StructuredLLMResponse
+    from afterimage.simula.evaluation import elo_complexity_scores
+    from afterimage.simula.schemas_llm import PairwiseComparisonBatch
+
+    class Fake:
+        async def agenerate_structured(self, prompt, schema, temperature=0.7, **kwargs):
+            return StructuredLLMResponse(
+                text="",
+                prompt_token_count=0,
+                completion_token_count=0,
+                total_token_count=0,
+                finish_reason="stop",
+                model_name="fake",
+                raw_response=None,
+                parsed=PairwiseComparisonBatch(ordering=[0, 0, 2]),
+            )
+
+    caplog.set_level(logging.WARNING)
+    scores = await elo_complexity_scores(
+        Fake(),
+        instruction_y="math",
+        texts=["a", "b", "c"],
+        batch_size=3,
+        repeats=1,
+    )
+    assert all(scores[i] == 1500.0 for i in range(3))
+    assert any("Invalid Elo ordering" in r.message for r in caplog.records)

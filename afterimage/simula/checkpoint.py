@@ -2,8 +2,9 @@
 
 Use :class:`Checkpointer` as a context manager and call ``bundle.save(cp)``,
 ``spec.save(cp)``, and optionally :meth:`Checkpointer.write_run_config`, then
-:meth:`Checkpointer.push_to_hub` once ``manifest.json`` exists—or call
-:func:`save_checkpoint` / :func:`push_checkpoint_to_hub` for shorthand.
+:meth:`Checkpointer.push_to_hub` (sync) or :meth:`Checkpointer.apush_to_hub` (async,
+non-blocking) once ``manifest.json`` exists—or call :func:`save_checkpoint` /
+:func:`push_checkpoint_to_hub` / :func:`apush_checkpoint_to_hub` for shorthand.
 
 On-disk layout (``format_version`` ``1.0``)::
 
@@ -20,6 +21,7 @@ On-disk layout (``format_version`` ``1.0``)::
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -492,6 +494,32 @@ class Checkpointer:
             return f"{host}/spaces/{repo_id}"
         return f"{host}/{repo_id}"
 
+    async def apush_to_hub(
+        self,
+        repo_id: str,
+        *,
+        repo_type: Literal["dataset", "model", "space"] = "dataset",
+        token: str | None = None,
+        commit_message: str | None = None,
+        private: bool = False,
+        path_in_repo: str = OPENSIMULA_SUBDIR,
+        dataset_card: str | None = None,
+    ) -> str:
+        """Same as :meth:`push_to_hub`, but runs blocking Hub I/O in a worker thread.
+
+        Prefer this from async code so uploads do not block the event loop.
+        """
+        return await asyncio.to_thread(
+            self.push_to_hub,
+            repo_id,
+            repo_type=repo_type,
+            token=token,
+            commit_message=commit_message,
+            private=private,
+            path_in_repo=path_in_repo,
+            dataset_card=dataset_card,
+        )
+
 
 def save_checkpoint(
     checkpoint_root: Path | str,
@@ -612,6 +640,31 @@ def push_checkpoint_to_hub(
     Same as ``Checkpointer(checkpoint_root).push_to_hub(...)``. Returns the canonical repo URL.
     """
     return Checkpointer(checkpoint_root).push_to_hub(
+        repo_id,
+        repo_type=repo_type,
+        token=token,
+        commit_message=commit_message,
+        private=private,
+        path_in_repo=path_in_repo,
+        dataset_card=dataset_card,
+    )
+
+
+async def apush_checkpoint_to_hub(
+    checkpoint_root: Path | str,
+    repo_id: str,
+    *,
+    repo_type: Literal["dataset", "model", "space"] = "dataset",
+    token: str | None = None,
+    commit_message: str | None = None,
+    private: bool = False,
+    path_in_repo: str = OPENSIMULA_SUBDIR,
+    dataset_card: str | None = None,
+) -> str:
+    """Async wrapper for :func:`push_checkpoint_to_hub` (Hub I/O in ``asyncio.to_thread``)."""
+    return await asyncio.to_thread(
+        push_checkpoint_to_hub,
+        checkpoint_root,
         repo_id,
         repo_type=repo_type,
         token=token,
