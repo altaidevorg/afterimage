@@ -6,8 +6,10 @@ import json
 import logging
 from typing import Any, Callable, Coroutine, Literal
 
+from ..monitoring import GenerationMonitor
 from ..providers.llm_providers import LLMProvider
 from .double_critic import accept_double_critique, double_critique_mcq
+from .llm_track import agenerate_structured_tracked
 from .meta_prompt import _mix_description
 from .schemas_llm import RawGenerationResponse, RequirementCritiqueResponse
 from .types import (
@@ -36,6 +38,7 @@ async def requirement_critique(
     meta: MetaPrompt,
     serialized_point: str,
     temperature: float = 0.2,
+    monitor: GenerationMonitor | None = None,
 ) -> RequirementCritiqueVerdict:
     """Point-wise check that the datapoint fulfills meta-prompt and mix requirements."""
     mix_desc = _mix_description(bundle, mix)
@@ -48,7 +51,11 @@ async def requirement_critique(
         "Does this datapoint satisfy ALL semantic and structural requirements implied "
         "by the meta-prompt and the taxonomy mix? Answer conservative false if unsure."
     )
-    resp = await llm.agenerate_structured(
+    resp = await agenerate_structured_tracked(
+        monitor,
+        llm,
+        operation="opensimula.critic.requirement",
+        metadata={"mix_id": mix.id, "meta_prompt_id": meta.id},
         prompt=prompt,
         schema=RequirementCritiqueResponse,
         temperature=temperature,
@@ -69,6 +76,7 @@ async def refine_serialized_point(
     serialized_point: str,
     explanation: str,
     temperature: float = 0.35,
+    monitor: GenerationMonitor | None = None,
 ) -> str:
     """Agentic refinement from critic explanation (Algorithm 2)."""
     mix_desc = _mix_description(bundle, mix)
@@ -83,7 +91,11 @@ async def refine_serialized_point(
         "Rewrite the datapoint to fix the issues. Output ONLY valid JSON with the "
         "same top-level keys as the original if it was JSON; otherwise plain text."
     )
-    resp = await llm.agenerate_structured(
+    resp = await agenerate_structured_tracked(
+        monitor,
+        llm,
+        operation="opensimula.critic.refine",
+        metadata={"mix_id": mix.id, "meta_prompt_id": meta.id},
         prompt=prompt,
         schema=RawGenerationResponse,
         temperature=temperature,
@@ -102,6 +114,7 @@ async def generate_with_requirement_loop(
     max_refine_rounds: int = 4,
     temperature_critique: float = 0.2,
     temperature_refine: float = 0.35,
+    monitor: GenerationMonitor | None = None,
 ) -> tuple[str, list[RequirementCritiqueVerdict]]:
     """Repeat critique → refine until satisfying or cap."""
     point = initial_serialized
@@ -115,6 +128,7 @@ async def generate_with_requirement_loop(
             meta=meta,
             serialized_point=point,
             temperature=temperature_critique,
+            monitor=monitor,
         )
         verdicts.append(v)
         if v.satisfying:
@@ -130,6 +144,7 @@ async def generate_with_requirement_loop(
             serialized_point=point,
             explanation=v.explanation,
             temperature=temperature_refine,
+            monitor=monitor,
         )
     return point, verdicts
 
@@ -168,6 +183,7 @@ async def run_generation_pipeline(
     task: SimulaTask,
     max_refine_rounds: int = 4,
     double_critic_temperature: float = 0.15,
+    monitor: GenerationMonitor | None = None,
 ) -> DataPointRecord | None:
     """Generate → requirement critic refinements → optional double-critic (MCQ)."""
     initial = await generate_initial(llm)
@@ -179,6 +195,7 @@ async def run_generation_pipeline(
         meta=meta,
         initial_serialized=initial,
         max_refine_rounds=max_refine_rounds,
+        monitor=monitor,
     )
     if not verdicts or not verdicts[-1].satisfying:
         return None
@@ -191,7 +208,10 @@ async def run_generation_pipeline(
             logger.warning("MCQ parse failed after requirement loop: %s", e)
             return None
         double_v = await double_critique_mcq(
-            llm, row=row, temperature=double_critic_temperature
+            llm,
+            row=row,
+            temperature=double_critic_temperature,
+            monitor=monitor,
         )
         if not accept_double_critique(double_v):
             logger.info("Double-critic rejected MCQ after requirement loop")

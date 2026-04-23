@@ -7,7 +7,9 @@ import logging
 import random
 from collections import defaultdict
 
+from ..monitoring import GenerationMonitor
 from ..providers.llm_providers import LLMProvider
+from .llm_track import agenerate_structured_tracked
 from .schemas_llm import PairwiseComparisonBatch, TaxonomyAssignmentResponse
 from .types import TaxonomyBundle
 from .sampling import factor_taxonomy_map, leaves_for_factor
@@ -25,6 +27,7 @@ async def assign_datapoint_to_taxonomy(
     bundle: TaxonomyBundle,
     datapoint_text: str,
     temperature: float = 0.2,
+    monitor: GenerationMonitor | None = None,
 ) -> dict[str, str]:
     """Map each factor to the best-matching leaf node_id (paper §2.3)."""
     fo = _factor_order(bundle)
@@ -45,7 +48,10 @@ async def assign_datapoint_to_taxonomy(
         f"{datapoint_text}\n\n"
         f"Return exactly {len(fo)} node ids in the same factor order as listed above."
     )
-    resp = await llm.agenerate_structured(
+    resp = await agenerate_structured_tracked(
+        monitor,
+        llm,
+        operation="opensimula.eval.assign_datapoint_to_taxonomy",
         prompt=prompt,
         schema=TaxonomyAssignmentResponse,
         temperature=temperature,
@@ -111,6 +117,7 @@ async def elo_complexity_scores(
     repeats: int = 3,
     temperature: float = 0.2,
     k_elo: float = 32.0,
+    monitor: GenerationMonitor | None = None,
 ) -> dict[int, float]:
     """Batch-wise orderings → Elo ratings per item index (paper Appendix E style)."""
     n = len(texts)
@@ -118,7 +125,7 @@ async def elo_complexity_scores(
         return {}
     ratings = {i: 1500.0 for i in range(n)}
     rng = random.Random(42)
-    for _ in range(repeats):
+    for repeat_idx in range(repeats):
         perm = list(range(n))
         rng.shuffle(perm)
         for start in range(0, n, batch_size):
@@ -135,7 +142,11 @@ async def elo_complexity_scores(
                 f"{block}\n\n"
                 f"Return exactly {k} integers, each in 0..{k - 1}, sorted easiest-to-hardest."
             )
-            resp = await llm.agenerate_structured(
+            resp = await agenerate_structured_tracked(
+                monitor,
+                llm,
+                operation="opensimula.eval.elo_complexity_batch",
+                metadata={"batch_start": start, "repeat": repeat_idx},
                 prompt=prompt,
                 schema=PairwiseComparisonBatch,
                 temperature=temperature,

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 
+from ...monitoring import GenerationMonitor
 from ...providers.llm_providers import LLMProvider
+from ..llm_track import agenerate_structured_tracked
 from ..schemas_llm import MCQGenResponse
 from ..types import MetaPrompt, Mix, TaxonomyBundle
 from ..meta_prompt import _mix_description
@@ -19,6 +21,7 @@ async def agenerate_mcq_json(
     meta: MetaPrompt,
     num_choices: int = 4,
     temperature: float = 0.45,
+    monitor: GenerationMonitor | None = None,
 ) -> str:
     """Return JSON string for MCQRow (exactly num_choices strings)."""
     mix_desc = _mix_description(bundle, mix)
@@ -29,7 +32,11 @@ async def agenerate_mcq_json(
         f"Generate ONE multiple-choice question with exactly {num_choices} answer choices. "
         "Exactly one choice must be correct; set correct_index 0-based."
     )
-    resp = await llm.agenerate_structured(
+    resp = await agenerate_structured_tracked(
+        monitor,
+        llm,
+        operation="opensimula.task.mcq_generate",
+        metadata={"mix_id": mix.id, "meta_prompt_id": meta.id, "num_choices": num_choices},
         prompt=prompt,
         schema=MCQGenResponse,
         temperature=temperature,

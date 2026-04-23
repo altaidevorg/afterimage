@@ -8,8 +8,7 @@ from __future__ import annotations
 import asyncio
 import random
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING
-
+from ..monitoring import GenerationMonitor
 from ..providers import DocumentProvider
 from ..providers.llm_providers import LLMProvider
 from .critics import run_generation_pipeline
@@ -32,10 +31,6 @@ from .types import (
     validate_factor_taxonomy,
 )
 
-if TYPE_CHECKING:
-    pass
-
-
 class OpenSimula:
     """High-level API for Simula-style synthetic dataset mechanisms (experimental)."""
 
@@ -44,9 +39,11 @@ class OpenSimula:
         llm: LLMProvider,
         *,
         temperature: float = 0.4,
+        monitor: GenerationMonitor | None = None,
     ):
         self._llm = llm
         self._temperature = temperature
+        self._monitor = monitor
 
     async def build_taxonomy(
         self,
@@ -66,7 +63,11 @@ class OpenSimula:
         bound API cost. Without them, wide trees multiply into hundreds of sequential
         LLM calls (minutes of silence).
         """
-        builder = TaxonomyBuilder(self._llm, temperature=self._temperature)
+        builder = TaxonomyBuilder(
+            self._llm,
+            temperature=self._temperature,
+            monitor=self._monitor,
+        )
         return await builder.build(
             instruction_y,
             document_provider=document_provider,
@@ -90,6 +91,7 @@ class OpenSimula:
             self._llm,
             bundle,
             temperature=min(0.35, self._temperature + 0.1),
+            monitor=self._monitor,
         )
 
     def sample_mix(
@@ -122,6 +124,7 @@ class OpenSimula:
                 mix=mix,
                 K=K,
                 temperature=min(0.85, self._temperature + 0.35),
+                monitor=self._monitor,
             )
         else:
             metas = await generate_scenarios(
@@ -131,6 +134,7 @@ class OpenSimula:
                 mix=mix,
                 K=K,
                 temperature=min(0.85, self._temperature + 0.35),
+                monitor=self._monitor,
             )
         meta = subsample_meta_prompts(metas, rng=rng)
         if complexify_c > 0.0 and rng.random() < complexify_c:
@@ -141,6 +145,7 @@ class OpenSimula:
                 mix=mix,
                 meta=meta,
                 temperature=min(0.5, self._temperature + 0.1),
+                monitor=self._monitor,
             )
         return meta
 
@@ -163,6 +168,7 @@ class OpenSimula:
                 mix=mix,
                 meta=meta,
                 temperature=min(0.65, self._temperature + 0.2),
+                monitor=self._monitor,
             )
 
         return await run_generation_pipeline(
@@ -174,6 +180,7 @@ class OpenSimula:
             generate_initial=gen,
             task="single_qa",
             max_refine_rounds=max_refine_rounds,
+            monitor=self._monitor,
         )
 
     async def agenerate_single_qa_samples(
@@ -315,6 +322,7 @@ class OpenSimula:
                 meta=meta,
                 num_choices=num_choices,
                 temperature=min(0.55, self._temperature + 0.15),
+                monitor=self._monitor,
             )
 
         return await run_generation_pipeline(
@@ -326,4 +334,5 @@ class OpenSimula:
             generate_initial=gen,
             task="mcq",
             max_refine_rounds=max_refine_rounds,
+            monitor=self._monitor,
         )

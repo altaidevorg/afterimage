@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
+from ..monitoring import GenerationMonitor
 from ..providers import DocumentProvider
 from ..providers.llm_providers import LLMProvider
 from .document_context import build_bounded_doc_context
+from .llm_track import agenerate_structured_tracked
 from .schemas_llm import (
     ChildProposalsResponse,
     CriticChildrenResponse,
@@ -24,9 +26,6 @@ from .types import (
     TaxonomyNode,
     digest_documents_for_bundle,
 )
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +68,11 @@ class TaxonomyBuilder:
         llm: LLMProvider,
         *,
         temperature: float = 0.4,
+        monitor: GenerationMonitor | None = None,
     ):
         self._llm = llm
         self._temperature = temperature
+        self._monitor = monitor
 
     async def build(
         self,
@@ -120,7 +121,10 @@ class TaxonomyBuilder:
             if tqdm_cls
             else None
         )
-        factors_out = await self._llm.agenerate_structured(
+        factors_out = await agenerate_structured_tracked(
+            self._monitor,
+            self._llm,
+            operation="opensimula.taxonomy.propose_factors",
             prompt=self._prompt_propose_factors(instruction_y, doc_block),
             schema=FactorsResponse,
             temperature=self._temperature,
@@ -301,7 +305,16 @@ class TaxonomyBuilder:
                 )
 
                 async def _one_proposal() -> ChildProposalsResponse:
-                    resp = await self._llm.agenerate_structured(
+                    resp = await agenerate_structured_tracked(
+                        self._monitor,
+                        self._llm,
+                        operation="opensimula.taxonomy.propose_children",
+                        metadata={
+                            "factor_id": factor.id,
+                            "factor_name": factor.name,
+                            "parent_node_id": nid,
+                            "depth": depth,
+                        },
                         prompt=proposal_prompt,
                         schema=ChildProposalsResponse,
                         temperature=min(0.9, self._temperature + 0.3),
@@ -318,7 +331,15 @@ class TaxonomyBuilder:
                         if t:
                             raw_all.append(ChildProposalRaw(label=t, description=None))
 
-                crit = await self._llm.agenerate_structured(
+                crit = await agenerate_structured_tracked(
+                    self._monitor,
+                    self._llm,
+                    operation="opensimula.taxonomy.critic_merge_children",
+                    metadata={
+                        "factor_id": factor.id,
+                        "parent_node_id": nid,
+                        "depth": depth,
+                    },
                     prompt=(
                         context
                         + "\n\nRaw child proposals (merge near-duplicates, remove bad ones, "
@@ -379,7 +400,11 @@ class TaxonomyBuilder:
                         f"({factor.name[:40]}…, {len(q_next)} labels)"
                     )
                 labels_block = "\n".join(f"- {nodes[cid].label}" for cid in q_next)
-                pl = await self._llm.agenerate_structured(
+                pl = await agenerate_structured_tracked(
+                    self._monitor,
+                    self._llm,
+                    operation="opensimula.taxonomy.plan_next_level",
+                    metadata={"factor_id": factor.id, "depth": depth},
                     prompt=(
                         f"Dataset instructions y:\n{instruction_y}\n\n"
                         f"Factor: {factor.name}\n\n"

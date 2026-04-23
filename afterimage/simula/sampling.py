@@ -5,7 +5,9 @@ from __future__ import annotations
 import random
 from collections import defaultdict
 
+from ..monitoring import GenerationMonitor
 from ..providers.llm_providers import LLMProvider
+from .llm_track import agenerate_structured_tracked
 from .schemas_llm import StrategiesResponse
 from .types import (
     FactorTaxonomy,
@@ -105,6 +107,7 @@ async def infer_sampling_strategies(
     bundle: TaxonomyBundle,
     *,
     temperature: float = 0.35,
+    monitor: GenerationMonitor | None = None,
 ) -> SamplingStrategySpec:
     """Use M3 to propose compatible joint-sampling strategies (paper §2.2)."""
     lines = []
@@ -119,7 +122,10 @@ async def infer_sampling_strategies(
         "(order does not matter). Assign positive weights (not necessarily normalized). "
         "Avoid strategies that join incompatible axes (e.g. mutually exclusive themes)."
     )
-    resp = await llm.agenerate_structured(
+    resp = await agenerate_structured_tracked(
+        monitor,
+        llm,
+        operation="opensimula.sampling.infer_strategies",
         prompt=prompt,
         schema=StrategiesResponse,
         temperature=temperature,

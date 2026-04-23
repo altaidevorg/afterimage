@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import random
 import re
-from typing import TYPE_CHECKING
 
+from ..monitoring import GenerationMonitor
 from ..providers.llm_providers import LLMProvider
+from .llm_track import agenerate_structured_tracked
 from .sampling import factor_taxonomy_map, mix_factor_paths
 from .schemas_llm import ComplexifyResponse, ScenariosResponse
 from .types import MetaPrompt, Mix, TaxonomyBundle
-
-if TYPE_CHECKING:
-    pass
 
 
 def _mix_description(bundle: TaxonomyBundle, mix: Mix) -> str:
@@ -35,6 +33,7 @@ async def generate_scenarios(
     mix: Mix,
     K: int,
     temperature: float = 0.65,
+    monitor: GenerationMonitor | None = None,
 ) -> list[MetaPrompt]:
     """Produce K distinct meta-prompts for the same mix (local diversity)."""
     if K < 1:
@@ -49,7 +48,11 @@ async def generate_scenarios(
         "satisfies ALL requirements. Vary framing, setting, and difficulty cues "
         "without changing the semantic coverage requirements."
     )
-    resp = await llm.agenerate_structured(
+    resp = await agenerate_structured_tracked(
+        monitor,
+        llm,
+        operation="opensimula.meta.generate_scenarios",
+        metadata={"mix_id": mix.id, "K": K},
         prompt=prompt,
         schema=ScenariosResponse,
         temperature=temperature,
@@ -71,6 +74,7 @@ async def complexify_meta_prompt(
     mix: Mix,
     meta: MetaPrompt,
     temperature: float = 0.45,
+    monitor: GenerationMonitor | None = None,
 ) -> MetaPrompt:
     """Orthogonal difficulty axis: elaborate while preserving semantic constraints."""
     mix_desc = _mix_description(bundle, mix)
@@ -83,7 +87,11 @@ async def complexify_meta_prompt(
         "the same taxonomy requirements. Add distractors, multi-step constraints, "
         "or edge cases where appropriate."
     )
-    resp = await llm.agenerate_structured(
+    resp = await agenerate_structured_tracked(
+        monitor,
+        llm,
+        operation="opensimula.meta.complexify",
+        metadata={"mix_id": mix.id, "meta_prompt_id": meta.id},
         prompt=prompt,
         schema=ComplexifyResponse,
         temperature=temperature,
@@ -121,6 +129,7 @@ async def generate_scenarios_sequential(
     mix: Mix,
     K: int,
     temperature: float = 0.65,
+    monitor: GenerationMonitor | None = None,
 ) -> list[MetaPrompt]:
     """For large N/V: generate scenarios one-by-one with prior attempts in context (§2.2)."""
     if K < 1:
@@ -138,7 +147,11 @@ async def generate_scenarios_sequential(
             f"{prev_block}\n\n"
             "Write ONE new DISTINCT meta-prompt/scenario that still satisfies all requirements."
         )
-        resp = await llm.agenerate_structured(
+        resp = await agenerate_structured_tracked(
+            monitor,
+            llm,
+            operation="opensimula.meta.generate_scenarios_sequential",
+            metadata={"mix_id": mix.id, "index": i, "K": K},
             prompt=prompt,
             schema=ScenariosResponse,
             temperature=temperature,

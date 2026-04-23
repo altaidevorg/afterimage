@@ -6,7 +6,9 @@ import json
 import logging
 from dataclasses import dataclass
 
+from ..monitoring import GenerationMonitor
 from ..providers.llm_providers import LLMProvider
+from .llm_track import agenerate_structured_tracked
 from .schemas_llm import DoubleProbeCorrect, DoubleProbeIncorrect
 from .types import DoubleCritiqueVerdict, MCQRow
 
@@ -30,6 +32,7 @@ async def double_critique_mcq(
     *,
     row: MCQRow,
     temperature: float = 0.15,
+    monitor: GenerationMonitor | None = None,
 ) -> DoubleCritiqueVerdict:
     """Two independent structured probes with different framings."""
     payload = json.dumps(
@@ -46,7 +49,10 @@ async def double_critique_mcq(
         "Answer conservatively.\n\n"
         f"{payload}"
     )
-    ra = await llm.agenerate_structured(
+    ra = await agenerate_structured_tracked(
+        monitor,
+        llm,
+        operation="opensimula.double_critic.probe_correct",
         prompt=prompt_a,
         schema=DoubleProbeCorrect,
         temperature=temperature,
@@ -57,7 +63,10 @@ async def double_critique_mcq(
         "the question and choices?\n\n"
         f"{payload}"
     )
-    rb = await llm.agenerate_structured(
+    rb = await agenerate_structured_tracked(
+        monitor,
+        llm,
+        operation="opensimula.double_critic.probe_incorrect",
         prompt=prompt_b,
         schema=DoubleProbeIncorrect,
         temperature=temperature,
@@ -75,6 +84,7 @@ async def gate_mcq_with_double_critic(
     *,
     serialized: str,
     temperature: float = 0.15,
+    monitor: GenerationMonitor | None = None,
 ) -> bool:
     """Parse serialized JSON as MCQRow and run double critic."""
     try:
@@ -83,7 +93,7 @@ async def gate_mcq_with_double_critic(
     except Exception as e:
         logger.warning("double_critic gate: invalid MCQ JSON: %s", e)
         return False
-    v = await double_critique_mcq(llm, row=row, temperature=temperature)
+    v = await double_critique_mcq(llm, row=row, temperature=temperature, monitor=monitor)
     return accept_double_critique(v)
 
 
@@ -93,7 +103,8 @@ async def double_critique_mcq_with_context(
     ctx: DoubleCritiqueContext,
     row: MCQRow,
     temperature: float = 0.15,
+    monitor: GenerationMonitor | None = None,
 ) -> bool:
-    v = await double_critique_mcq(llm, row=row, temperature=temperature)
+    v = await double_critique_mcq(llm, row=row, temperature=temperature, monitor=monitor)
     ctx.last_verdict = v
     return accept_double_critique(v)
