@@ -10,6 +10,7 @@ import pytest
 from afterimage.simula.checkpoint import (
     Checkpointer,
     OpenSimulaManifest,
+    OpenSimulaRunConfig,
     load_checkpoint,
     pull_checkpoint_from_hub,
     save_checkpoint,
@@ -55,12 +56,15 @@ def test_checkpointer_save_methods_roundtrip(tmp_path: Path) -> None:
     with Checkpointer(tmp_path) as cp:
         bundle.save(cp)
         strat.save(cp)
-        cp.write_run_config({"k": 1})
+        cp.write_run_config(OpenSimulaRunConfig(name="cp-test", seed=7, model="stub"))
     assert cp.manifest is not None
     ckpt = load_checkpoint(tmp_path)
     assert ckpt.bundle.instruction_y == bundle.instruction_y
     assert ckpt.sampling_strategy is not None
-    assert ckpt.run_config == {"k": 1}
+    assert ckpt.run_config is not None
+    assert ckpt.run_config.name == "cp-test"
+    assert ckpt.run_config.seed == 7
+    assert ckpt.run_config.model == "stub"
 
 
 def test_taxonomy_bundle_save_type_error() -> None:
@@ -86,7 +90,11 @@ def test_save_load_roundtrip(tmp_path: Path) -> None:
     strat = SamplingStrategySpec(
         strategies=[StrategyMixRule(name="s1", weight=1.0, factor_ids=[bundle.factors[0].id])],
     )
-    run_cfg = {"model": "gemini-2.5-flash", "max_factors": 8}
+    run_cfg = OpenSimulaRunConfig(
+        name="roundtrip",
+        model="gemini-2.5-flash",
+        max_factors=8,
+    )
 
     manifest = save_checkpoint(
         tmp_path,
@@ -118,12 +126,29 @@ def test_save_without_optional_clears_stale_files(tmp_path: Path) -> None:
                 StrategyMixRule(name="s1", weight=1.0, factor_ids=[bundle.factors[0].id]),
             ],
         ),
-        run_config={"x": 1},
+        run_config=OpenSimulaRunConfig(name="stale-test"),
     )
     save_checkpoint(tmp_path, bundle=bundle)
     ckpt = load_checkpoint(tmp_path)
     assert ckpt.sampling_strategy is None
     assert ckpt.run_config is None
+
+
+def test_open_simula_run_config_legacy_example_key() -> None:
+    rc = OpenSimulaRunConfig.model_validate({"example": "legacy-run", "model": "m1"})
+    assert rc.name == "legacy-run"
+    assert rc.model == "m1"
+
+
+def test_open_simula_run_config_example_dropped_when_name_present() -> None:
+    rc = OpenSimulaRunConfig.model_validate({"example": "ignored", "name": "primary"})
+    assert rc.name == "primary"
+
+
+def test_open_simula_run_config_unknown_keys_ignored() -> None:
+    rc = OpenSimulaRunConfig.model_validate({"custom_key": 99, "model": "x"})
+    assert rc.model == "x"
+    assert "custom_key" not in rc.model_dump()
 
 
 def test_unsupported_manifest_version(tmp_path: Path) -> None:

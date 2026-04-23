@@ -5,7 +5,9 @@ Independent open implementation inspired by Davidson et al. (Simula, TMLR); not 
 
 from __future__ import annotations
 
+import asyncio
 import random
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
 from ..providers import DocumentProvider
@@ -173,6 +175,124 @@ class OpenSimula:
             task="single_qa",
             max_refine_rounds=max_refine_rounds,
         )
+
+    async def agenerate_single_qa_samples(
+        self,
+        *,
+        instruction_y: str,
+        bundle: TaxonomyBundle,
+        spec: SamplingStrategySpec,
+        n: int,
+        K: int = 6,
+        complexify_c: float = 0.0,
+        sequential: bool = False,
+        max_concurrency: int = 2,
+        rng: random.Random | None = None,
+        max_refine_rounds: int = 4,
+    ) -> list[DataPointRecord | None]:
+        """Generate ``n`` single-QA datapoints with independent (mix, meta) draws each time.
+
+        Results are ordered by sample index ``0 .. n-1``. Concurrency is bounded by
+        ``max_concurrency`` (each task still performs its own mix, meta-prompt, and critic loop).
+        Each concurrent task draws a fresh RNG stream from ``rng`` so subsampling stays
+        deterministic under ``asyncio`` without sharing one :class:`random.Random` across tasks.
+        """
+        if n < 0:
+            raise ValueError("n must be non-negative")
+        if n == 0:
+            return []
+        rng = rng or random.Random()
+        sem = asyncio.Semaphore(max(1, max_concurrency))
+        seed_lock = asyncio.Lock()
+
+        async def one(i: int) -> tuple[int, DataPointRecord | None]:
+            async with sem:
+                async with seed_lock:
+                    local_rng = random.Random(rng.randrange(2**31))
+                mix = self.sample_mix(bundle, spec, rng=local_rng)
+                meta = await self.draw_meta_prompt(
+                    instruction_y=instruction_y,
+                    bundle=bundle,
+                    mix=mix,
+                    K=K,
+                    complexify_c=complexify_c,
+                    sequential=sequential,
+                    rng=local_rng,
+                )
+                rec = await self.generate_single_qa_datapoint(
+                    instruction_y=instruction_y,
+                    bundle=bundle,
+                    mix=mix,
+                    meta=meta,
+                    max_refine_rounds=max_refine_rounds,
+                )
+                return (i, rec)
+
+        pairs = await asyncio.gather(*(one(i) for i in range(n)))
+        out: list[DataPointRecord | None] = [None] * n
+        for i, rec in pairs:
+            out[i] = rec
+        return out
+
+    async def aiter_single_qa_samples(
+        self,
+        *,
+        instruction_y: str,
+        bundle: TaxonomyBundle,
+        spec: SamplingStrategySpec,
+        n: int,
+        K: int = 6,
+        complexify_c: float = 0.0,
+        sequential: bool = False,
+        max_concurrency: int = 2,
+        rng: random.Random | None = None,
+        max_refine_rounds: int = 4,
+    ) -> AsyncIterator[tuple[int, DataPointRecord | None]]:
+        """Like :meth:`agenerate_single_qa_samples` but yield ``(index, record)`` as each task finishes.
+
+        Useful for appending to JSONL as samples complete. If the consumer stops early,
+        unfinished tasks are cancelled.
+        """
+        if n < 0:
+            raise ValueError("n must be non-negative")
+        if n == 0:
+            return
+        rng = rng or random.Random()
+        sem = asyncio.Semaphore(max(1, max_concurrency))
+        seed_lock = asyncio.Lock()
+
+        async def one(i: int) -> tuple[int, DataPointRecord | None]:
+            async with sem:
+                async with seed_lock:
+                    local_rng = random.Random(rng.randrange(2**31))
+                mix = self.sample_mix(bundle, spec, rng=local_rng)
+                meta = await self.draw_meta_prompt(
+                    instruction_y=instruction_y,
+                    bundle=bundle,
+                    mix=mix,
+                    K=K,
+                    complexify_c=complexify_c,
+                    sequential=sequential,
+                    rng=local_rng,
+                )
+                rec = await self.generate_single_qa_datapoint(
+                    instruction_y=instruction_y,
+                    bundle=bundle,
+                    mix=mix,
+                    meta=meta,
+                    max_refine_rounds=max_refine_rounds,
+                )
+                return (i, rec)
+
+        tasks = [asyncio.create_task(one(i)) for i in range(n)]
+        try:
+            for fut in asyncio.as_completed(tasks):
+                yield await fut
+        finally:
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def generate_mcq_datapoint(
         self,

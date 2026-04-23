@@ -23,9 +23,9 @@ Examples use **`gemini-2.5-flash`** as the default teacher: fast and inexpensive
 | `draw_meta_prompt(..., K=…, complexify_c=…, sequential=…)` | **Local diversity** + **c** | **K** distinct **meta-prompts** (scenarios) for the same mix; one is subsampled (Algorithm 2). **complexify_c** is the probability **c** of complexifying that meta-prompt—orthogonal difficulty vs. coverage (§2.2). **sequential=True** uses the paper’s large-**N/V** regime: generate scenarios one-by-one with prior attempts in context to reduce mode collapse. | **K = 4–8**. **c**: the paper’s **Local** ablation uses **c = 0.5** (Table 1); that is aggressive. Examples use **~0.25–0.35** unless you want maximum difficulty skew. |
 | `generate_*_datapoint` | Alg. 2 **generate + critic** | Requirement critic and optional refine loop; MCQ path adds **double-critic** (§2.2, §3.1) after the point satisfies the meta-prompt. | Leave `max_refine_rounds` at **4** unless traces show chronic rejection. |
 
-**Evaluation helpers** (not run in these two scripts): `assign_datapoint_to_taxonomy`, `level_ratio_coverage`, and `elo_complexity_scores` implement §2.3 / Appendix E style signals. For Elo-style batch complexity, the paper reports a practical tradeoff around **batch size and repeat count ≈ 5** (Appendix E; “BS = N = 5”); pass `batch_size=5`, `repeats=5` into `elo_complexity_scores` when you wire evaluation.
+**Evaluation helpers** (not run in the minimal one-row scripts): `assign_datapoint_to_taxonomy`, `level_ratio_coverage`, and `elo_complexity_scores` implement §2.3 / Appendix E style signals. For Elo-style batch complexity, the paper reports a practical tradeoff around **batch size and repeat count ≈ 5** (Appendix E; “BS = N = 5”); pass `batch_size=5`, `repeats=5` into `elo_complexity_scores` when you wire evaluation.
 
-**Scale note:** Experiments in the paper generated on the order of **512k** points per domain; examples generate **one** row to keep cost predictable.
+**Scale note:** Experiments in the paper generated on the order of **512k** points per domain; the two minimal scripts generate **one** row each to keep cost predictable. [`corpus_batch_qa.py`](corpus_batch_qa.py) generates several rows and appends accepted points to JSONL.
 
 **If the script “stalls” after `Simula created`:** it is usually inside `build_taxonomy`. The first structured Gemini call can take **15–60s**; the rest are logged at **INFO** by `afterimage.simula.taxonomy_builder`. Enable logging (as in `minimal_pipeline.py`) or watch stderr. Before cost caps, wide taxonomies issued **hundreds** of sequential calls (tens of minutes).
 
@@ -35,35 +35,32 @@ Examples use **`gemini-2.5-flash`** as the default teacher: fast and inexpensive
 
 ## Runnable scripts
 
-Both require `GEMINI_API_KEY` (or change `LLMFactory.create` to your provider).
+All require `GEMINI_API_KEY` (or change `LLMFactory.create` to your provider).
 
-- [`minimal_pipeline.py`](minimal_pipeline.py) — **y** + optional **S** → taxonomy → strategies → mix → meta-prompt → **single QA** (requirement critic + refine only).
-- [`mcq_pipeline.py`](mcq_pipeline.py) — taxonomy without docs → **four-option MCQ** with **double-critic** after the requirement loop (verifiable label gate, §3.1).
+- [`minimal_pipeline.py`](minimal_pipeline.py) — **y** + optional **S** → taxonomy → strategies → mix → meta-prompt → **one** single-QA row (smallest linear demo).
+- [`mcq_pipeline.py`](mcq_pipeline.py) — taxonomy without docs → **one** four-option MCQ with **double-critic** after the requirement loop (§3.1).
+- [`corpus_batch_qa.py`](corpus_batch_qa.py) — **six** static policy excerpts, **multi-sample** single-QA generation with bounded concurrency, **`opensimula/`** checkpoint + `run_config.json`, incremental **`data/train.jsonl`** (accepted rows only), optional **`--resume`** and **`--push-hf`**.
 
-### Checkpoints and Hugging Face Hub
+### Checkpoints, JSONL, and Hub (batch example)
 
-After `infer_strategies`, each script can persist the **taxonomy bundle** and **sampling strategy** under `<DIR>/opensimula/` with a versioned **`manifest.json`** (`producer`: `afterimage`, `format`: `opensimula`, `format_version`: `1.0`). Use this to reuse an expensive taxonomy without re-calling Gemini, or to share artifacts on the Hub.
+[`corpus_batch_qa.py`](corpus_batch_qa.py) writes a versioned **`manifest.json`** under `<output-dir>/opensimula/` (`producer`: `afterimage`, `format`: `opensimula`, `format_version`: `1.0`) plus taxonomy and strategy JSON. **`run_config.json`** is typed as **`OpenSimulaRunConfig`** (optional `name` / `description`, hyperparameters, paths). Older files that used the legacy **`example`** string are still loaded: that value becomes **`name`** when `name` is absent. Accepted datapoints are appended one line at a time to **`data/train.jsonl`** as each async sample completes (so a crash mid-run still keeps prior rows).
 
 | Flag | Role |
 |------|------|
-| `--checkpoint DIR` | Write `opensimula/` under `DIR` after strategy inference (includes `run_config.json` with script hyperparameters). |
-| `--resume DIR` | Load `opensimula/` from `DIR` and skip `build_taxonomy` and `infer_strategies`. Do not combine with `--checkpoint` on the same run. |
-| `--push-hf REPO_ID` | Requires `--checkpoint`. Uploads the local `opensimula/` tree to the given **dataset** repo (e.g. `username/my-opensimula-run`). Needs `HF_TOKEN` (or `HUGGINGFACE_HUB_TOKEN`). |
-
-The scripts use a `Checkpointer` context manager so each artifact calls `.save(cp)` on the bundle and strategy, then `cp.write_run_config(...)`. The one-shot function `save_checkpoint(...)` remains for callers who prefer a single call.
-
-Examples:
+| `--output-dir DIR` | Run root (default `outputs/simula_corpus_batch`). Holds `opensimula/` and `data/train.jsonl`. |
+| `--num-samples N` | Number of independent (mix → meta → generate) pipelines. |
+| `--resume` | Expect an existing `opensimula/` under `output-dir`; skip taxonomy and `infer_strategies`, then only run sample generation. |
+| `--max-concurrency K` | Cap concurrent sample pipelines (each still does full LLM work). |
+| `--push-hf REPO_ID` | After a **fresh** save (no `--resume`), upload `opensimula/` to the dataset repo. Needs `HF_TOKEN` (or `HUGGINGFACE_HUB_TOKEN`). |
 
 ```bash
-# Save a checkpoint after taxonomy + strategies
-python minimal_pipeline.py --checkpoint ./runs/secqa_demo
+python corpus_batch_qa.py --output-dir ./runs/corpus1 --num-samples 8 --max-concurrency 2
 
-# Resume from disk (still needs GEMINI_API_KEY for mix / meta / generate)
-python minimal_pipeline.py --resume ./runs/secqa_demo
-
-# Save and push in one run (runs cp.push_to_hub after manifest is written)
-python minimal_pipeline.py --checkpoint ./runs/secqa_demo --push-hf username/secqa-opensimula
+# Reuse taxonomy + strategies; append more JSONL lines
+python corpus_batch_qa.py --output-dir ./runs/corpus1 --resume --num-samples 4
 ```
+
+Library helpers: `Checkpointer` / `save_checkpoint`, `OpenSimulaRunConfig` (typed `run_config.json`), `OpenSimula.aiter_single_qa_samples` / `agenerate_single_qa_samples`, `append_datapoints_jsonl`, `load_checkpoint`, `pull_checkpoint_from_hub`, `push_checkpoint_to_hub`.
 
 To download a Hub repo that only contains `opensimula/` (or that subtree) and then resume:
 
@@ -78,20 +75,16 @@ ckpt = load_checkpoint(root)
 # ckpt.bundle, ckpt.sampling_strategy, ckpt.run_config, ckpt.manifest
 ```
 
-The library entry points are `Checkpointer` (including `push_to_hub`), `save_checkpoint`, `load_checkpoint`, `push_checkpoint_to_hub` (wrapper), and `pull_checkpoint_from_hub` in `afterimage.simula`.
-
 ---
 
-## Inline sketch (same API as the scripts)
+## Inline sketch (minimal single-row API)
 
 ```python
 import asyncio
 import os
 
-from pathlib import Path
-
 from afterimage.providers import InMemoryDocumentProvider, LLMFactory
-from afterimage.simula import Checkpointer, OpenSimula, load_checkpoint
+from afterimage.simula import OpenSimula
 
 
 async def main():
@@ -111,11 +104,6 @@ async def main():
     )
     OpenSimula.validate_taxonomy_bundle(bundle)
     spec = await sim.infer_strategies(bundle)
-    with Checkpointer(Path("./my_checkpoint")) as cp:
-        bundle.save(cp)
-        spec.save(cp)
-        cp.write_run_config({"model": "gemini-2.5-flash"})
-    # Or: ckpt = load_checkpoint(Path("./my_checkpoint")); bundle = ckpt.bundle; spec = ckpt.sampling_strategy
     mix = sim.sample_mix(bundle, spec)
     meta = await sim.draw_meta_prompt(
         instruction_y=bundle.instruction_y,
@@ -135,6 +123,18 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+```
+
+Batch + JSONL (see [`corpus_batch_qa.py`](corpus_batch_qa.py)):
+
+```python
+# from pathlib import Path
+# from afterimage.simula import Checkpointer, append_datapoints_jsonl
+# with Checkpointer(out_dir) as cp:
+#     bundle.save(cp); spec.save(cp); cp.write_run_config(OpenSimulaRunConfig(name="my-run"))
+# async for _, rec in sim.aiter_single_qa_samples(..., n=10, max_concurrency=2):
+#     if rec:
+#         append_datapoints_jsonl(out_dir / "data" / "train.jsonl", [rec])
 ```
 
 ---

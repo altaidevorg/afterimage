@@ -12,7 +12,7 @@ On-disk layout (``format_version`` ``1.0``)::
         manifest.json          # producer, format, format_version, digests, file names
         taxonomy_bundle.json
         sampling_strategy.json # optional
-        run_config.json        # optional JSON object (e.g. caps, model id)
+        run_config.json        # optional :class:`OpenSimulaRunConfig` JSON (typed metadata + knobs)
 
 ``huggingface-hub`` is used for optional push/pull of the ``opensimula/`` subtree.
 """
@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from afterimage.simula.types import (
     SamplingStrategySpec,
@@ -104,6 +104,58 @@ class OpenSimulaManifest(BaseModel):
     run_config_file: str | None = None
 
 
+class OpenSimulaRunConfig(BaseModel):
+    """Typed metadata and hyperparameters stored in ``run_config.json`` beside a checkpoint."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str | None = Field(
+        default=None,
+        description="Short label for this run (e.g. experiment id or pipeline name).",
+    )
+    description: str | None = Field(
+        default=None,
+        description="Optional longer note for operators or dashboards.",
+    )
+    model: str | None = Field(
+        default=None,
+        description="Teacher model id used for OpenSimula LLM calls.",
+    )
+    temperature: float | None = None
+    target_depth_D: int | None = None
+    proposal_N: int | None = None
+    meta_prompt_K: int | None = None
+    complexify_c: float | None = None
+    max_factors: int | None = None
+    max_children_per_node: int | None = None
+    max_frontier_per_depth: int | None = None
+    num_choices: int | None = Field(
+        default=None,
+        description="MCQ-style runs: number of answer options.",
+    )
+    num_samples: int | None = None
+    max_concurrency: int | None = None
+    seed: int | None = None
+    data_jsonl: str | None = Field(
+        default=None,
+        description="Path to appended sample JSONL (often relative to checkpoint root).",
+    )
+    corpus_excerpt_count: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_example_into_name(cls, data: Any) -> Any:
+        """Older checkpoints used ``example``; map to :attr:`name` when :attr:`name` is unset."""
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        if "example" in out:
+            legacy = out.pop("example")
+            if out.get("name") in (None, "") and legacy not in (None, ""):
+                out["name"] = str(legacy)
+        return out
+
+
 @dataclass(frozen=True)
 class SimulaCheckpoint:
     """Loaded checkpoint: manifest + parsed models + optional extras."""
@@ -111,7 +163,7 @@ class SimulaCheckpoint:
     manifest: OpenSimulaManifest
     bundle: TaxonomyBundle
     sampling_strategy: SamplingStrategySpec | None
-    run_config: dict[str, Any] | None
+    run_config: OpenSimulaRunConfig | None
     root: Path
 
 
@@ -128,7 +180,7 @@ class Checkpointer:
         with Checkpointer("./run") as cp:
             bundle.save(cp)
             spec.save(cp)
-            cp.write_run_config({"model": "..."})
+            cp.write_run_config(OpenSimulaRunConfig(name="demo", model="gemini-2.5-flash"))
         url = cp.push_to_hub("org/dataset-repo")
 
     Call :meth:`write_taxonomy_bundle` (or ``bundle.save(cp)``) at least once before the
@@ -220,15 +272,16 @@ class Checkpointer:
         self._strat_digest = _sha256_file(strat_path)
         self._strat_file = SAMPLING_STRATEGY_FILENAME
 
-    def write_run_config(self, data: dict[str, Any]) -> None:
+    def write_run_config(self, config: OpenSimulaRunConfig) -> None:
         """Write ``run_config.json`` (call after :meth:`write_taxonomy_bundle`)."""
         self._require_context()
         if not self._bundle_written:
             raise RuntimeError("write_taxonomy_bundle (or bundle.save) before write_run_config")
 
         run_path = self._odir / RUN_CONFIG_FILENAME
+        raw = config.model_dump(mode="json", exclude_none=True)
         run_path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+            json.dumps(raw, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         self._run_file = RUN_CONFIG_FILENAME
@@ -309,7 +362,7 @@ def save_checkpoint(
     *,
     bundle: TaxonomyBundle,
     sampling_strategy: SamplingStrategySpec | None = None,
-    run_config: dict[str, Any] | None = None,
+    run_config: OpenSimulaRunConfig | None = None,
     validate_taxonomies: bool = True,
 ) -> OpenSimulaManifest:
     """Write ``opensimula/`` under ``checkpoint_root`` and return the manifest.
@@ -387,11 +440,13 @@ def load_checkpoint(
             strat_candidate.read_text(encoding="utf-8"),
         )
 
-    run_cfg: dict[str, Any] | None = None
+    run_cfg: OpenSimulaRunConfig | None = None
     if manifest.run_config_file:
         rp = odir / manifest.run_config_file
         if rp.is_file():
-            run_cfg = json.loads(rp.read_text(encoding="utf-8"))
+            run_cfg = OpenSimulaRunConfig.model_validate(
+                json.loads(rp.read_text(encoding="utf-8")),
+            )
 
     return SimulaCheckpoint(
         manifest=manifest,
