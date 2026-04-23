@@ -97,6 +97,8 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
+# Ensure ``import tests.*`` works under ``uv run pytest`` (project root on sys.path).
+pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
