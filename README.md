@@ -29,8 +29,21 @@ from a single YAML file or a composable Python API.
 
 ---
 
+## News
+
+### April 23, 2026 — OpenSimula
+
+**OpenSimula** is an experimental, open implementation of mechanism-design ideas from [**Simula**](https://openreview.net/pdf?id=NALsdGEPhB) (Davidson et al., TMLR; see also Google’s [research blog](https://research.google/blog/designing-synthetic-datasets-for-the-real-world-mechanism-design-and-reasoning-from-first-principles/) on the framing). It covers LLM-built **factor taxonomies**, **weighted mix sampling** over those factors, **meta-prompt** diversification (with optional complexification), **requirement critics** with refinement, and an independent **double-critic** gate for verifiable multiple-choice items. Checkpoints live under an `opensimula/` subtree (manifest, taxonomy bundle, sampling strategy); you can stream datapoints to JSONL, hook **`GenerationMonitor`** into **`OpenSimula`**, or bridge scenarios into **`ConversationGenerator`** via **`SimulaInstructionGeneratorCallback`**.
+
+This module is **not** affiliated with Google and is **not** a reference port of internal systems—it is an independent take on the published Simula recipe.
+
+**Try it:** walkthrough and CLI notes in [`examples/simula/README.md`](examples/simula/README.md), scripts in [`examples/simula/`](examples/simula/), package overview in [`afterimage/simula/README.md`](afterimage/simula/README.md). Narrative + monitoring notes: [OpenSimula](https://afterimage.altai.dev/opensimula.html) · autodoc: [Simula / OpenSimula API](https://afterimage.altai.dev/api/simula.html).
+
+---
+
 ## Table of Contents
 
+- [News](#news)
 - [Why AfterImage](#why-afterimage)
 - [Features](#features)
 - [Installation](#installation)
