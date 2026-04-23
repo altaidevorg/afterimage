@@ -21,6 +21,7 @@ AfterImage Documentation
    structured_generation
    persona_generation
    monitoring
+   OpenSimula (Simula-style data) <opensimula>
    evaluation
    advanced_usage
 

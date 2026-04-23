@@ -14,7 +14,7 @@ from afterimage.providers import LLMFactory, InMemoryDocumentProvider
 
 ## Generation monitoring
 
-You can attach the same {class}`afterimage.monitoring.GenerationMonitor` used elsewhere in AfterImage by passing `monitor=` into {class}`~afterimage.simula.OpenSimula`.
+You can attach the same `GenerationMonitor` used elsewhere in AfterImage by passing `monitor=` into `OpenSimula` (see the **Simula / OpenSimula** page under API Reference).
 
 When a monitor is set, structured LLM calls across the pipeline call `track_generation` with duration, success or failure, token counts when available, and **metadata** that includes:
 
@@ -23,7 +23,7 @@ When a monitor is set, structured LLM calls across the pipeline call `track_gene
 
 Omit `monitor` (or pass `None`) to run without recording metrics.
 
-Always call {meth}`~afterimage.monitoring.GenerationMonitor.shutdown` when the run finishes so background metric processing stops cleanly (see {doc}`monitoring`).
+Always call `GenerationMonitor.shutdown()` when the run finishes so background metric processing stops cleanly (see [Monitoring & observability](monitoring.md)).
 
 ### Sharing a monitor with `ConversationGenerator`
 
@@ -31,4 +31,4 @@ Always call {meth}`~afterimage.monitoring.GenerationMonitor.shutdown` when the r
 
 ## API reference
 
-Module and class reference is generated under **API Reference → Simula / OpenSimula** ({doc}`api/simula`).
+Module and class reference is generated on the **Simula / OpenSimula** API page (`api/simula` in the built site navigation).

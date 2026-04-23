@@ -32,7 +32,21 @@ from .types import (
 )
 
 class OpenSimula:
-    """High-level API for Simula-style synthetic dataset mechanisms (experimental)."""
+    """High-level API for Simula-style synthetic dataset mechanisms (experimental).
+
+    All structured LLM stages (taxonomy construction, strategy inference, meta-prompt
+    diversification and complexification, requirement critics, double-critic probes for
+    MCQ, and task JSON generation) accept an optional :class:`~afterimage.monitoring.GenerationMonitor`.
+    When ``monitor`` is set, each call is wrapped with ``track_generation`` and metadata
+    including ``component="opensimula"`` and a dotted ``operation`` label. Call
+    :meth:`~afterimage.monitoring.GenerationMonitor.shutdown` on the monitor when the run
+    completes.
+
+    Args:
+        llm: Provider used for every structured generation in this pipeline.
+        temperature: Base temperature; individual stages may clamp to their own ranges.
+        monitor: Optional monitor instance, or ``None`` to disable metric collection.
+    """
 
     def __init__(
         self,
