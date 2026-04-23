@@ -8,7 +8,9 @@ The central component is the `GenerationMonitor`. It collects metrics from the g
 
 ### Initialization
 
-You can attach a monitor to any generator (`ConversationGenerator`, `PersonaGenerator`, etc.). The monitor uses background threads to process metrics without blocking the main generation loop.
+You can attach a monitor to any generator (`ConversationGenerator`, `PersonaGenerator`, etc.) or to **OpenSimula** via `OpenSimula(..., monitor=monitor)` so taxonomy, sampling, meta-prompt, critic, and task JSON calls are recorded with `component="opensimula"` metadata. See [OpenSimula](opensimula.md) for operation naming and how that fits next to conversation generation.
+
+The monitor uses background threads to process metrics without blocking the main generation loop.
 
 ```python
 from afterimage import ConversationGenerator, GenerationMonitor

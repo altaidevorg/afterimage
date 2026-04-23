@@ -12,5 +12,6 @@ API Reference
    evaluators
    storage
    monitoring
+   simula
    base
    types

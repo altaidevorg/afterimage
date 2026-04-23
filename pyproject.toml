@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "afterimage"
-version = "0.14.5"
+version = "0.15.0"
 keywords = ["afterimage", "dataset-generation", "synthetic-dataset", "tool-calling", "structured-output", "preference-data", "persona-driven"]
 authors = [
     { name = "Yusuf Sarıgöz", email = "yusuf@altai.dev"}
@@ -97,6 +97,8 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
+# Ensure ``import tests.*`` works under ``uv run pytest`` (project root on sys.path).
+pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
