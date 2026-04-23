@@ -3,6 +3,16 @@
 Experimental API; subject to change. See :class:`~afterimage.simula.pipeline.OpenSimula`.
 """
 
+from .checkpoint import (
+    Checkpointer,
+    OpenSimulaManifest,
+    SimulaCheckpoint,
+    load_checkpoint,
+    opensimula_dir,
+    pull_checkpoint_from_hub,
+    push_checkpoint_to_hub,
+    save_checkpoint,
+)
 from .cli_logging import configure_example_console, silence_noisy_third_party_loggers
 from .pipeline import OpenSimula
 from .tasks import SimulaInstructionGeneratorCallback
@@ -31,6 +41,14 @@ from .types import (
 )
 
 __all__ = [
+    "Checkpointer",
+    "OpenSimulaManifest",
+    "SimulaCheckpoint",
+    "load_checkpoint",
+    "opensimula_dir",
+    "pull_checkpoint_from_hub",
+    "push_checkpoint_to_hub",
+    "save_checkpoint",
     "OpenSimula",
     "SimulaInstructionGeneratorCallback",
     "configure_example_console",

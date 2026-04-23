@@ -40,6 +40,46 @@ Both require `GEMINI_API_KEY` (or change `LLMFactory.create` to your provider).
 - [`minimal_pipeline.py`](minimal_pipeline.py) — **y** + optional **S** → taxonomy → strategies → mix → meta-prompt → **single QA** (requirement critic + refine only).
 - [`mcq_pipeline.py`](mcq_pipeline.py) — taxonomy without docs → **four-option MCQ** with **double-critic** after the requirement loop (verifiable label gate, §3.1).
 
+### Checkpoints and Hugging Face Hub
+
+After `infer_strategies`, each script can persist the **taxonomy bundle** and **sampling strategy** under `<DIR>/opensimula/` with a versioned **`manifest.json`** (`producer`: `afterimage`, `format`: `opensimula`, `format_version`: `1.0`). Use this to reuse an expensive taxonomy without re-calling Gemini, or to share artifacts on the Hub.
+
+| Flag | Role |
+|------|------|
+| `--checkpoint DIR` | Write `opensimula/` under `DIR` after strategy inference (includes `run_config.json` with script hyperparameters). |
+| `--resume DIR` | Load `opensimula/` from `DIR` and skip `build_taxonomy` and `infer_strategies`. Do not combine with `--checkpoint` on the same run. |
+| `--push-hf REPO_ID` | Requires `--checkpoint`. Uploads the local `opensimula/` tree to the given **dataset** repo (e.g. `username/my-opensimula-run`). Needs `HF_TOKEN` (or `HUGGINGFACE_HUB_TOKEN`). |
+
+The scripts use a `Checkpointer` context manager so each artifact calls `.save(cp)` on the bundle and strategy, then `cp.write_run_config(...)`. The one-shot function `save_checkpoint(...)` remains for callers who prefer a single call.
+
+Examples:
+
+```bash
+# Save a checkpoint after taxonomy + strategies
+python minimal_pipeline.py --checkpoint ./runs/secqa_demo
+
+# Resume from disk (still needs GEMINI_API_KEY for mix / meta / generate)
+python minimal_pipeline.py --resume ./runs/secqa_demo
+
+# Save and push in one run (runs cp.push_to_hub after manifest is written)
+python minimal_pipeline.py --checkpoint ./runs/secqa_demo --push-hf username/secqa-opensimula
+```
+
+To download a Hub repo that only contains `opensimula/` (or that subtree) and then resume:
+
+```python
+from pathlib import Path
+
+from afterimage.simula import load_checkpoint, pull_checkpoint_from_hub
+
+root = Path("./from_hub")
+pull_checkpoint_from_hub("username/secqa-opensimula", root)
+ckpt = load_checkpoint(root)
+# ckpt.bundle, ckpt.sampling_strategy, ckpt.run_config, ckpt.manifest
+```
+
+The library entry points are `Checkpointer` (including `push_to_hub`), `save_checkpoint`, `load_checkpoint`, `push_checkpoint_to_hub` (wrapper), and `pull_checkpoint_from_hub` in `afterimage.simula`.
+
 ---
 
 ## Inline sketch (same API as the scripts)
@@ -48,8 +88,10 @@ Both require `GEMINI_API_KEY` (or change `LLMFactory.create` to your provider).
 import asyncio
 import os
 
+from pathlib import Path
+
 from afterimage.providers import InMemoryDocumentProvider, LLMFactory
-from afterimage.simula import OpenSimula
+from afterimage.simula import Checkpointer, OpenSimula, load_checkpoint
 
 
 async def main():
@@ -69,6 +111,11 @@ async def main():
     )
     OpenSimula.validate_taxonomy_bundle(bundle)
     spec = await sim.infer_strategies(bundle)
+    with Checkpointer(Path("./my_checkpoint")) as cp:
+        bundle.save(cp)
+        spec.save(cp)
+        cp.write_run_config({"model": "gemini-2.5-flash"})
+    # Or: ckpt = load_checkpoint(Path("./my_checkpoint")); bundle = ckpt.bundle; spec = ckpt.sampling_strategy
     mix = sim.sample_mix(bundle, spec)
     meta = await sim.draw_meta_prompt(
         instruction_y=bundle.instruction_y,

@@ -41,6 +41,7 @@ docs/plans/
 
 # outputs
 output/
+outputs/
 
 # storage
 *.db

@@ -157,6 +157,14 @@ class TaxonomyBundle(BaseModel):
         raw = self.model_dump(mode="json")
         return TaxonomyBundle.model_validate(raw)
 
+    def save(self, checkpointer: object) -> None:
+        """Write this bundle into ``checkpointer`` (a :class:`~afterimage.simula.checkpoint.Checkpointer`)."""
+        from afterimage.simula.checkpoint import Checkpointer
+
+        if not isinstance(checkpointer, Checkpointer):
+            raise TypeError(f"expected Checkpointer, got {type(checkpointer).__name__}")
+        checkpointer.write_taxonomy_bundle(self)
+
 
 class StrategyMixRule(BaseModel):
     """One named sampling strategy: compatible factor subset + weight."""
@@ -178,6 +186,14 @@ class SamplingStrategySpec(BaseModel):
     """Weighted strategies over taxonomies (paper §2.2)."""
 
     strategies: list[StrategyMixRule]
+
+    def save(self, checkpointer: object) -> None:
+        """Write this spec into ``checkpointer`` (a :class:`~afterimage.simula.checkpoint.Checkpointer`)."""
+        from afterimage.simula.checkpoint import Checkpointer
+
+        if not isinstance(checkpointer, Checkpointer):
+            raise TypeError(f"expected Checkpointer, got {type(checkpointer).__name__}")
+        checkpointer.write_sampling_strategy(self)
 
 
 class MixEntry(BaseModel):

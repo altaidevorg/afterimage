@@ -14,18 +14,29 @@ Paper mapping (Davidson et al., TMLR; Appendix B.4, §2.2, Algorithm 2):
 Model: **gemini-2.5-flash** — same family as the paper’s teacher (Gemini 2.5 Flash), cheap for loops.
 
 Requires: GEMINI_API_KEY
+
+Checkpointing: pass ``--checkpoint DIR`` to write ``opensimula/`` via ``Checkpointer``
+(``bundle.save(cp)``, ``spec.save(cp)``, ``cp.write_run_config(...)``). ``--resume DIR`` skips taxonomy
+and ``infer_strategies``. ``--push-hf REPO_ID`` uploads that tree (needs ``HF_TOKEN``). See ``README.md``.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 import sys
+from pathlib import Path
 
 from tqdm.auto import tqdm
 
 from afterimage.providers import InMemoryDocumentProvider, LLMFactory
-from afterimage.simula import OpenSimula, configure_example_console
+from afterimage.simula import (
+    Checkpointer,
+    OpenSimula,
+    configure_example_console,
+    load_checkpoint,
+)
 
 configure_example_console()
 
@@ -70,8 +81,46 @@ META_PROMPT_K = 6
 # c: complexification probability. Paper Table 1 uses 0.5 for "Local"; 0.28 is gentler for demos.
 COMPLEXIFY_C = 0.28
 
+MODEL_NAME = "gemini-2.5-flash"
+MAX_FACTORS = 4
+MAX_CHILDREN_PER_NODE = 8
+MAX_FRONTIER_PER_DEPTH = 12
+
+
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="Write opensimula/ (manifest + taxonomy + strategy) here after infer_strategies.",
+    )
+    p.add_argument(
+        "--resume",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="Load opensimula/ from DIR; skip build_taxonomy and infer_strategies.",
+    )
+    p.add_argument(
+        "--push-hf",
+        default=None,
+        metavar="REPO_ID",
+        help="After --checkpoint save, upload opensimula/ to this Hub dataset repo id.",
+    )
+    return p.parse_args()
+
 
 async def main() -> None:
+    args = _parse_args()
+    if bool(args.checkpoint) and bool(args.resume):
+        print("Use only one of --checkpoint and --resume.", file=sys.stderr)
+        sys.exit(2)
+    if args.push_hf and not args.checkpoint:
+        print("--push-hf requires --checkpoint (nothing is saved on resume-only runs).", file=sys.stderr)
+        sys.exit(2)
+
     print("Starting…", flush=True)
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -80,7 +129,7 @@ async def main() -> None:
 
     llm = LLMFactory.create(
         provider="gemini",
-        model_name="gemini-2.5-flash",
+        model_name=MODEL_NAME,
         api_key=api_key,
     )
     docs = InMemoryDocumentProvider(POLICY_EXCERPTS)
@@ -89,30 +138,73 @@ async def main() -> None:
     sim = OpenSimula(llm, temperature=OPEN_SIMULA_TEMPERATURE)
     print("OpenSimula ready — taxonomy uses tqdm; httpx/google_genai logs are muted.\n", flush=True)
 
-    bundle = await sim.build_taxonomy(
-        INSTRUCTION_Y,
-        document_provider=docs,
-        target_depth_D=TARGET_DEPTH_D,
-        proposal_N=PROPOSAL_N,
-        max_factors=4,
-        max_children_per_node=8,
-        max_frontier_per_depth=12,
-        show_progress=True,
-    )
-    print()
+    if args.resume:
+        print(f"Resuming from checkpoint: {args.resume.resolve()}\n", flush=True)
+        ckpt = load_checkpoint(args.resume)
+        bundle = ckpt.bundle
+        spec = ckpt.sampling_strategy
+        if spec is None:
+            print("Checkpoint has no sampling_strategy.json; inferring strategies…", flush=True)
+            spec = await sim.infer_strategies(bundle)
+        tail = tqdm(
+            total=3,
+            desc="OpenSimula │ after taxonomy",
+            unit="step",
+            dynamic_ncols=True,
+        )
+        tail.set_postfix_str("sample mix")
+    else:
+        bundle = await sim.build_taxonomy(
+            INSTRUCTION_Y,
+            document_provider=docs,
+            target_depth_D=TARGET_DEPTH_D,
+            proposal_N=PROPOSAL_N,
+            max_factors=MAX_FACTORS,
+            max_children_per_node=MAX_CHILDREN_PER_NODE,
+            max_frontier_per_depth=MAX_FRONTIER_PER_DEPTH,
+            show_progress=True,
+        )
+        print()
 
-    OpenSimula.validate_taxonomy_bundle(bundle)
+        OpenSimula.validate_taxonomy_bundle(bundle)
 
-    tail = tqdm(
-        total=4,
-        desc="OpenSimula │ after taxonomy",
-        unit="step",
-        dynamic_ncols=True,
-    )
-    tail.set_postfix_str("infer strategies (§2.2)")
-    spec = await sim.infer_strategies(bundle)
-    tail.update(1)
-    tail.set_postfix_str("sample mix")
+        tail = tqdm(
+            total=4,
+            desc="OpenSimula │ after taxonomy",
+            unit="step",
+            dynamic_ncols=True,
+        )
+        tail.set_postfix_str("infer strategies (§2.2)")
+        spec = await sim.infer_strategies(bundle)
+        tail.update(1)
+        if args.checkpoint:
+            run_cfg = {
+                "example": "minimal_pipeline",
+                "model": MODEL_NAME,
+                "temperature": OPEN_SIMULA_TEMPERATURE,
+                "target_depth_D": TARGET_DEPTH_D,
+                "proposal_N": PROPOSAL_N,
+                "meta_prompt_K": META_PROMPT_K,
+                "complexify_c": COMPLEXIFY_C,
+                "max_factors": MAX_FACTORS,
+                "max_children_per_node": MAX_CHILDREN_PER_NODE,
+                "max_frontier_per_depth": MAX_FRONTIER_PER_DEPTH,
+            }
+            with Checkpointer(args.checkpoint) as cp:
+                bundle.save(cp)
+                spec.save(cp)
+                cp.write_run_config(run_cfg)
+            man = cp.manifest
+            assert man is not None
+            print(
+                f"Wrote OpenSimula checkpoint "
+                f"(format {man.format} {man.format_version}) → {args.checkpoint / 'opensimula'}\n",
+                flush=True,
+            )
+            if args.push_hf:
+                url = cp.push_to_hub(args.push_hf)
+                print(f"Pushed to Hub: {url}\n", flush=True)
+        tail.set_postfix_str("sample mix")
     mix = sim.sample_mix(bundle, spec)
     tail.update(1)
     tail.set_postfix_str(f"meta-prompts (K={META_PROMPT_K})")
