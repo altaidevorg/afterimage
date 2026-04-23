@@ -282,7 +282,9 @@ class TaxonomyBuilder:
             )
             q_next: list[str] = []
 
-            async def _expand_frontier_node(nid: str) -> tuple[list[str], ExpansionStepTrace]:
+            async def _expand_frontier_node(
+                nid: str,
+            ) -> tuple[list[str], ExpansionStepTrace]:
                 anc = _ancestors(nodes, nid)
                 sib_labels = _sibling_labels(nodes, nid)
                 ctx_lines = [

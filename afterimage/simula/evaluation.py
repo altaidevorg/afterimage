@@ -152,7 +152,11 @@ async def elo_complexity_scores(
             or len(set(ordering)) != k
             or any(not (0 <= i < k) for i in ordering)
         ):
-            logger.warning("Invalid Elo ordering from model (expected permutation 0..%s): %s", k - 1, ordering)
+            logger.warning(
+                "Invalid Elo ordering from model (expected permutation 0..%s): %s",
+                k - 1,
+                ordering,
+            )
             return start, None
         order = [batch_idx[i] for i in ordering]
         return start, order
