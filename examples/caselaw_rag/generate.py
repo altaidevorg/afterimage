@@ -102,7 +102,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--gemini-model",
-        default=os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
+        default=os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite-preview"),
         help="Gemini model id",
     )
     p.add_argument(
