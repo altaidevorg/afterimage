@@ -95,6 +95,13 @@ class ChatSession:
         """Send a message to the chat session asynchronously."""
         raise NotImplementedError
 
+    def close(self) -> None:
+        """Release any resources held by the chat session."""
+
+    async def aclose(self) -> None:
+        """Release any async resources held by the chat session."""
+        self.close()
+
 
 def _is_retryable_gemini_error(exc: Exception) -> bool:
     status_code = getattr(exc, "status_code", None)
@@ -114,12 +121,23 @@ def _is_retryable_gemini_error(exc: Exception) -> bool:
     )
 
 
+def _gemini_retry_delay(
+    attempt: int,
+    *,
+    initial_delay: float,
+    max_delay: float,
+) -> float:
+    base = min(max_delay, initial_delay * (2**attempt))
+    return random.uniform(base * 0.5, base * 1.5)
+
+
 class GeminiChatSession(ChatSession):
     """Gemini chat session implementation."""
 
     def __init__(
         self,
         chat,
+        client: genai.Client,
         model_name: str,
         max_retries: int = 3,
         retry_initial_delay: float = 2.0,
@@ -127,14 +145,18 @@ class GeminiChatSession(ChatSession):
     ):
         super().__init__()
         self.chat = chat
+        self.client = client
         self.model_name = model_name
         self.max_retries = max_retries
         self.retry_initial_delay = retry_initial_delay
         self.retry_max_delay = retry_max_delay
 
     def _retry_delay(self, attempt: int) -> float:
-        base = min(self.retry_max_delay, self.retry_initial_delay * (2**attempt))
-        return random.uniform(base * 0.5, base * 1.5)
+        return _gemini_retry_delay(
+            attempt,
+            initial_delay=self.retry_initial_delay,
+            max_delay=self.retry_max_delay,
+        )
 
     def send_message(
         self, message: str | ConversationEntry, temperature: float = 0.7, **kwargs
@@ -160,6 +182,12 @@ class GeminiChatSession(ChatSession):
             raw_response=response,
         )
 
+    def close(self) -> None:
+        try:
+            self.client.close()
+        except Exception:
+            pass
+
 
 class AsyncGeminiChatSession(ChatSession):
     """Asynchronous Gemini chat session implementation."""
@@ -167,6 +195,7 @@ class AsyncGeminiChatSession(ChatSession):
     def __init__(
         self,
         chat,
+        client: genai.Client,
         model_name: str,
         max_retries: int = 3,
         retry_initial_delay: float = 2.0,
@@ -174,14 +203,18 @@ class AsyncGeminiChatSession(ChatSession):
     ):
         super().__init__()
         self.chat = chat
+        self.client = client
         self.model_name = model_name
         self.max_retries = max_retries
         self.retry_initial_delay = retry_initial_delay
         self.retry_max_delay = retry_max_delay
 
     def _retry_delay(self, attempt: int) -> float:
-        base = min(self.retry_max_delay, self.retry_initial_delay * (2**attempt))
-        return random.uniform(base * 0.5, base * 1.5)
+        return _gemini_retry_delay(
+            attempt,
+            initial_delay=self.retry_initial_delay,
+            max_delay=self.retry_max_delay,
+        )
 
     async def asend_message(
         self, message: str | ConversationEntry, temperature: float = 0.7, **kwargs
@@ -208,6 +241,12 @@ class AsyncGeminiChatSession(ChatSession):
             model_name=self.model_name,
             raw_response=response,
         )
+
+    async def aclose(self) -> None:
+        try:
+            await self.client.aio.aclose()
+        except Exception:
+            pass
 
 
 class OpenAIChatSession(ChatSession):
@@ -459,8 +498,11 @@ class GeminiProvider(LLMProvider):
         self.kwargs = kwargs
 
     def _retry_delay(self, attempt: int) -> float:
-        base = min(self.retry_max_delay, self.retry_initial_delay * (2**attempt))
-        return random.uniform(base * 0.5, base * 1.5)
+        return _gemini_retry_delay(
+            attempt,
+            initial_delay=self.retry_initial_delay,
+            max_delay=self.retry_max_delay,
+        )
 
     def generate_content(
         self,
@@ -470,20 +512,18 @@ class GeminiProvider(LLMProvider):
         stop_sequences: Optional[List[str]] = None,
         **kwargs,
     ) -> LLMResponse:
-        def generation_config() -> dict[str, Any]:
-            config = {
-                "temperature": temperature,
-                "system_instruction": self.system_instruction,
-                "safety_settings": self.safety_settings,
-                **self.kwargs,
-            }
-            if kwargs:
-                config.update(**kwargs)
-            if max_tokens:
-                config["max_output_tokens"] = max_tokens
-            if stop_sequences:
-                config["stop_sequences"] = stop_sequences
-            return config
+        generation_config = {
+            "temperature": temperature,
+            "system_instruction": self.system_instruction,
+            "safety_settings": self.safety_settings,
+            **self.kwargs,
+        }
+        if kwargs:
+            generation_config.update(**kwargs)
+        if max_tokens:
+            generation_config["max_output_tokens"] = max_tokens
+        if stop_sequences:
+            generation_config["stop_sequences"] = stop_sequences
 
         for attempt in range(self.max_retries + 1):
             api_key = self.key_pool.get_next_key()
@@ -492,7 +532,7 @@ class GeminiProvider(LLMProvider):
                 response = client.models.generate_content(
                     model=self.model_name,
                     contents=prompt,
-                    config=generation_config(),
+                    config=generation_config,
                 )
 
                 return LLMResponse(
@@ -512,8 +552,6 @@ class GeminiProvider(LLMProvider):
                 time.sleep(self._retry_delay(attempt))
             finally:
                 self._close_client(client)
-
-        raise RuntimeError("Gemini generation retry loop exited unexpectedly")
 
     async def agenerate_content(
         self,
@@ -523,20 +561,18 @@ class GeminiProvider(LLMProvider):
         stop_sequences: Optional[List[str]] = None,
         **kwargs,
     ) -> LLMResponse:
-        def generation_config() -> dict[str, Any]:
-            config = {
-                "temperature": temperature,
-                "system_instruction": self.system_instruction,
-                "safety_settings": self.safety_settings,
-                **self.kwargs,
-            }
-            if kwargs:
-                config.update(**kwargs)
-            if max_tokens:
-                config["max_output_tokens"] = max_tokens
-            if stop_sequences:
-                config["stop_sequences"] = stop_sequences
-            return config
+        generation_config = {
+            "temperature": temperature,
+            "system_instruction": self.system_instruction,
+            "safety_settings": self.safety_settings,
+            **self.kwargs,
+        }
+        if kwargs:
+            generation_config.update(**kwargs)
+        if max_tokens:
+            generation_config["max_output_tokens"] = max_tokens
+        if stop_sequences:
+            generation_config["stop_sequences"] = stop_sequences
 
         for attempt in range(self.max_retries + 1):
             api_key = await self.key_pool.aget_next_key()
@@ -545,7 +581,7 @@ class GeminiProvider(LLMProvider):
                 response = await client.aio.models.generate_content(
                     model=self.model_name,
                     contents=prompt,
-                    config=generation_config(),
+                    config=generation_config,
                 )
 
                 return LLMResponse(
@@ -566,8 +602,6 @@ class GeminiProvider(LLMProvider):
             finally:
                 await self._aclose_client(client)
 
-        raise RuntimeError("Gemini generation retry loop exited unexpectedly")
-
     def generate_structured(
         self,
         prompt: str,
@@ -575,18 +609,16 @@ class GeminiProvider(LLMProvider):
         temperature: float = 0.7,
         **kwargs,
     ) -> StructuredLLMResponse[T]:
-        def generation_config() -> dict[str, Any]:
-            config = {
-                "temperature": temperature,
-                "system_instruction": self.system_instruction,
-                "safety_settings": self.safety_settings,
-                "response_mime_type": "application/json",
-                "response_schema": schema,
-                **self.kwargs,
-            }
-            if kwargs:
-                config.update(**kwargs)
-            return config
+        generation_config = {
+            "temperature": temperature,
+            "system_instruction": self.system_instruction,
+            "safety_settings": self.safety_settings,
+            "response_mime_type": "application/json",
+            "response_schema": schema,
+            **self.kwargs,
+        }
+        if kwargs:
+            generation_config.update(**kwargs)
 
         for attempt in range(self.max_retries + 1):
             api_key = self.key_pool.get_next_key()
@@ -595,7 +627,7 @@ class GeminiProvider(LLMProvider):
                 response = client.models.generate_content(
                     model=self.model_name,
                     contents=prompt,
-                    config=generation_config(),
+                    config=generation_config,
                 )
 
                 return StructuredLLMResponse(
@@ -619,8 +651,6 @@ class GeminiProvider(LLMProvider):
             finally:
                 self._close_client(client)
 
-        raise RuntimeError("Gemini structured generation retry loop exited unexpectedly")
-
     async def agenerate_structured(
         self,
         prompt: str,
@@ -628,18 +658,16 @@ class GeminiProvider(LLMProvider):
         temperature: float = 0.7,
         **kwargs,
     ) -> StructuredLLMResponse[T]:
-        def generation_config() -> dict[str, Any]:
-            config = {
-                "temperature": temperature,
-                "system_instruction": self.system_instruction,
-                "safety_settings": self.safety_settings,
-                "response_mime_type": "application/json",
-                "response_schema": schema,
-                **self.kwargs,
-            }
-            if kwargs:
-                config.update(**kwargs)
-            return config
+        generation_config = {
+            "temperature": temperature,
+            "system_instruction": self.system_instruction,
+            "safety_settings": self.safety_settings,
+            "response_mime_type": "application/json",
+            "response_schema": schema,
+            **self.kwargs,
+        }
+        if kwargs:
+            generation_config.update(**kwargs)
 
         for attempt in range(self.max_retries + 1):
             api_key = await self.key_pool.aget_next_key()
@@ -648,7 +676,7 @@ class GeminiProvider(LLMProvider):
                 response = await client.aio.models.generate_content(
                     model=self.model_name,
                     contents=prompt,
-                    config=generation_config(),
+                    config=generation_config,
                 )
                 return StructuredLLMResponse(
                     text=response.text or "",
@@ -670,8 +698,6 @@ class GeminiProvider(LLMProvider):
                 await asyncio.sleep(self._retry_delay(attempt))
             finally:
                 await self._aclose_client(client)
-
-        raise RuntimeError("Gemini structured generation retry loop exited unexpectedly")
 
     def start_chat(
         self,
@@ -701,6 +727,7 @@ class GeminiProvider(LLMProvider):
 
             return GeminiChatSession(
                 chat,
+                client,
                 self.model_name,
                 max_retries=self.max_retries,
                 retry_initial_delay=self.retry_initial_delay,
@@ -741,6 +768,7 @@ class GeminiProvider(LLMProvider):
 
             return AsyncGeminiChatSession(
                 chat,
+                client,
                 self.model_name,
                 max_retries=self.max_retries,
                 retry_initial_delay=self.retry_initial_delay,

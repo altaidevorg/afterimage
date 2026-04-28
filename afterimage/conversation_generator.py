@@ -450,6 +450,8 @@ class ConversationGenerator(BaseGenerator):
         conversation = []
         th = self.turn_hooks
         first_correspondent_message = "Ask your first question."
+        correspondent: ChatSession | None = None
+        respondent: ChatSession | None = None
 
         try:
             if correspondent_prompt is None:
@@ -575,6 +577,11 @@ class ConversationGenerator(BaseGenerator):
                 },
             )
             raise
+        finally:
+            if correspondent is not None:
+                await correspondent.aclose()
+            if respondent is not None:
+                await respondent.aclose()
 
     async def generate_single(
         self,

@@ -93,6 +93,43 @@ class MockLLMProvider:
 
 
 @pytest.mark.asyncio
+async def test_async_conversation_generator_closes_chat_sessions():
+    from afterimage.providers import llm_providers
+
+    sessions = []
+
+    class ClosingChatSession(MockChatSession):
+        def __init__(self):
+            super().__init__()
+            self.closed = False
+
+        async def aclose(self):
+            self.closed = True
+
+    class ClosingLLMProvider(MockLLMProvider):
+        async def astart_chat(self, **kwargs) -> ChatSession:
+            session = ClosingChatSession()
+            sessions.append(session)
+            return session
+
+    original_create = llm_providers.LLMFactory.create
+    llm_providers.LLMFactory.create = MagicMock(return_value=ClosingLLMProvider())
+
+    try:
+        generator = AsyncConversationGenerator(
+            respondent_prompt="You are a helpful assistant.",
+            api_key="mock_key",
+            correspondent_prompt="You are a curious user.",
+        )
+        await generator.go(turns=1, first_question="First question?")
+    finally:
+        llm_providers.LLMFactory.create = original_create
+
+    assert len(sessions) == 2
+    assert all(session.closed for session in sessions)
+
+
+@pytest.mark.asyncio
 async def test_async_conversation_generator_generate():
     from afterimage.providers import llm_providers
 
