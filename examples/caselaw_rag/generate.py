@@ -95,9 +95,33 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Max turns per dialog (uniform random 1..max_turns)",
     )
     p.add_argument(
+        "--max-concurrency",
+        type=int,
+        default=int(os.environ.get("MAX_CONCURRENCY", "1")),
+        help="Concurrent conversation workers; keep low for Gemini free-tier quotas",
+    )
+    p.add_argument(
         "--gemini-model",
-        default=os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
+        default=os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite-preview"),
         help="Gemini model id",
+    )
+    p.add_argument(
+        "--gemini-max-retries",
+        type=int,
+        default=int(os.environ.get("GEMINI_MAX_RETRIES", "5")),
+        help="Retries for transient Gemini 429/5xx responses",
+    )
+    p.add_argument(
+        "--gemini-retry-initial-delay",
+        type=float,
+        default=float(os.environ.get("GEMINI_RETRY_INITIAL_DELAY", "5")),
+        help="Initial retry delay in seconds before exponential backoff",
+    )
+    p.add_argument(
+        "--gemini-retry-max-delay",
+        type=float,
+        default=float(os.environ.get("GEMINI_RETRY_MAX_DELAY", "60")),
+        help="Maximum retry delay in seconds",
     )
     p.add_argument(
         "--embedding-model",
@@ -178,6 +202,11 @@ async def _async_main(args: argparse.Namespace) -> None:
         documents=documents,
         model_name=args.gemini_model,
         num_random_contexts=1,
+        llm_create_extras={
+            "max_retries": args.gemini_max_retries,
+            "retry_initial_delay": args.gemini_retry_initial_delay,
+            "retry_max_delay": args.gemini_retry_max_delay,
+        },
     )
 
     embedding_provider = EmbeddingProviderFactory.create(
@@ -211,12 +240,18 @@ async def _async_main(args: argparse.Namespace) -> None:
         instruction_generator_callback=instruction_cb,
         respondent_prompt_modifier=modifier,
         embedding_provider=embedding_provider if args.auto_improve else None,
+        llm_factory_kwargs={
+            "max_retries": args.gemini_max_retries,
+            "retry_initial_delay": args.gemini_retry_initial_delay,
+            "retry_max_delay": args.gemini_retry_max_delay,
+        },
     )
 
     print(
         f"Qdrant url={args.qdrant_url!r} collection={args.collection!r} "
         f"content_key={args.content_key!r} embedding_model={args.embedding_model!r}\n"
         f"num_dialogs={args.num_dialogs} max_turns={args.max_turns} "
+        f"max_concurrency={args.max_concurrency} "
         f"output={args.output}"
     )
 
@@ -224,6 +259,7 @@ async def _async_main(args: argparse.Namespace) -> None:
         await conv_gen.generate(
             num_dialogs=args.num_dialogs,
             max_turns=args.max_turns,
+            max_concurrency=args.max_concurrency,
         )
         gen_time = monitor.get_metrics("generation_time", window=timedelta(hours=1))
         if gen_time.get("mean") is not None:

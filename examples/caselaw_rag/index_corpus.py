@@ -32,7 +32,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models as qm
 from tqdm import tqdm
 
-DEFAULT_DATASET = "free-law/Caselaw_Access_Project_embeddings"
+DEFAULT_DATASET = "altaidevorg/caselaw-access-project-embeddings-pq0-chunk-0000"
 EXPECTED_DIM = 768
 TEXT_FIELD = "text"
 VECTOR_FIELD = "embeddings"

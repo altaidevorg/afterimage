@@ -1,4 +1,7 @@
+import asyncio
 import json
+import random
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, Generic, List, Optional, Protocol, Type, TypeVar
 
@@ -92,21 +95,82 @@ class ChatSession:
         """Send a message to the chat session asynchronously."""
         raise NotImplementedError
 
+    def close(self) -> None:
+        """Release any resources held by the chat session."""
+
+    async def aclose(self) -> None:
+        """Release any async resources held by the chat session."""
+        self.close()
+
+
+def _is_retryable_gemini_error(exc: Exception) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    if status_code in {429, 500, 502, 503, 504}:
+        return True
+
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "resource_exhausted",
+            "rate limit",
+            "too many requests",
+            "temporarily unavailable",
+            "service unavailable",
+        )
+    )
+
+
+def _gemini_retry_delay(
+    attempt: int,
+    *,
+    initial_delay: float,
+    max_delay: float,
+) -> float:
+    base = min(max_delay, initial_delay * (2**attempt))
+    return random.uniform(base * 0.5, base * 1.5)
+
 
 class GeminiChatSession(ChatSession):
     """Gemini chat session implementation."""
 
-    def __init__(self, chat, model_name: str):
+    def __init__(
+        self,
+        chat,
+        client: genai.Client,
+        model_name: str,
+        max_retries: int = 3,
+        retry_initial_delay: float = 2.0,
+        retry_max_delay: float = 30.0,
+    ):
         super().__init__()
         self.chat = chat
+        self.client = client
         self.model_name = model_name
+        self.max_retries = max_retries
+        self.retry_initial_delay = retry_initial_delay
+        self.retry_max_delay = retry_max_delay
+
+    def _retry_delay(self, attempt: int) -> float:
+        return _gemini_retry_delay(
+            attempt,
+            initial_delay=self.retry_initial_delay,
+            max_delay=self.retry_max_delay,
+        )
 
     def send_message(
         self, message: str | ConversationEntry, temperature: float = 0.7, **kwargs
     ) -> LLMResponse:
         content = message if isinstance(message, str) else message.content
 
-        response = self.chat.send_message(content)
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = self.chat.send_message(content)
+                break
+            except Exception as exc:
+                if attempt >= self.max_retries or not _is_retryable_gemini_error(exc):
+                    raise
+                time.sleep(self._retry_delay(attempt))
 
         return LLMResponse(
             text=response.text,
@@ -118,21 +182,53 @@ class GeminiChatSession(ChatSession):
             raw_response=response,
         )
 
+    def close(self) -> None:
+        try:
+            self.client.close()
+        except Exception:
+            pass
+
 
 class AsyncGeminiChatSession(ChatSession):
     """Asynchronous Gemini chat session implementation."""
 
-    def __init__(self, chat, model_name: str):
+    def __init__(
+        self,
+        chat,
+        client: genai.Client,
+        model_name: str,
+        max_retries: int = 3,
+        retry_initial_delay: float = 2.0,
+        retry_max_delay: float = 30.0,
+    ):
         super().__init__()
         self.chat = chat
+        self.client = client
         self.model_name = model_name
+        self.max_retries = max_retries
+        self.retry_initial_delay = retry_initial_delay
+        self.retry_max_delay = retry_max_delay
+
+    def _retry_delay(self, attempt: int) -> float:
+        return _gemini_retry_delay(
+            attempt,
+            initial_delay=self.retry_initial_delay,
+            max_delay=self.retry_max_delay,
+        )
 
     async def asend_message(
         self, message: str | ConversationEntry, temperature: float = 0.7, **kwargs
     ) -> LLMResponse:
         content = message if isinstance(message, str) else message.content
 
-        response = await self.chat.send_message(content)
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = await self.chat.send_message(content)
+                break
+            except Exception as exc:
+                if attempt >= self.max_retries or not _is_retryable_gemini_error(exc):
+                    raise
+                await asyncio.sleep(self._retry_delay(attempt))
 
         total_token_count = response.usage_metadata.total_token_count
         self.token_count = total_token_count
@@ -145,6 +241,12 @@ class AsyncGeminiChatSession(ChatSession):
             model_name=self.model_name,
             raw_response=response,
         )
+
+    async def aclose(self) -> None:
+        try:
+            await self.client.aio.aclose()
+        except Exception:
+            pass
 
 
 class OpenAIChatSession(ChatSession):
@@ -332,6 +434,9 @@ class GeminiProvider(LLMProvider):
     def _close_client(self, client: genai.Client):
         """Helper to close sync client resources."""
         try:
+            if hasattr(client, "close"):
+                client.close()
+                return
             # Close httpx client if it exists (private attribute)
             if hasattr(client, "_api_client"):
                 api_client = client._api_client
@@ -343,6 +448,10 @@ class GeminiProvider(LLMProvider):
     async def _aclose_client(self, client: genai.Client):
         """Helper to close async client resources."""
         try:
+            aio_client = getattr(client, "aio", None)
+            if aio_client is not None and hasattr(aio_client, "aclose"):
+                await aio_client.aclose()
+                return
             # Close aiohttp session if it exists (private attribute)
             # Accessing client.aio creates the async client wrappers,
             # so we check if _aio is already populated or if we can access the underlying api_client differently.
@@ -370,6 +479,9 @@ class GeminiProvider(LLMProvider):
         model_name: str = "gemini-2.0-flash",
         system_instruction: str | None = None,
         safety_settings: Optional[List[Dict[str, str]]] = None,
+        max_retries: int = 3,
+        retry_initial_delay: float = 2.0,
+        retry_max_delay: float = 30.0,
         **kwargs,
     ):
         self.key_pool = (
@@ -380,7 +492,17 @@ class GeminiProvider(LLMProvider):
         self.model_name = model_name
         self.system_instruction = system_instruction
         self.safety_settings = safety_settings or default_safety_settings
+        self.max_retries = max(0, max_retries)
+        self.retry_initial_delay = retry_initial_delay
+        self.retry_max_delay = retry_max_delay
         self.kwargs = kwargs
+
+    def _retry_delay(self, attempt: int) -> float:
+        return _gemini_retry_delay(
+            attempt,
+            initial_delay=self.retry_initial_delay,
+            max_delay=self.retry_max_delay,
+        )
 
     def generate_content(
         self,
@@ -390,42 +512,46 @@ class GeminiProvider(LLMProvider):
         stop_sequences: Optional[List[str]] = None,
         **kwargs,
     ) -> LLMResponse:
-        api_key = self.key_pool.get_next_key()
-        client = genai.Client(api_key=api_key, vertexai=False)
+        generation_config = {
+            "temperature": temperature,
+            "system_instruction": self.system_instruction,
+            "safety_settings": self.safety_settings,
+            **self.kwargs,
+        }
+        if kwargs:
+            generation_config.update(**kwargs)
+        if max_tokens:
+            generation_config["max_output_tokens"] = max_tokens
+        if stop_sequences:
+            generation_config["stop_sequences"] = stop_sequences
 
-        try:
-            generation_config = {
-                "temperature": temperature,
-                "system_instruction": self.system_instruction,
-                "safety_settings": self.safety_settings,
-                **self.kwargs,
-            }
-            if kwargs:
-                generation_config.update(**kwargs)
-            if max_tokens:
-                generation_config["max_output_tokens"] = max_tokens
-            if stop_sequences:
-                generation_config["stop_sequences"] = stop_sequences
+        for attempt in range(self.max_retries + 1):
+            api_key = self.key_pool.get_next_key()
+            client = genai.Client(api_key=api_key, vertexai=False)
+            try:
+                response = client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=generation_config,
+                )
 
-            response = client.models.generate_content(
-                model=self.model_name, contents=prompt, config=generation_config
-            )
+                return LLMResponse(
+                    text=response.text,
+                    prompt_token_count=response.usage_metadata.prompt_token_count,
+                    completion_token_count=response.usage_metadata.candidates_token_count,
+                    total_token_count=response.usage_metadata.total_token_count,
+                    finish_reason=str(response.candidates[0].finish_reason),
+                    model_name=self.model_name,
+                    raw_response=response,
+                )
 
-            return LLMResponse(
-                text=response.text,
-                prompt_token_count=response.usage_metadata.prompt_token_count,
-                completion_token_count=response.usage_metadata.candidates_token_count,
-                total_token_count=response.usage_metadata.total_token_count,
-                finish_reason=str(response.candidates[0].finish_reason),
-                model_name=self.model_name,
-                raw_response=response,
-            )
-
-        except Exception:
-            self.key_pool.report_error(api_key)
-            raise
-        finally:
-            self._close_client(client)
+            except Exception as exc:
+                self.key_pool.report_error(api_key)
+                if attempt >= self.max_retries or not _is_retryable_gemini_error(exc):
+                    raise
+                time.sleep(self._retry_delay(attempt))
+            finally:
+                self._close_client(client)
 
     async def agenerate_content(
         self,
@@ -435,42 +561,46 @@ class GeminiProvider(LLMProvider):
         stop_sequences: Optional[List[str]] = None,
         **kwargs,
     ) -> LLMResponse:
-        api_key = self.key_pool.get_next_key()
-        client = genai.Client(api_key=api_key, vertexai=False)
+        generation_config = {
+            "temperature": temperature,
+            "system_instruction": self.system_instruction,
+            "safety_settings": self.safety_settings,
+            **self.kwargs,
+        }
+        if kwargs:
+            generation_config.update(**kwargs)
+        if max_tokens:
+            generation_config["max_output_tokens"] = max_tokens
+        if stop_sequences:
+            generation_config["stop_sequences"] = stop_sequences
 
-        try:
-            generation_config = {
-                "temperature": temperature,
-                "system_instruction": self.system_instruction,
-                "safety_settings": self.safety_settings,
-                **self.kwargs,
-            }
-            if kwargs:
-                generation_config.update(**kwargs)
-            if max_tokens:
-                generation_config["max_output_tokens"] = max_tokens
-            if stop_sequences:
-                generation_config["stop_sequences"] = stop_sequences
+        for attempt in range(self.max_retries + 1):
+            api_key = await self.key_pool.aget_next_key()
+            client = genai.Client(api_key=api_key, vertexai=False)
+            try:
+                response = await client.aio.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=generation_config,
+                )
 
-            response = await client.aio.models.generate_content(
-                model=self.model_name, contents=prompt, config=generation_config
-            )
+                return LLMResponse(
+                    text=response.text,
+                    prompt_token_count=response.usage_metadata.prompt_token_count,
+                    completion_token_count=response.usage_metadata.candidates_token_count,
+                    total_token_count=response.usage_metadata.total_token_count,
+                    finish_reason=str(response.candidates[0].finish_reason),
+                    model_name=self.model_name,
+                    raw_response=response,
+                )
 
-            return LLMResponse(
-                text=response.text,
-                prompt_token_count=response.usage_metadata.prompt_token_count,
-                completion_token_count=response.usage_metadata.candidates_token_count,
-                total_token_count=response.usage_metadata.total_token_count,
-                finish_reason=str(response.candidates[0].finish_reason),
-                model_name=self.model_name,
-                raw_response=response,
-            )
-
-        except Exception:
-            self.key_pool.report_error(api_key)
-            raise
-        finally:
-            await self._aclose_client(client)
+            except Exception as exc:
+                await self.key_pool.areport_error(api_key)
+                if attempt >= self.max_retries or not _is_retryable_gemini_error(exc):
+                    raise
+                await asyncio.sleep(self._retry_delay(attempt))
+            finally:
+                await self._aclose_client(client)
 
     def generate_structured(
         self,
@@ -479,43 +609,47 @@ class GeminiProvider(LLMProvider):
         temperature: float = 0.7,
         **kwargs,
     ) -> StructuredLLMResponse[T]:
-        api_key = self.key_pool.get_next_key()
-        client = genai.Client(api_key=api_key, vertexai=False)
+        generation_config = {
+            "temperature": temperature,
+            "system_instruction": self.system_instruction,
+            "safety_settings": self.safety_settings,
+            "response_mime_type": "application/json",
+            "response_schema": schema,
+            **self.kwargs,
+        }
+        if kwargs:
+            generation_config.update(**kwargs)
 
-        try:
-            generation_config = {
-                "temperature": temperature,
-                "system_instruction": self.system_instruction,
-                "safety_settings": self.safety_settings,
-                "response_mime_type": "application/json",
-                "response_schema": schema,
-                **self.kwargs,
-            }
-            if kwargs:
-                generation_config.update(**kwargs)
+        for attempt in range(self.max_retries + 1):
+            api_key = self.key_pool.get_next_key()
+            client = genai.Client(api_key=api_key, vertexai=False)
+            try:
+                response = client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=generation_config,
+                )
 
-            response = client.models.generate_content(
-                model=self.model_name, contents=prompt, config=generation_config
-            )
+                return StructuredLLMResponse(
+                    text=response.text or "",
+                    parsed=response.parsed
+                    if hasattr(response, "parsed")
+                    else schema.model_validate_json(response.text),
+                    prompt_token_count=response.usage_metadata.prompt_token_count,
+                    completion_token_count=response.usage_metadata.candidates_token_count,
+                    total_token_count=response.usage_metadata.total_token_count,
+                    finish_reason=str(response.candidates[0].finish_reason),
+                    model_name=self.model_name,
+                    raw_response=response,
+                )
 
-            return StructuredLLMResponse(
-                text=response.text or "",
-                parsed=response.parsed
-                if hasattr(response, "parsed")
-                else schema.model_validate_json(response.text),
-                prompt_token_count=response.usage_metadata.prompt_token_count,
-                completion_token_count=response.usage_metadata.candidates_token_count,
-                total_token_count=response.usage_metadata.total_token_count,
-                finish_reason=str(response.candidates[0].finish_reason),
-                model_name=self.model_name,
-                raw_response=response,
-            )
-
-        except Exception:
-            self.key_pool.report_error(api_key)
-            raise
-        finally:
-            self._close_client(client)
+            except Exception as exc:
+                self.key_pool.report_error(api_key)
+                if attempt >= self.max_retries or not _is_retryable_gemini_error(exc):
+                    raise
+                time.sleep(self._retry_delay(attempt))
+            finally:
+                self._close_client(client)
 
     async def agenerate_structured(
         self,
@@ -524,42 +658,46 @@ class GeminiProvider(LLMProvider):
         temperature: float = 0.7,
         **kwargs,
     ) -> StructuredLLMResponse[T]:
-        api_key = self.key_pool.get_next_key()
-        client = genai.Client(api_key=api_key, vertexai=False)
+        generation_config = {
+            "temperature": temperature,
+            "system_instruction": self.system_instruction,
+            "safety_settings": self.safety_settings,
+            "response_mime_type": "application/json",
+            "response_schema": schema,
+            **self.kwargs,
+        }
+        if kwargs:
+            generation_config.update(**kwargs)
 
-        try:
-            generation_config = {
-                "temperature": temperature,
-                "system_instruction": self.system_instruction,
-                "safety_settings": self.safety_settings,
-                "response_mime_type": "application/json",
-                "response_schema": schema,
-                **self.kwargs,
-            }
-            if kwargs:
-                generation_config.update(**kwargs)
+        for attempt in range(self.max_retries + 1):
+            api_key = await self.key_pool.aget_next_key()
+            client = genai.Client(api_key=api_key, vertexai=False)
+            try:
+                response = await client.aio.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=generation_config,
+                )
+                return StructuredLLMResponse(
+                    text=response.text or "",
+                    parsed=response.parsed
+                    if hasattr(response, "parsed")
+                    else schema.model_validate_json(response.text),
+                    prompt_token_count=response.usage_metadata.prompt_token_count,
+                    completion_token_count=response.usage_metadata.candidates_token_count,
+                    total_token_count=response.usage_metadata.total_token_count,
+                    finish_reason=str(response.candidates[0].finish_reason),
+                    model_name=self.model_name,
+                    raw_response=response,
+                )
 
-            response = await client.aio.models.generate_content(
-                model=self.model_name, contents=prompt, config=generation_config
-            )
-            return StructuredLLMResponse(
-                text=response.text or "",
-                parsed=response.parsed
-                if hasattr(response, "parsed")
-                else schema.model_validate_json(response.text),
-                prompt_token_count=response.usage_metadata.prompt_token_count,
-                completion_token_count=response.usage_metadata.candidates_token_count,
-                total_token_count=response.usage_metadata.total_token_count,
-                finish_reason=str(response.candidates[0].finish_reason),
-                model_name=self.model_name,
-                raw_response=response,
-            )
-
-        except Exception:
-            self.key_pool.report_error(api_key)
-            raise
-        finally:
-            await self._aclose_client(client)
+            except Exception as exc:
+                await self.key_pool.areport_error(api_key)
+                if attempt >= self.max_retries or not _is_retryable_gemini_error(exc):
+                    raise
+                await asyncio.sleep(self._retry_delay(attempt))
+            finally:
+                await self._aclose_client(client)
 
     def start_chat(
         self,
@@ -587,7 +725,14 @@ class GeminiProvider(LLMProvider):
 
             chat = client.chats.create(model=self.model_name, config=generation_config)
 
-            return GeminiChatSession(chat, self.model_name)
+            return GeminiChatSession(
+                chat,
+                client,
+                self.model_name,
+                max_retries=self.max_retries,
+                retry_initial_delay=self.retry_initial_delay,
+                retry_max_delay=self.retry_max_delay,
+            )
 
         except Exception:
             self.key_pool.report_error(api_key)
@@ -600,7 +745,7 @@ class GeminiProvider(LLMProvider):
         stop_sequences: Optional[List[str]] = None,
         **kwargs,
     ) -> ChatSession:
-        api_key = self.key_pool.get_next_key()
+        api_key = await self.key_pool.aget_next_key()
 
         try:
             client = genai.Client(api_key=api_key)
@@ -621,10 +766,17 @@ class GeminiProvider(LLMProvider):
                 model=self.model_name, config=generation_config
             )
 
-            return AsyncGeminiChatSession(chat, self.model_name)
+            return AsyncGeminiChatSession(
+                chat,
+                client,
+                self.model_name,
+                max_retries=self.max_retries,
+                retry_initial_delay=self.retry_initial_delay,
+                retry_max_delay=self.retry_max_delay,
+            )
 
         except Exception:
-            self.key_pool.report_error(api_key)
+            await self.key_pool.areport_error(api_key)
             raise
 
 
