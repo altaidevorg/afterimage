@@ -144,6 +144,14 @@ def build_conversation_run(config: AfterImageConfig) -> BuiltConversationRun:
 
         respondent_prompt_modifier = WithContextRespondentPromptModifier()
 
+    if config.skills.enabled:
+        from .skills import DirectorySkillStore, SkillRespondentPromptModifier
+
+        respondent_prompt_modifier = SkillRespondentPromptModifier(
+            skill_store=DirectorySkillStore(config.skills.path),
+            base_modifier=respondent_prompt_modifier,
+        )
+
     storage = _build_storage(config)
 
     auto_improve = config.quality.auto_improve
@@ -209,7 +217,10 @@ def _build_document_provider(config: AfterImageConfig):
         if docs.path is None:
             raise ValueError("documents.path is required for jsonl provider")
         return JSONLDocumentProvider(
-            path_pattern=docs.path, content_key=docs.content_key
+            path_pattern=docs.path,
+            content_key=docs.content_key,
+            preserve_ids=docs.preserve_ids,
+            include_metadata=docs.include_metadata,
         )
 
     if provider_type == "qdrant":

@@ -20,6 +20,7 @@ from afterimage.metadata_utils import extract_unique_context_ids
 from afterimage.types import ConversationWithContext, Document, GenerationState
 from afterimage.persona_generator import PersonaGenerator
 from afterimage.providers import InMemoryDocumentProvider
+from afterimage.providers.document_providers import JSONLDocumentProvider
 from afterimage.structured_generator import AsyncStructuredGenerator
 
 
@@ -50,6 +51,47 @@ def test_report_doc_usage_updates_sampling_weights():
     assert provider._doc_usage_counts["doc1"] == 1
     assert provider._doc_sampling_weights["doc1"] == 2.0
     assert provider._doc_sampling_weights["doc2"] == 3.0
+
+
+def test_jsonl_document_provider_default_keeps_file_line_ids(tmp_path):
+    path = tmp_path / "docs.jsonl"
+    path.write_text(
+        '{"id":"ctx-1","text":"Context text","metadata":{"context_id":"ctx-1"}}\n',
+        encoding="utf-8",
+    )
+
+    provider = JSONLDocumentProvider(str(path), content_key="text")
+    docs = provider.get_all()
+
+    assert len(docs) == 1
+    assert docs[0].id == f"{path.resolve()}:1"
+    assert docs[0].metadata == {}
+
+
+def test_jsonl_document_provider_can_preserve_id_and_metadata(tmp_path):
+    path = tmp_path / "docs.jsonl"
+    path.write_text(
+        (
+            '{"id":"ctx-1","text":"Context text",'
+            '"metadata":{"context_id":"ctx-1","kind":"test"},'
+            '"rubrics":["Must cite the policy."]}\n'
+        ),
+        encoding="utf-8",
+    )
+
+    provider = JSONLDocumentProvider(
+        str(path),
+        content_key="text",
+        preserve_ids=True,
+        include_metadata=True,
+    )
+    docs = provider.get_all()
+
+    assert len(docs) == 1
+    assert docs[0].id == "ctx-1"
+    assert docs[0].metadata["context_id"] == "ctx-1"
+    assert docs[0].metadata["kind"] == "test"
+    assert docs[0].metadata["rubrics"] == ["Must cite the policy."]
 
 
 def test_mark_fully_covered_excludes_document_from_sampling():

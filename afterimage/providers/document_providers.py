@@ -362,6 +362,8 @@ class JSONLDocumentProvider(DocumentProvider):
         cache: bool = True,
         max_docs: Optional[int] = None,
         target_context_usage_count: int | None = None,
+        preserve_ids: bool = False,
+        include_metadata: bool = False,
     ):
         self.pattern = path_pattern
         self.content_key = content_key
@@ -374,6 +376,8 @@ class JSONLDocumentProvider(DocumentProvider):
         self._cache_enabled = bool(cache)
         self._cache: Optional[list[Document]] = None
         self._max_docs = max_docs
+        self.preserve_ids = preserve_ids
+        self.include_metadata = include_metadata
 
     def _find_files(self) -> List[str]:
         return glob.glob(self.pattern, recursive=self.recursive)
@@ -401,10 +405,28 @@ class JSONLDocumentProvider(DocumentProvider):
                         if isinstance(obj, dict) and self.content_key in obj:
                             val = obj[self.content_key]
                             if isinstance(val, str) and val.strip():
+                                fallback_id = f"{Path(fp).resolve()}:{line_number}"
+                                metadata_obj = obj.get("metadata")
+                                metadata = metadata_obj if isinstance(metadata_obj, dict) else {}
+                                doc_id = fallback_id
+                                if self.preserve_ids:
+                                    doc_id = (
+                                        obj.get("id")
+                                        or metadata.get("context_id")
+                                        or fallback_id
+                                    )
+                                if self.include_metadata:
+                                    metadata = dict(metadata)
+                                    for key, value in obj.items():
+                                        if key not in {self.content_key, "id", "metadata"}:
+                                            metadata.setdefault(key, value)
+                                else:
+                                    metadata = {}
                                 docs.append(
                                     Document(
-                                        id=f"{Path(fp).resolve()}:{line_number}",
+                                        id=str(doc_id),
                                         text=val.strip(),
+                                        metadata=metadata,
                                     )
                                 )
                                 if self._max_docs and len(docs) >= self._max_docs:
