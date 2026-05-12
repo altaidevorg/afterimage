@@ -172,6 +172,52 @@ def test_directory_skill_store_round_trip(tmp_path):
     assert (tmp_path / context_id / "SKILL.md").exists()
 
 
+def test_directory_skill_store_caches_selected_skill_and_manifest(tmp_path):
+    store = DirectorySkillStore(tmp_path)
+    doc = Document(id="doc-1", text="Refunds are allowed within 24 hours.")
+    context_id = store.register_context(doc)
+    version = SkillVersion(
+        id="skill-v1",
+        context_id=context_id,
+        iteration=1,
+        name="refund-policy-check",
+        description="Use refund timing constraints.",
+        content="Check the 24 hour refund limit.",
+    )
+
+    store.save_version(version)
+    store.write_selection(
+        SkillSelectionResult(
+            context_id=context_id,
+            selected_version_id=version.id,
+            selected_iteration=1,
+            hard_score=1.0,
+            easy_score=1.0,
+            combined_score=1.0,
+        )
+    )
+
+    first = store.load_selected(context_text=doc.text)
+    assert first is not None
+    (tmp_path / "manifest.jsonl").unlink()
+    (tmp_path / context_id / "selection.json").unlink()
+    (tmp_path / context_id / "versions.jsonl").unlink()
+
+    second = store.load_selected(context_text=doc.text)
+    assert second is not None
+    assert second.id == version.id
+
+
+def test_directory_skill_store_caches_manifest_lookup(tmp_path):
+    store = DirectorySkillStore(tmp_path)
+    doc = Document(id="doc-1", text="Refunds are allowed within 24 hours.")
+    context_id = store.register_context(doc)
+
+    assert store.find_context_id_by_text(doc.text) == context_id
+    (tmp_path / "manifest.jsonl").unlink()
+    assert store.find_context_id_by_text(doc.text) == context_id
+
+
 def test_skill_prompt_modifier_injects_matching_context_skill(tmp_path):
     store = DirectorySkillStore(tmp_path)
     doc = Document(id="doc-1", text="Refunds are allowed within 24 hours.")

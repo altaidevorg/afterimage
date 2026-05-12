@@ -31,9 +31,10 @@ def format_messages(messages: list[dict[str, Any]]) -> str:
 def convert(input_path: Path, output_path: Path, max_rows: int | None = None) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     count = 0
-    with input_path.open("r", encoding="utf-8") as src, output_path.open(
-        "w", encoding="utf-8"
-    ) as dst:
+    with (
+        input_path.open("r", encoding="utf-8") as src,
+        output_path.open("w", encoding="utf-8") as dst,
+    ):
         progress = tqdm(total=max_rows, desc="Converting contexts", unit="doc")
         try:
             for line in src:

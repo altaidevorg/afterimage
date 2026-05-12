@@ -94,8 +94,12 @@ def summarize(rows: list[SkillComparison]) -> dict:
     return {
         "total_contexts": len(rows),
         "paired_contexts": len(paired),
-        "ctx2skill_only": sum(1 for r in rows if r.ctx2skill_path and not r.afterimage_path),
-        "afterimage_only": sum(1 for r in rows if r.afterimage_path and not r.ctx2skill_path),
+        "ctx2skill_only": sum(
+            1 for r in rows if r.ctx2skill_path and not r.afterimage_path
+        ),
+        "afterimage_only": sum(
+            1 for r in rows if r.afterimage_path and not r.ctx2skill_path
+        ),
         "avg_token_jaccard": (
             sum(r.token_jaccard for r in paired) / len(paired) if paired else 0.0
         ),

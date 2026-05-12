@@ -86,7 +86,9 @@ def load_tasks_for_context(
 ) -> list[EvalTask]:
     tasks: list[EvalTask] = []
 
-    for idx, row in enumerate(read_jsonl(ctx2skill_root / context_id / "hard_set.jsonl")):
+    for idx, row in enumerate(
+        read_jsonl(ctx2skill_root / context_id / "hard_set.jsonl")
+    ):
         task = row.get("task")
         rubrics = row.get("rubrics")
         if isinstance(task, str) and isinstance(rubrics, list):
@@ -139,7 +141,11 @@ def summarize(rows: list[EvalRow]) -> dict[str, Any]:
                 sum(row.score for row in subset) / len(subset) if subset else 0.0
             ),
             "avg_rubric_satisfaction": (
-                sum(row.satisfied / row.total_rubrics for row in subset if row.total_rubrics)
+                sum(
+                    row.satisfied / row.total_rubrics
+                    for row in subset
+                    if row.total_rubrics
+                )
                 / len(subset)
                 if subset
                 else 0.0
