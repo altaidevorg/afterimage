@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from tqdm.auto import tqdm
 
 from ..providers import DocumentProvider
@@ -14,7 +16,7 @@ from .prompts import build_reasoner_prompt
 from .proposal import SkillProposer
 from .selection import SkillSelector
 from .storage import DirectorySkillStore
-from .types import SkillProbeResult, SkillSelectionResult, SkillVersion
+from .types import SkillProbe, SkillProbeResult, SkillSelectionResult, SkillVersion
 
 
 class SkillDiscoveryPipeline:
@@ -114,6 +116,11 @@ class SkillDiscoveryPipeline:
                 progress.set_postfix_str(stage)
                 progress.update(1)
 
+        def advance_many(stage: str, count: int) -> None:
+            if show_progress and count > 0:
+                progress.set_postfix_str(stage)
+                progress.update(count)
+
         def waiting(stage: str) -> None:
             if show_progress:
                 progress.set_postfix_str(f"waiting: {stage}")
@@ -134,24 +141,20 @@ class SkillDiscoveryPipeline:
                 self.store.save_probes(context_id, probes)
                 advance(f"iteration {iteration}: probes")
 
-                round_results = []
-                for probe in probes:
-                    waiting(f"iteration {iteration}: reasoner")
-                    answer = await self._answer_probe(
-                        context=context,
-                        task=probe.task,
-                        skill=current_skill,
-                    )
-                    advance(f"iteration {iteration}: answer")
-                    waiting(f"iteration {iteration}: judge")
-                    result = await self.judge.aevaluate(
-                        probe=probe,
-                        answer=answer,
-                        context=context,
-                        skill_version_id=current_skill.id if current_skill else None,
-                    )
-                    advance(f"iteration {iteration}: judge")
-                    round_results.append(result)
+                waiting(f"iteration {iteration}: reasoner/judge")
+                round_results = await asyncio.gather(
+                    *[
+                        self._evaluate_probe(
+                            context=context,
+                            probe=probe,
+                            skill=current_skill,
+                        )
+                        for probe in probes
+                    ]
+                )
+                advance_many(f"iteration {iteration}: answer", len(probes))
+                advance_many(f"iteration {iteration}: judge", len(probes))
+                for result in round_results:
                     if result.passed:
                         easy_results.append(result)
                     else:
@@ -246,6 +249,25 @@ class SkillDiscoveryPipeline:
         )
         response = await self.reasoner_llm.agenerate_content(prompt, temperature=0.2)
         return response.text
+
+    async def _evaluate_probe(
+        self,
+        *,
+        context: str,
+        probe: SkillProbe,
+        skill: SkillVersion | None,
+    ) -> SkillProbeResult:
+        answer = await self._answer_probe(
+            context=context,
+            task=probe.task,
+            skill=skill,
+        )
+        return await self.judge.aevaluate(
+            probe=probe,
+            answer=answer,
+            context=context,
+            skill_version_id=skill.id if skill else None,
+        )
 
     @staticmethod
     def _source_rubrics(document: Document) -> list[str] | None:

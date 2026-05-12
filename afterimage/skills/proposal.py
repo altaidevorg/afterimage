@@ -40,7 +40,9 @@ class SkillProposer:
             temperature=self.temperature,
         )
         parsed = response.parsed
-        action = parsed.action if parsed.action in {"create", "revise", "keep"} else "create"
+        action = (
+            parsed.action if parsed.action in {"create", "revise", "keep"} else "create"
+        )
         return SkillProposal(
             id=str(uuid.uuid4()),
             context_id=context_id,

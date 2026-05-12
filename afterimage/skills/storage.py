@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+from threading import RLock
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,15 @@ def _append_jsonl(path: Path, item: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+
+def _append_jsonl_many(path: Path, items: list[dict[str, Any]]) -> None:
+    if not items:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        for item in items:
+            f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -40,6 +50,13 @@ class DirectorySkillStore:
     def __init__(self, root: str | Path):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        self._lock = RLock()
+        self._manifest_loaded = False
+        self._context_id_by_hash: dict[str, str] = {}
+        self._context_hash_by_id: dict[str, str] = {}
+        self._versions_cache: dict[str, list[SkillVersion]] = {}
+        self._selected_cache_by_context_id: dict[str, SkillVersion | None] = {}
+        self._selected_cache_by_hash: dict[str, SkillVersion | None] = {}
 
     @property
     def manifest_path(self) -> Path:
@@ -48,37 +65,47 @@ class DirectorySkillStore:
     def context_dir(self, context_id: str) -> Path:
         return self.root / context_id
 
-    def register_context(self, document: Document, context_id: str | None = None) -> str:
+    def register_context(
+        self, document: Document, context_id: str | None = None
+    ) -> str:
         resolved_id = context_id or document.id
+        resolved_hash = context_hash(document.text)
         record = {
             "context_id": resolved_id,
             "document_id": document.id,
-            "context_hash": context_hash(document.text),
+            "context_hash": resolved_hash,
             "metadata": document.metadata,
         }
         _append_jsonl(self.manifest_path, record)
+        with self._lock:
+            self._context_id_by_hash[resolved_hash] = resolved_id
+            self._context_hash_by_id[resolved_id] = resolved_hash
         self.context_dir(resolved_id).mkdir(parents=True, exist_ok=True)
         return resolved_id
 
     def find_context_id_by_text(self, text: str | None) -> str | None:
         h = context_hash(text)
-        for row in reversed(_load_jsonl(self.manifest_path)):
-            if row.get("context_hash") == h:
-                return row.get("context_id")
-        return None
+        with self._lock:
+            cached = self._context_id_by_hash.get(h)
+            if cached is not None:
+                return cached
+        self._ensure_manifest_index()
+        with self._lock:
+            return self._context_id_by_hash.get(h)
 
     def save_probes(self, context_id: str, probes: list[SkillProbe]) -> None:
-        for probe in probes:
-            _append_jsonl(self.context_dir(context_id) / "probes.jsonl", probe.model_dump())
+        _append_jsonl_many(
+            self.context_dir(context_id) / "probes.jsonl",
+            [probe.model_dump() for probe in probes],
+        )
 
     def save_probe_results(
         self, context_id: str, results: list[SkillProbeResult]
     ) -> None:
-        for result in results:
-            _append_jsonl(
-                self.context_dir(context_id) / "results.jsonl",
-                result.model_dump(),
-            )
+        _append_jsonl_many(
+            self.context_dir(context_id) / "results.jsonl",
+            [result.model_dump() for result in results],
+        )
 
     def save_version(self, version: SkillVersion) -> Path:
         skill_dir = self.context_dir(version.context_id)
@@ -93,15 +120,32 @@ class DirectorySkillStore:
             f"iteration: {version.iteration}\n"
             "---\n\n"
         )
-        skill_path.write_text(frontmatter + version.content.strip() + "\n", encoding="utf-8")
+        skill_path.write_text(
+            frontmatter + version.content.strip() + "\n", encoding="utf-8"
+        )
         _append_jsonl(skill_dir / "versions.jsonl", version.model_dump())
+        with self._lock:
+            cached = self._versions_cache.get(version.context_id)
+            if cached is not None:
+                cached.append(version)
+            self._selected_cache_by_context_id.pop(version.context_id, None)
+            context_h = self._context_hash_by_id.get(version.context_id)
+            if context_h:
+                self._selected_cache_by_hash.pop(context_h, None)
         return skill_path
 
     def load_versions(self, context_id: str) -> list[SkillVersion]:
-        return [
+        with self._lock:
+            cached = self._versions_cache.get(context_id)
+            if cached is not None:
+                return list(cached)
+        loaded = [
             SkillVersion.model_validate(row)
             for row in _load_jsonl(self.context_dir(context_id) / "versions.jsonl")
         ]
+        with self._lock:
+            self._versions_cache[context_id] = loaded
+        return list(loaded)
 
     def load_results(self, context_id: str) -> list[SkillProbeResult]:
         return [
@@ -125,6 +169,11 @@ class DirectorySkillStore:
             source = skill_dir / f"skill-iter-{selected.iteration}.md"
             if source.exists():
                 shutil.copyfile(source, skill_dir / "SKILL.md")
+        with self._lock:
+            self._selected_cache_by_context_id[selection.context_id] = selected
+            context_h = self._context_hash_by_id.get(selection.context_id)
+            if context_h:
+                self._selected_cache_by_hash[context_h] = selected
         return selection_path
 
     def load_selected(
@@ -133,16 +182,51 @@ class DirectorySkillStore:
         *,
         context_text: str | None = None,
     ) -> SkillVersion | None:
+        lookup_hash = context_hash(context_text) if context_text is not None else None
+        with self._lock:
+            if (
+                context_id is not None
+                and context_id in self._selected_cache_by_context_id
+            ):
+                return self._selected_cache_by_context_id[context_id]
+            if lookup_hash and lookup_hash in self._selected_cache_by_hash:
+                return self._selected_cache_by_hash[lookup_hash]
+
         resolved_id = context_id or self.find_context_id_by_text(context_text)
         if not resolved_id:
             return None
         selection_path = self.context_dir(resolved_id) / "selection.json"
+        selected: SkillVersion | None = None
         if selection_path.exists():
             selection = SkillSelectionResult.model_validate_json(
                 selection_path.read_text(encoding="utf-8")
             )
             for version in self.load_versions(resolved_id):
                 if version.id == selection.selected_version_id:
-                    return version
-        versions = self.load_versions(resolved_id)
-        return versions[-1] if versions else None
+                    selected = version
+                    break
+        if selected is None:
+            versions = self.load_versions(resolved_id)
+            selected = versions[-1] if versions else None
+
+        with self._lock:
+            self._selected_cache_by_context_id[resolved_id] = selected
+            context_h = self._context_hash_by_id.get(resolved_id) or lookup_hash
+            if context_h:
+                self._selected_cache_by_hash[context_h] = selected
+        return selected
+
+    def _ensure_manifest_index(self) -> None:
+        with self._lock:
+            if self._manifest_loaded:
+                return
+            rows = _load_jsonl(self.manifest_path)
+            self._context_id_by_hash = {}
+            self._context_hash_by_id = {}
+            for row in rows:
+                context_h = row.get("context_hash")
+                context_id = row.get("context_id")
+                if isinstance(context_h, str) and isinstance(context_id, str):
+                    self._context_id_by_hash[context_h] = context_id
+                    self._context_hash_by_id[context_id] = context_h
+            self._manifest_loaded = True

@@ -18,7 +18,9 @@ class SkillRespondentPromptModifier(BaseRespondentPromptModifierCallback):
         self.skill_store = skill_store
         self.base_modifier = base_modifier
 
-    def _inject(self, prompt: str, skill_content: str, name: str, description: str) -> str:
+    def _inject(
+        self, prompt: str, skill_content: str, name: str, description: str
+    ) -> str:
         return (
             prompt.rstrip()
             + "\n\n## Context-Specific Skill\n\n"
@@ -43,7 +45,9 @@ class SkillRespondentPromptModifier(BaseRespondentPromptModifierCallback):
             "iteration": skill.iteration,
         }
         return GeneratedResponsePrompt(
-            prompt=self._inject(base.prompt, skill.content, skill.name, skill.description),
+            prompt=self._inject(
+                base.prompt, skill.content, skill.name, skill.description
+            ),
             context=base.context,
             metadata=metadata,
         )
@@ -63,7 +67,9 @@ class SkillRespondentPromptModifier(BaseRespondentPromptModifierCallback):
             "iteration": skill.iteration,
         }
         return GeneratedResponsePrompt(
-            prompt=self._inject(base.prompt, skill.content, skill.name, skill.description),
+            prompt=self._inject(
+                base.prompt, skill.content, skill.name, skill.description
+            ),
             context=base.context,
             metadata=metadata,
         )
@@ -80,4 +86,6 @@ class SkillRespondentPromptModifier(BaseRespondentPromptModifierCallback):
     ) -> GeneratedResponsePrompt:
         if self.base_modifier is None:
             return GeneratedResponsePrompt(prompt=respondent_prompt, context=context)
-        return await self.base_modifier.agenerate(respondent_prompt, context, instruction)
+        return await self.base_modifier.agenerate(
+            respondent_prompt, context, instruction
+        )

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from .judging import RubricJudge
 from .prompts import build_reasoner_prompt
 from ..providers.llm_providers import LLMProvider
@@ -40,17 +42,19 @@ class SkillSelector:
 
         scored = []
         for version in versions:
-            hard_score = await self._score_set(
-                context=context,
-                respondent_prompt=respondent_prompt,
-                version=version,
-                probe_results=hard_results,
-            )
-            easy_score = await self._score_set(
-                context=context,
-                respondent_prompt=respondent_prompt,
-                version=version,
-                probe_results=easy_results,
+            hard_score, easy_score = await asyncio.gather(
+                self._score_set(
+                    context=context,
+                    respondent_prompt=respondent_prompt,
+                    version=version,
+                    probe_results=hard_results,
+                ),
+                self._score_set(
+                    context=context,
+                    respondent_prompt=respondent_prompt,
+                    version=version,
+                    probe_results=easy_results,
+                ),
             )
             if self.scoring == "weighted":
                 combined = self.hard_weight * hard_score + self.easy_weight * easy_score
@@ -88,21 +92,38 @@ class SkillSelector:
         if not probe_results:
             return 1.0
 
-        passed = 0
-        for previous in probe_results:
-            prompt = build_reasoner_prompt(
-                context=context,
-                respondent_prompt=respondent_prompt,
-                skill=version,
-                task=previous.probe.task,
-            )
-            response = await self.reasoner_llm.agenerate_content(prompt, temperature=0.2)
-            result = await self.judge.aevaluate(
-                probe=previous.probe,
-                answer=response.text,
-                context=context,
-                skill_version_id=version.id,
-            )
-            if result.passed:
-                passed += 1
+        replay_results = await asyncio.gather(
+            *[
+                self._replay_probe(
+                    context=context,
+                    respondent_prompt=respondent_prompt,
+                    version=version,
+                    previous=previous,
+                )
+                for previous in probe_results
+            ]
+        )
+        passed = sum(1 for result in replay_results if result.passed)
         return passed / len(probe_results)
+
+    async def _replay_probe(
+        self,
+        *,
+        context: str,
+        respondent_prompt: str,
+        version: SkillVersion,
+        previous: SkillProbeResult,
+    ) -> SkillProbeResult:
+        prompt = build_reasoner_prompt(
+            context=context,
+            respondent_prompt=respondent_prompt,
+            skill=version,
+            task=previous.probe.task,
+        )
+        response = await self.reasoner_llm.agenerate_content(prompt, temperature=0.2)
+        return await self.judge.aevaluate(
+            probe=previous.probe,
+            answer=response.text,
+            context=context,
+            skill_version_id=version.id,
+        )

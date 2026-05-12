@@ -407,7 +407,11 @@ class JSONLDocumentProvider(DocumentProvider):
                             if isinstance(val, str) and val.strip():
                                 fallback_id = f"{Path(fp).resolve()}:{line_number}"
                                 metadata_obj = obj.get("metadata")
-                                metadata = metadata_obj if isinstance(metadata_obj, dict) else {}
+                                metadata = (
+                                    metadata_obj
+                                    if isinstance(metadata_obj, dict)
+                                    else {}
+                                )
                                 doc_id = fallback_id
                                 if self.preserve_ids:
                                     doc_id = (
@@ -418,7 +422,11 @@ class JSONLDocumentProvider(DocumentProvider):
                                 if self.include_metadata:
                                     metadata = dict(metadata)
                                     for key, value in obj.items():
-                                        if key not in {self.content_key, "id", "metadata"}:
+                                        if key not in {
+                                            self.content_key,
+                                            "id",
+                                            "metadata",
+                                        }:
                                             metadata.setdefault(key, value)
                                 else:
                                     metadata = {}

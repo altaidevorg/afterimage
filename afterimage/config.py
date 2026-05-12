@@ -262,6 +262,7 @@ class PersonasConfig(BaseModel):
 
 class QualityConfig(BaseModel):
     """Quality gating settings."""
+
     auto_improve: bool = Field(
         default=False, description="Retry low-quality generations"
     )
