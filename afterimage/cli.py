@@ -75,7 +75,10 @@ def skill_discover(config_path: str):
     select_best = bool(
         selection_cfg.get("enabled", True) if isinstance(selection_cfg, dict) else True
     )
-    bootstrap_when_no_failures = bool(skill_cfg.get("bootstrap_when_no_failures", True))
+    bootstrap_when_no_failures = bool(
+        skill_cfg.get("bootstrap_when_no_failures", False)
+    )
+    use_source_rubrics = bool(skill_cfg.get("use_source_rubrics", False))
 
     from .config_to_generator import _build_document_provider, _llm_create_extras
     from .providers import LLMFactory
@@ -103,12 +106,15 @@ def skill_discover(config_path: str):
         output_dir=output_dir,
         probe_generator=SkillProbeGenerator(stage_llms["probe_generator"]),
         judge=judge,
-        proposer=SkillProposer(stage_llms["proposer"]),
-        skill_generator=SkillGenerator(stage_llms["generator"]),
+        reasoner_proposer=SkillProposer(stage_llms["reasoner_proposer"]),
+        challenger_proposer=SkillProposer(stage_llms["challenger_proposer"]),
+        reasoner_skill_generator=SkillGenerator(stage_llms["reasoner_generator"]),
+        challenger_skill_generator=SkillGenerator(stage_llms["challenger_generator"]),
         selector=SkillSelector(
             judge=RubricJudge(stage_llms["selector_judge"]),
             reasoner_llm=stage_llms["selector_reasoner"],
         ),
+        use_source_rubrics=use_source_rubrics,
     )
 
     click.echo(
@@ -149,22 +155,28 @@ def _build_skill_stage_llms(cfg: AfterImageConfig, skill_cfg: dict, *, default_l
     `model` LLM.
     """
     stage_aliases = {
-        "challenger": "probe_generator",
-        "probe_generator": "probe_generator",
-        "reasoner": "reasoner",
-        "judge": "judge",
-        "proposer": "proposer",
-        "generator": "generator",
-        "selector_reasoner": "selector_reasoner",
-        "selector_judge": "selector_judge",
-        "selector": "selector_judge",
+        "challenger": ("probe_generator",),
+        "probe_generator": ("probe_generator",),
+        "reasoner": ("reasoner",),
+        "judge": ("judge",),
+        "proposer": ("reasoner_proposer", "challenger_proposer"),
+        "reasoner_proposer": ("reasoner_proposer",),
+        "challenger_proposer": ("challenger_proposer",),
+        "generator": ("reasoner_generator", "challenger_generator"),
+        "reasoner_generator": ("reasoner_generator",),
+        "challenger_generator": ("challenger_generator",),
+        "selector_reasoner": ("selector_reasoner",),
+        "selector_judge": ("selector_judge",),
+        "selector": ("selector_judge",),
     }
     canonical_stages = {
         "probe_generator",
         "reasoner",
         "judge",
-        "proposer",
-        "generator",
+        "reasoner_proposer",
+        "challenger_proposer",
+        "reasoner_generator",
+        "challenger_generator",
         "selector_reasoner",
         "selector_judge",
     }
@@ -176,14 +188,16 @@ def _build_skill_stage_llms(cfg: AfterImageConfig, skill_cfg: dict, *, default_l
     from .providers import LLMFactory
 
     for raw_stage, spec in raw_models.items():
-        stage = stage_aliases.get(str(raw_stage))
-        if stage is None:
+        stages = stage_aliases.get(str(raw_stage))
+        if stages is None:
             click.secho(
                 f"Warning: ignoring unknown skill model stage: {raw_stage}",
                 fg="yellow",
             )
             continue
-        llms[stage] = _create_skill_stage_llm(cfg, spec, LLMFactory)
+        stage_llm = _create_skill_stage_llm(cfg, spec, LLMFactory)
+        for stage in stages:
+            llms[stage] = stage_llm
 
     return llms
 

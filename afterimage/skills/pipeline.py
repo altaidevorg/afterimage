@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 
 from tqdm.auto import tqdm
 
@@ -16,7 +17,13 @@ from .prompts import build_reasoner_prompt
 from .proposal import SkillProposer
 from .selection import SkillSelector
 from .storage import DirectorySkillStore
-from .types import SkillProbe, SkillProbeResult, SkillSelectionResult, SkillVersion
+from .types import (
+    SkillProbe,
+    SkillProbeResult,
+    SkillSelectionResult,
+    SkillSide,
+    SkillVersion,
+)
 
 
 class SkillDiscoveryPipeline:
@@ -35,6 +42,11 @@ class SkillDiscoveryPipeline:
         proposer: SkillProposer | None = None,
         skill_generator: SkillGenerator | None = None,
         selector: SkillSelector | None = None,
+        reasoner_proposer: SkillProposer | None = None,
+        challenger_proposer: SkillProposer | None = None,
+        reasoner_skill_generator: SkillGenerator | None = None,
+        challenger_skill_generator: SkillGenerator | None = None,
+        use_source_rubrics: bool = False,
     ):
         self.document_provider = document_provider
         self.respondent_prompt = respondent_prompt
@@ -43,12 +55,19 @@ class SkillDiscoveryPipeline:
         self.store = DirectorySkillStore(output_dir)
         self.probe_generator = probe_generator or SkillProbeGenerator(llm)
         self.judge = judge or RubricJudge(llm)
-        self.proposer = proposer or SkillProposer(llm)
-        self.skill_generator = skill_generator or SkillGenerator(llm)
+        shared_proposer = proposer or SkillProposer(llm)
+        shared_generator = skill_generator or SkillGenerator(llm)
+        self.reasoner_proposer = reasoner_proposer or shared_proposer
+        self.challenger_proposer = challenger_proposer or SkillProposer(llm)
+        self.reasoner_skill_generator = reasoner_skill_generator or shared_generator
+        self.challenger_skill_generator = challenger_skill_generator or SkillGenerator(
+            llm
+        )
         self.selector = selector or SkillSelector(
             judge=self.judge,
             reasoner_llm=self.reasoner_llm,
         )
+        self.use_source_rubrics = use_source_rubrics
 
     async def discover(
         self,
@@ -57,7 +76,7 @@ class SkillDiscoveryPipeline:
         probes_per_context: int = 5,
         max_contexts: int | None = None,
         select_best: bool = True,
-        bootstrap_when_no_failures: bool = True,
+        bootstrap_when_no_failures: bool = False,
         show_progress: bool = False,
     ) -> list[SkillSelectionResult]:
         docs = self.document_provider.get_all()
@@ -93,18 +112,22 @@ class SkillDiscoveryPipeline:
         iterations: int = 3,
         probes_per_context: int = 5,
         select_best: bool = True,
-        bootstrap_when_no_failures: bool = True,
+        bootstrap_when_no_failures: bool = False,
         show_progress: bool = False,
     ) -> SkillSelectionResult | None:
         context_id = self.store.register_context(document)
         context = document.text or ""
-        source_rubrics = self._source_rubrics(document)
-        current_skill: SkillVersion | None = None
-        versions: list[SkillVersion] = []
+        source_rubrics = (
+            self._source_rubrics(document) if self.use_source_rubrics else None
+        )
+        reasoner_skill: SkillVersion | None = None
+        challenger_skill: SkillVersion | None = None
+        reasoner_versions: list[SkillVersion] = []
         hard_results: list[SkillProbeResult] = []
         easy_results: list[SkillProbeResult] = []
+        per_iteration_steps = 1 + 2 * max(probes_per_context, 1) + 4
         progress = tqdm(
-            total=max(iterations, 1) * (1 + 2 * max(probes_per_context, 1)) + 4,
+            total=max(iterations, 1) * per_iteration_steps + 4,
             desc=f"Context {context_id[:8]}",
             unit="step",
             leave=False,
@@ -133,7 +156,7 @@ class SkillDiscoveryPipeline:
                     context=context,
                     context_id=context_id,
                     respondent_prompt=self.respondent_prompt,
-                    current_skill=current_skill,
+                    challenger_skill=challenger_skill,
                     n_probes=probes_per_context,
                     iteration=iteration,
                     source_rubrics=source_rubrics,
@@ -147,61 +170,74 @@ class SkillDiscoveryPipeline:
                         self._evaluate_probe(
                             context=context,
                             probe=probe,
-                            skill=current_skill,
+                            skill=reasoner_skill,
                         )
                         for probe in probes
                     ]
                 )
                 advance_many(f"iteration {iteration}: answer", len(probes))
                 advance_many(f"iteration {iteration}: judge", len(probes))
-                for result in round_results:
-                    if result.passed:
-                        easy_results.append(result)
-                    else:
-                        hard_results.append(result)
-
                 self.store.save_probe_results(context_id, round_results)
-                failures = [r for r in round_results if not r.passed]
-                if not failures:
-                    continue
 
-                waiting(f"iteration {iteration}: proposer")
-                proposal = await self.proposer.apropose(
+                failures = [result for result in round_results if not result.passed]
+                successes = [result for result in round_results if result.passed]
+
+                hardest_failure = self._select_hardest_failure(failures)
+                if hardest_failure is not None:
+                    hard_results.append(hardest_failure)
+                easiest_success = self._select_easiest_success(successes)
+                if easiest_success is not None:
+                    easy_results.append(easiest_success)
+
+                updated_reasoner = await self._update_skill_side(
                     context=context,
                     context_id=context_id,
-                    respondent_prompt=self.respondent_prompt,
-                    current_skill=current_skill,
-                    failed_results=failures,
                     iteration=iteration,
+                    side="reasoner",
+                    current_skill=reasoner_skill,
+                    routed_results=failures,
+                    proposer=self.reasoner_proposer,
+                    generator=self.reasoner_skill_generator,
+                    waiting=waiting,
+                    advance=advance,
                 )
-                advance(f"iteration {iteration}: proposal")
-                if proposal.action == "keep" and current_skill is not None:
-                    continue
+                if updated_reasoner is not None:
+                    reasoner_skill = updated_reasoner
+                    self.store.save_version(reasoner_skill)
+                    reasoner_versions.append(reasoner_skill)
 
-                waiting(f"iteration {iteration}: generator")
-                current_skill = await self.skill_generator.agenerate(
-                    context=context,
-                    proposal=proposal,
-                    previous_skill=current_skill,
-                )
-                self.store.save_version(current_skill)
-                versions.append(current_skill)
-                advance(f"iteration {iteration}: skill")
-
-            if not versions and bootstrap_when_no_failures:
-                waiting("bootstrap generator")
-                current_skill = await self.skill_generator.agenerate_bootstrap(
+                updated_challenger = await self._update_skill_side(
                     context=context,
                     context_id=context_id,
-                    respondent_prompt=self.respondent_prompt,
-                    probe_results=easy_results,
-                    iteration=iterations,
+                    iteration=iteration,
+                    side="challenger",
+                    current_skill=challenger_skill,
+                    routed_results=successes,
+                    proposer=self.challenger_proposer,
+                    generator=self.challenger_skill_generator,
+                    waiting=waiting,
+                    advance=advance,
                 )
-                self.store.save_version(current_skill)
-                versions.append(current_skill)
+                if updated_challenger is not None:
+                    challenger_skill = updated_challenger
+                    self.store.save_version(challenger_skill)
+
+            if not reasoner_versions and bootstrap_when_no_failures:
+                waiting("bootstrap generator")
+                reasoner_skill = (
+                    await self.reasoner_skill_generator.agenerate_bootstrap(
+                        context=context,
+                        context_id=context_id,
+                        respondent_prompt=self.respondent_prompt,
+                        probe_results=easy_results,
+                        iteration=iterations,
+                    )
+                )
+                self.store.save_version(reasoner_skill)
+                reasoner_versions.append(reasoner_skill)
                 advance("bootstrap skill")
 
-            if not versions:
+            if not reasoner_versions:
                 return None
 
             if select_best:
@@ -209,13 +245,13 @@ class SkillDiscoveryPipeline:
                 selection = await self.selector.aselect(
                     context=context,
                     respondent_prompt=self.respondent_prompt,
-                    versions=versions,
+                    versions=reasoner_versions,
                     hard_results=hard_results,
                     easy_results=easy_results,
                 )
                 advance("selection")
             else:
-                latest = versions[-1]
+                latest = reasoner_versions[-1]
                 selection = SkillSelectionResult(
                     context_id=context_id,
                     selected_version_id=latest.id,
@@ -233,6 +269,59 @@ class SkillDiscoveryPipeline:
             return selection
         finally:
             progress.close()
+
+    async def _update_skill_side(
+        self,
+        *,
+        context: str,
+        context_id: str,
+        iteration: int,
+        side: SkillSide,
+        current_skill: SkillVersion | None,
+        routed_results: list[SkillProbeResult],
+        proposer: SkillProposer,
+        generator: SkillGenerator,
+        waiting,
+        advance,
+    ) -> SkillVersion | None:
+        if routed_results:
+            waiting(f"iteration {iteration}: {side} proposer")
+            proposal = await proposer.apropose(
+                context=context,
+                context_id=context_id,
+                respondent_prompt=self.respondent_prompt,
+                current_skill=current_skill,
+                routed_results=routed_results,
+                iteration=iteration,
+                side=side,
+            )
+            advance(f"iteration {iteration}: {side} proposal")
+            if proposal.action == "keep" and current_skill is not None:
+                next_skill = self._carry_forward_skill(
+                    current_skill,
+                    iteration=iteration,
+                    reason=f"{side}_proposal_keep",
+                )
+            else:
+                waiting(f"iteration {iteration}: {side} generator")
+                next_skill = await generator.agenerate(
+                    context=context,
+                    proposal=proposal,
+                    previous_skill=current_skill,
+                    side=side,
+                )
+            advance(f"iteration {iteration}: {side} skill")
+            return next_skill
+
+        if current_skill is None:
+            return None
+        carried = self._carry_forward_skill(
+            current_skill,
+            iteration=iteration,
+            reason=f"no_{side}_routed_results",
+        )
+        advance(f"iteration {iteration}: {side} carry")
+        return carried
 
     async def _answer_probe(
         self,
@@ -276,3 +365,50 @@ class SkillDiscoveryPipeline:
             return None
         source_rubrics = [str(rubric) for rubric in rubrics if str(rubric).strip()]
         return source_rubrics or None
+
+    @staticmethod
+    def _select_hardest_failure(
+        failures: list[SkillProbeResult],
+    ) -> SkillProbeResult | None:
+        if not failures:
+            return None
+        return min(failures, key=SkillDiscoveryPipeline._failure_priority)
+
+    @staticmethod
+    def _select_easiest_success(
+        successes: list[SkillProbeResult],
+    ) -> SkillProbeResult | None:
+        if not successes:
+            return None
+        return min(successes, key=lambda result: len(result.probe.rubrics))
+
+    @staticmethod
+    def _failure_priority(result: SkillProbeResult) -> tuple[float, int]:
+        status = result.rubric_status
+        if status:
+            rubric_pass_rate = sum(1 for passed in status if passed) / len(status)
+        else:
+            rubric_pass_rate = float(result.score)
+        return (rubric_pass_rate, len(result.probe.rubrics))
+
+    @staticmethod
+    def _carry_forward_skill(
+        previous_skill: SkillVersion,
+        *,
+        iteration: int,
+        reason: str,
+    ) -> SkillVersion:
+        metadata = dict(previous_skill.metadata)
+        metadata["carry_forward_reason"] = reason
+        return SkillVersion(
+            id=str(uuid.uuid4()),
+            context_id=previous_skill.context_id,
+            iteration=iteration,
+            side=previous_skill.side,
+            name=previous_skill.name,
+            description=previous_skill.description,
+            content=previous_skill.content,
+            source_probe_ids=list(previous_skill.source_probe_ids),
+            metrics=dict(previous_skill.metrics),
+            metadata=metadata,
+        )

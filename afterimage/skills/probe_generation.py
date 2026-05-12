@@ -23,7 +23,7 @@ class SkillProbeGenerator:
         context: str,
         context_id: str,
         respondent_prompt: str,
-        current_skill: SkillVersion | None,
+        challenger_skill: SkillVersion | None,
         n_probes: int,
         iteration: int,
         source_rubrics: list[str] | None = None,
@@ -31,7 +31,7 @@ class SkillProbeGenerator:
         prompt = build_probe_generation_prompt(
             context=context,
             respondent_prompt=respondent_prompt,
-            current_skill=current_skill,
+            challenger_skill=challenger_skill,
             n_probes=n_probes,
             source_rubrics=source_rubrics,
         )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from .types import SkillProbeResult, SkillProposal, SkillVersion
+from .types import SkillProbeResult, SkillProposal, SkillSide, SkillVersion
 
 
 def _clip(text: str, max_chars: int = 12000) -> str:
@@ -18,11 +18,11 @@ def build_probe_generation_prompt(
     *,
     context: str,
     respondent_prompt: str,
-    current_skill: SkillVersion | None,
+    challenger_skill: SkillVersion | None,
     n_probes: int,
     source_rubrics: list[str] | None = None,
 ) -> str:
-    skill_text = current_skill.content if current_skill else "(none)"
+    skill_text = challenger_skill.content if challenger_skill else "(none)"
     source_rubrics_text = ""
     if source_rubrics:
         rubrics = "\n".join(f"- {rubric}" for rubric in source_rubrics)
@@ -30,16 +30,15 @@ def build_probe_generation_prompt(
 Source benchmark rubrics:
 {rubrics}
 
-Use these rubrics as strong hints about what the hidden task is trying to test.
-Generated tasks should make the relevant source rubrics assessable while still
-being answerable from the context.
+Use these rubrics only as optional hints about what the benchmark tends to test.
+Do not copy them verbatim into every task unless the context truly supports it.
 """
-    return f"""You generate evaluation probes for a domain assistant.
+    return f"""You are the Challenger in a context-to-skill self-play loop.
 
 Respondent system prompt:
 {respondent_prompt}
 
-Current context-specific skill:
+Current challenger skill set:
 {skill_text}
 
 Context:
@@ -48,9 +47,13 @@ Context:
 </context>
 {source_rubrics_text}
 
-Create exactly {n_probes} diverse, context-grounded tasks that require using the
-context. For each task, write strict binary rubrics. The tasks should expose
-likely respondent failure modes, not ask generic trivia.
+Create exactly {n_probes} diverse, context-grounded tasks that require the
+respondent to induce rules or procedures from the context. For each task, write
+strict binary rubrics. The tasks should expose likely respondent failure modes,
+not ask generic trivia or surface paraphrases.
+
+Use the challenger skill only to improve task and rubric generation. Do not
+assume access to any respondent-side skill.
 
 Return structured JSON only."""
 
@@ -96,7 +99,12 @@ def build_rubric_judge_prompt(
         f"\nContext:\n<context>\n{_clip(context)}\n</context>\n" if context else ""
     )
     rubrics_text = "\n".join(f"{i + 1}. {r}" for i, r in enumerate(rubrics))
-    return f"""You are a strict rubric judge. Grade the answer against every rubric.
+    return f"""You are a neutral Judge in a context-to-skill self-play loop.
+
+Follow this grading process exactly:
+1. Requirement analysis: restate what each rubric demands.
+2. Per-rubric verification: check the answer against each rubric separately.
+3. Self-reflection: verify that no rubric was marked passed without support.
 
 {context_block}
 Task:
@@ -110,9 +118,9 @@ Answer:
 {answer}
 </answer>
 
-Return structured JSON. requirement_status must have one boolean per rubric.
-overall_score should be 1.0 only when all rubrics are fully satisfied, otherwise
-0.0 unless partial credit is explicitly warranted by the rubrics."""
+Return structured JSON. requirement_status must contain one boolean per rubric.
+overall_score must be 1.0 only if every rubric passes; otherwise it must be 0.0.
+"""
 
 
 def build_skill_proposal_prompt(
@@ -120,28 +128,43 @@ def build_skill_proposal_prompt(
     context: str,
     respondent_prompt: str,
     current_skill: SkillVersion | None,
-    failed_results: list[SkillProbeResult],
+    routed_results: list[SkillProbeResult],
     iteration: int,
+    side: SkillSide,
 ) -> str:
-    failures = [
+    cases = [
         {
-            "task": r.probe.task,
-            "rubrics": r.probe.rubrics,
-            "answer": r.answer,
-            "score": r.score,
-            "rubric_status": r.rubric_status,
-            "judge_feedback": r.judge_feedback,
+            "task": result.probe.task,
+            "rubrics": result.probe.rubrics,
+            "answer": result.answer,
+            "score": result.score,
+            "rubric_status": result.rubric_status,
+            "judge_feedback": result.judge_feedback,
         }
-        for r in failed_results
+        for result in routed_results
     ]
-    return f"""You analyze respondent failures and propose a reusable natural-language skill.
+    if side == "reasoner":
+        title = "Reasoner Proposer"
+        routed_label = "Failed respondent cases"
+        objective = (
+            "Identify which contextual knowledge, procedures, or constraints the "
+            "respondent is missing or misapplying."
+        )
+    else:
+        title = "Challenger Proposer"
+        routed_label = "Solved respondent cases"
+        objective = (
+            "Identify why these tasks were too easy and how future tasks and rubrics "
+            "should better expose the respondent's remaining weaknesses."
+        )
+    return f"""You are the {title} in a context-to-skill self-play loop.
 
 Iteration: {iteration}
 
 Respondent system prompt:
 {respondent_prompt}
 
-Current skill:
+Current {side} skill set:
 {current_skill.content if current_skill else "(none)"}
 
 Context:
@@ -149,11 +172,15 @@ Context:
 {_clip(context)}
 </context>
 
-Failed probe results:
-{json.dumps(failures, ensure_ascii=False, indent=2)}
+{routed_label}:
+{json.dumps(cases, ensure_ascii=False, indent=2)}
 
-Propose one concise procedural skill that would help the respondent avoid these
-failure modes on future tasks for this context. Do not memorize the exact probes.
+Task:
+- {objective}
+- Propose one reusable natural-language skill update.
+- Do not memorize exact tasks or answers.
+- Do not write the final SKILL.md content.
+
 Return structured JSON only."""
 
 
@@ -162,11 +189,26 @@ def build_skill_generation_prompt(
     context: str,
     proposal: SkillProposal,
     previous_skill: SkillVersion | None,
+    side: SkillSide,
 ) -> str:
     previous = previous_skill.content if previous_skill else "(none)"
-    return f"""Turn this skill proposal into a complete context-specific skill.
+    if side == "reasoner":
+        title = "Reasoner Generator"
+        instructions = (
+            "Write a complete respondent-side skill set that improves future task "
+            "answers for this context. The content should be concise procedural "
+            "guidance with clear when-to-use behavior."
+        )
+    else:
+        title = "Challenger Generator"
+        instructions = (
+            "Write a complete challenger-side skill set used only to generate future "
+            "tasks and rubrics. Focus on making probes more diagnostic, specific, and "
+            "strict. Do not mention or depend on any respondent-side skill."
+        )
+    return f"""You are the {title} in a context-to-skill self-play loop.
 
-Previous skill:
+Previous {side} skill set:
 {previous}
 
 Proposal:
@@ -181,9 +223,9 @@ Context:
 {_clip(context)}
 </context>
 
-Write concise Markdown. The content should be procedural guidance with clear
-"when to use" behavior. Avoid copying long source text. Return structured JSON
-with name, description, and content."""
+{instructions}
+Avoid copying long source text. Return structured JSON with name, description,
+and content."""
 
 
 def build_skill_bootstrap_prompt(
@@ -194,16 +236,16 @@ def build_skill_bootstrap_prompt(
 ) -> str:
     probes = [
         {
-            "task": r.probe.task,
-            "rubrics": r.probe.rubrics,
-            "answer": r.answer,
-            "score": r.score,
-            "rubric_status": r.rubric_status,
-            "judge_feedback": r.judge_feedback,
+            "task": result.probe.task,
+            "rubrics": result.probe.rubrics,
+            "answer": result.answer,
+            "score": result.score,
+            "rubric_status": result.rubric_status,
+            "judge_feedback": result.judge_feedback,
         }
-        for r in probe_results[:5]
+        for result in probe_results[:5]
     ]
-    return f"""Create a reusable context-specific skill for a respondent.
+    return f"""Create a reusable respondent-side context-specific skill.
 
 No failed probe was found, so infer the skill directly from the respondent
 system prompt, the context, and the successful probes. Capture constraints that
@@ -221,5 +263,5 @@ Context:
 Successful probe examples:
 {json.dumps(probes, ensure_ascii=False, indent=2)}
 
-Write concise Markdown with clear "when to use" behavior. Return structured JSON
+Write concise Markdown with clear when-to-use behavior. Return structured JSON
 with name, description, and content."""

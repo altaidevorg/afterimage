@@ -5,12 +5,18 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-from threading import RLock
 from pathlib import Path
+from threading import RLock
 from typing import Any
 
 from ..types import Document
-from .types import SkillProbe, SkillProbeResult, SkillSelectionResult, SkillVersion
+from .types import (
+    SkillProbe,
+    SkillProbeResult,
+    SkillSelectionResult,
+    SkillSide,
+    SkillVersion,
+)
 
 
 def context_hash(text: str | None) -> str:
@@ -54,7 +60,7 @@ class DirectorySkillStore:
         self._manifest_loaded = False
         self._context_id_by_hash: dict[str, str] = {}
         self._context_hash_by_id: dict[str, str] = {}
-        self._versions_cache: dict[str, list[SkillVersion]] = {}
+        self._versions_cache: dict[tuple[str, str], list[SkillVersion]] = {}
         self._selected_cache_by_context_id: dict[str, SkillVersion | None] = {}
         self._selected_cache_by_hash: dict[str, SkillVersion | None] = {}
 
@@ -84,14 +90,14 @@ class DirectorySkillStore:
         return resolved_id
 
     def find_context_id_by_text(self, text: str | None) -> str | None:
-        h = context_hash(text)
+        lookup_hash = context_hash(text)
         with self._lock:
-            cached = self._context_id_by_hash.get(h)
+            cached = self._context_id_by_hash.get(lookup_hash)
             if cached is not None:
                 return cached
         self._ensure_manifest_index()
         with self._lock:
-            return self._context_id_by_hash.get(h)
+            return self._context_id_by_hash.get(lookup_hash)
 
     def save_probes(self, context_id: str, probes: list[SkillProbe]) -> None:
         _append_jsonl_many(
@@ -108,9 +114,10 @@ class DirectorySkillStore:
         )
 
     def save_version(self, version: SkillVersion) -> Path:
+        side = version.side
         skill_dir = self.context_dir(version.context_id)
         skill_dir.mkdir(parents=True, exist_ok=True)
-        skill_path = skill_dir / f"skill-iter-{version.iteration}.md"
+        skill_path = skill_dir / self._skill_filename(version.iteration, side)
         frontmatter = (
             "---\n"
             f"name: {version.name}\n"
@@ -118,33 +125,41 @@ class DirectorySkillStore:
             f"context_id: {version.context_id}\n"
             f"version_id: {version.id}\n"
             f"iteration: {version.iteration}\n"
+            f"side: {version.side}\n"
             "---\n\n"
         )
         skill_path.write_text(
             frontmatter + version.content.strip() + "\n", encoding="utf-8"
         )
-        _append_jsonl(skill_dir / "versions.jsonl", version.model_dump())
+        _append_jsonl(
+            self._versions_path(version.context_id, side), version.model_dump()
+        )
         with self._lock:
-            cached = self._versions_cache.get(version.context_id)
+            cache_key = (version.context_id, side)
+            cached = self._versions_cache.get(cache_key)
             if cached is not None:
                 cached.append(version)
-            self._selected_cache_by_context_id.pop(version.context_id, None)
-            context_h = self._context_hash_by_id.get(version.context_id)
-            if context_h:
-                self._selected_cache_by_hash.pop(context_h, None)
+            if side == "reasoner":
+                self._selected_cache_by_context_id.pop(version.context_id, None)
+                context_h = self._context_hash_by_id.get(version.context_id)
+                if context_h:
+                    self._selected_cache_by_hash.pop(context_h, None)
         return skill_path
 
-    def load_versions(self, context_id: str) -> list[SkillVersion]:
+    def load_versions(
+        self, context_id: str, side: SkillSide = "reasoner"
+    ) -> list[SkillVersion]:
+        cache_key = (context_id, side)
         with self._lock:
-            cached = self._versions_cache.get(context_id)
+            cached = self._versions_cache.get(cache_key)
             if cached is not None:
                 return list(cached)
         loaded = [
             SkillVersion.model_validate(row)
-            for row in _load_jsonl(self.context_dir(context_id) / "versions.jsonl")
+            for row in _load_jsonl(self._versions_path(context_id, side))
         ]
         with self._lock:
-            self._versions_cache[context_id] = loaded
+            self._versions_cache[cache_key] = loaded
         return list(loaded)
 
     def load_results(self, context_id: str) -> list[SkillProbeResult]:
@@ -161,12 +176,12 @@ class DirectorySkillStore:
             encoding="utf-8",
         )
         selected = None
-        for version in self.load_versions(selection.context_id):
+        for version in self.load_versions(selection.context_id, side="reasoner"):
             if version.id == selection.selected_version_id:
                 selected = version
                 break
         if selected is not None:
-            source = skill_dir / f"skill-iter-{selected.iteration}.md"
+            source = skill_dir / self._skill_filename(selected.iteration, selected.side)
             if source.exists():
                 shutil.copyfile(source, skill_dir / "SKILL.md")
         with self._lock:
@@ -201,12 +216,12 @@ class DirectorySkillStore:
             selection = SkillSelectionResult.model_validate_json(
                 selection_path.read_text(encoding="utf-8")
             )
-            for version in self.load_versions(resolved_id):
+            for version in self.load_versions(resolved_id, side="reasoner"):
                 if version.id == selection.selected_version_id:
                     selected = version
                     break
         if selected is None:
-            versions = self.load_versions(resolved_id)
+            versions = self.load_versions(resolved_id, side="reasoner")
             selected = versions[-1] if versions else None
 
         with self._lock:
@@ -215,6 +230,16 @@ class DirectorySkillStore:
             if context_h:
                 self._selected_cache_by_hash[context_h] = selected
         return selected
+
+    def _versions_path(self, context_id: str, side: SkillSide) -> Path:
+        filename = "versions.jsonl" if side == "reasoner" else f"{side}_versions.jsonl"
+        return self.context_dir(context_id) / filename
+
+    @staticmethod
+    def _skill_filename(iteration: int, side: SkillSide) -> str:
+        if side == "reasoner":
+            return f"skill-iter-{iteration}.md"
+        return f"{side}-skill-iter-{iteration}.md"
 
     def _ensure_manifest_index(self) -> None:
         with self._lock:

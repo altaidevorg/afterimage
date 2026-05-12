@@ -40,8 +40,9 @@ skill:
   output_dir: ./skills-compare-afterimage
   iterations: 3
   probes_per_context: 1
-  max_contexts: 3
+  max_contexts: 10
   bootstrap_when_no_failures: true
+  use_source_rubrics: true
   # Optional per-stage model overrides. Omit this block to use top-level `model`.
   # Values may be model-name strings, or mappings with provider/model_name/api_key_env/base_url.
   models:

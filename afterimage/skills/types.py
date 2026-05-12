@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+SkillSide = Literal["reasoner", "challenger"]
+
 
 class SkillProbe(BaseModel):
     """A context-grounded task with rubrics used to probe respondent behavior."""
@@ -37,6 +39,7 @@ class SkillProposal(BaseModel):
     id: str
     context_id: str
     iteration: int
+    side: SkillSide = "reasoner"
     name: str
     description: str
     target_failure_modes: list[str] = Field(default_factory=list)
@@ -52,6 +55,7 @@ class SkillVersion(BaseModel):
     id: str
     context_id: str
     iteration: int
+    side: SkillSide = "reasoner"
     name: str
     description: str
     content: str

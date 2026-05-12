@@ -7,7 +7,7 @@ import uuid
 from ..providers.llm_providers import LLMProvider
 from .prompts import build_skill_bootstrap_prompt, build_skill_generation_prompt
 from .schemas import SkillContentResponse
-from .types import SkillProbeResult, SkillProposal, SkillVersion
+from .types import SkillProbeResult, SkillProposal, SkillSide, SkillVersion
 
 
 class SkillGenerator:
@@ -23,11 +23,13 @@ class SkillGenerator:
         context: str,
         proposal: SkillProposal,
         previous_skill: SkillVersion | None,
+        side: SkillSide,
     ) -> SkillVersion:
         prompt = build_skill_generation_prompt(
             context=context,
             proposal=proposal,
             previous_skill=previous_skill,
+            side=side,
         )
         response = await self.llm.agenerate_structured(
             prompt,
@@ -39,6 +41,7 @@ class SkillGenerator:
             id=str(uuid.uuid4()),
             context_id=proposal.context_id,
             iteration=proposal.iteration,
+            side=side,
             name=parsed.name,
             description=parsed.description,
             content=parsed.content,
@@ -69,6 +72,7 @@ class SkillGenerator:
             id=str(uuid.uuid4()),
             context_id=context_id,
             iteration=iteration,
+            side="reasoner",
             name=parsed.name,
             description=parsed.description,
             content=parsed.content,

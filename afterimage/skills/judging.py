@@ -35,13 +35,19 @@ class RubricJudge:
             temperature=self.temperature,
         )
         status = list(response.parsed.requirement_status)
-        passed = bool(status) and all(status) and response.parsed.overall_score >= 1.0
+        derived_passed = bool(status) and all(status)
+        raw_score = float(response.parsed.overall_score)
+        normalized_score = 1.0 if derived_passed else 0.0
         return SkillProbeResult(
             probe=probe,
             answer=answer,
-            score=float(response.parsed.overall_score),
-            passed=passed,
+            score=normalized_score,
+            passed=derived_passed,
             rubric_status=status,
             judge_feedback=response.parsed.rationale,
             skill_version_id=skill_version_id,
+            metadata={
+                "raw_overall_score": raw_score,
+                "score_normalized": raw_score != normalized_score,
+            },
         )

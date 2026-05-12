@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
+from ..providers.llm_providers import LLMProvider
 from .judging import RubricJudge
 from .prompts import build_reasoner_prompt
-from ..providers.llm_providers import LLMProvider
 from .types import SkillProbeResult, SkillSelectionResult, SkillVersion
 
 
@@ -21,12 +21,14 @@ class SkillSelector:
         hard_weight: float = 0.7,
         easy_weight: float = 0.3,
         scoring: str = "product",
+        laplace_smoothing: bool = True,
     ):
         self.judge = judge
         self.reasoner_llm = reasoner_llm or judge.llm
         self.hard_weight = hard_weight
         self.easy_weight = easy_weight
         self.scoring = scoring
+        self.laplace_smoothing = laplace_smoothing
 
     async def aselect(
         self,
@@ -104,6 +106,8 @@ class SkillSelector:
             ]
         )
         passed = sum(1 for result in replay_results if result.passed)
+        if self.laplace_smoothing:
+            return (passed + 1) / (len(probe_results) + 1)
         return passed / len(probe_results)
 
     async def _replay_probe(
