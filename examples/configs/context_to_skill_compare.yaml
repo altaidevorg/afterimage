@@ -1,0 +1,59 @@
+# Compare Afterimage context-to-skill discovery against the original Ctx2Skill repo.
+#
+# First build the document file:
+#   python scripts/ctx2skill_to_afterimage_docs.py \
+#     --input /Users/hakan/Projects/Ctx2Skill/CL-bench-context-dedup.jsonl \
+#     --output /tmp/ctx2skill-afterimage-docs.jsonl \
+#     --max-rows 5
+#
+# Then run:
+#   uv run afterimage skill discover -c examples/configs/context_to_skill_compare.yaml
+
+generation:
+  num_dialogs: 1
+  max_turns: 1
+  max_concurrency: 1
+
+model:
+  provider: gemini
+  model_name: gemini-3.1-flash-lite-preview
+  api_key_env: GEMINI_API_KEY
+
+respondent:
+  system_prompt: |
+    You are a domain assistant. Answer using only the provided context and follow
+    all task constraints exactly.
+
+documents:
+  provider: jsonl
+  path: /tmp/ctx2skill-afterimage-docs.jsonl
+  content_key: text
+  preserve_ids: true
+  include_metadata: true
+
+context:
+  enabled: true
+  num_random_contexts: 1
+  n_instructions: 1
+
+skill:
+  output_dir: ./skills-compare-afterimage
+  iterations: 3
+  probes_per_context: 1
+  max_contexts: 10
+  bootstrap_when_no_failures: true
+  use_source_rubrics: true
+  # Optional per-stage model overrides. Omit this block to use top-level `model`.
+  # Values may be model-name strings, or mappings with provider/model_name/api_key_env/base_url.
+  models:
+    challenger: gemini-3.1-flash-lite-preview
+    reasoner: gemini-3.1-flash-lite-preview
+    judge: gemini-3.1-flash-lite-preview
+    proposer: gemini-3.1-flash-lite-preview
+    generator: gemini-3.1-flash-lite-preview
+  selection:
+    enabled: true
+
+output:
+  path: ./output/context_to_skill_compare_unused.jsonl
+  storage: jsonl

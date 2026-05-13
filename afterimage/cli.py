@@ -7,10 +7,12 @@ working with AfterImage datasets without writing Python code.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from pathlib import Path
 
 import click
+import yaml
 from huggingface_hub import HfApi
 
 from .config import AfterImageConfig, load_config, resolve_api_key
@@ -20,6 +22,230 @@ from .config import AfterImageConfig, load_config, resolve_api_key
 @click.version_option(package_name="afterimage")
 def main():
     """AfterImage -- synthetic conversation dataset generator."""
+
+
+# ---------------------------------------------------------------------------
+# skill
+# ---------------------------------------------------------------------------
+
+
+@main.group()
+def skill():
+    """Discover and inspect context-specific skills."""
+
+
+@skill.command("discover")
+@click.option(
+    "-c",
+    "--config",
+    "config_path",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to YAML config file.",
+)
+def skill_discover(config_path: str):
+    """Discover context-specific skills from configured documents."""
+    try:
+        cfg = load_config(config_path)
+        raw = _load_raw_config(config_path)
+    except (FileNotFoundError, ValueError) as exc:
+        click.secho(f"Config error: {exc}", fg="red", err=True)
+        raise SystemExit(1)
+
+    if cfg.documents is None:
+        click.secho("Skill discovery requires a documents section.", fg="red", err=True)
+        raise SystemExit(1)
+
+    try:
+        api_key = resolve_api_key(cfg)
+    except ValueError as exc:
+        click.secho(str(exc), fg="red", err=True)
+        raise SystemExit(1)
+
+    if api_key is None and cfg.model.provider == "local":
+        api_key = "not-needed"
+
+    skill_cfg = raw.get("skill", {}) if isinstance(raw.get("skill", {}), dict) else {}
+    output_dir = skill_cfg.get("output_dir", "./skills")
+    iterations = int(skill_cfg.get("iterations", 3))
+    probes_per_context = int(skill_cfg.get("probes_per_context", 5))
+    max_contexts = skill_cfg.get("max_contexts")
+    max_contexts = int(max_contexts) if max_contexts is not None else None
+    selection_cfg = skill_cfg.get("selection", {})
+    select_best = bool(
+        selection_cfg.get("enabled", True) if isinstance(selection_cfg, dict) else True
+    )
+    bootstrap_when_no_failures = bool(
+        skill_cfg.get("bootstrap_when_no_failures", False)
+    )
+    use_source_rubrics = bool(skill_cfg.get("use_source_rubrics", False))
+
+    from .config_to_generator import _build_document_provider, _llm_create_extras
+    from .providers import LLMFactory
+    from .skills import SkillDiscoveryPipeline
+    from .skills.generation import SkillGenerator
+    from .skills.judging import RubricJudge
+    from .skills.probe_generation import SkillProbeGenerator
+    from .skills.proposal import SkillProposer
+    from .skills.selection import SkillSelector
+
+    document_provider = _build_document_provider(cfg)
+    llm = LLMFactory.create(
+        provider=cfg.model.provider,
+        model_name=cfg.model.model_name,
+        api_key=api_key,
+        **_llm_create_extras(cfg),
+    )
+    stage_llms = _build_skill_stage_llms(cfg, skill_cfg, default_llm=llm)
+    judge = RubricJudge(stage_llms["judge"])
+    pipeline = SkillDiscoveryPipeline(
+        document_provider=document_provider,
+        respondent_prompt=cfg.respondent.system_prompt,
+        llm=llm,
+        reasoner_llm=stage_llms["reasoner"],
+        output_dir=output_dir,
+        probe_generator=SkillProbeGenerator(stage_llms["probe_generator"]),
+        judge=judge,
+        reasoner_proposer=SkillProposer(stage_llms["reasoner_proposer"]),
+        challenger_proposer=SkillProposer(stage_llms["challenger_proposer"]),
+        reasoner_skill_generator=SkillGenerator(stage_llms["reasoner_generator"]),
+        challenger_skill_generator=SkillGenerator(stage_llms["challenger_generator"]),
+        selector=SkillSelector(
+            judge=RubricJudge(stage_llms["selector_judge"]),
+            reasoner_llm=stage_llms["selector_reasoner"],
+        ),
+        use_source_rubrics=use_source_rubrics,
+    )
+
+    click.echo(
+        "Discovering skills "
+        f"(iterations={iterations}, probes_per_context={probes_per_context}, "
+        f"max_contexts={max_contexts or 'all'})..."
+    )
+    try:
+        selections = asyncio.run(
+            pipeline.discover(
+                iterations=iterations,
+                probes_per_context=probes_per_context,
+                max_contexts=max_contexts,
+                select_best=select_best,
+                bootstrap_when_no_failures=bootstrap_when_no_failures,
+                show_progress=True,
+            )
+        )
+    except Exception as exc:
+        _handle_generation_error(exc, cfg)
+        raise SystemExit(1)
+
+    click.secho(f"Done. Selected {len(selections)} skill(s).", fg="green")
+    click.echo(f"Skills: {output_dir}")
+
+
+def _load_raw_config(config_path: str) -> dict:
+    with open(config_path, "r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f)
+    return raw if isinstance(raw, dict) else {}
+
+
+def _build_skill_stage_llms(cfg: AfterImageConfig, skill_cfg: dict, *, default_llm):
+    """Build optional per-stage LLMs for skill discovery.
+
+    `skill.models.<stage>` may be either a model name string, or a mapping with
+    provider/model_name/api_key_env/base_url. Missing stages reuse the top-level
+    `model` LLM.
+    """
+    stage_aliases = {
+        "challenger": ("probe_generator",),
+        "probe_generator": ("probe_generator",),
+        "reasoner": ("reasoner",),
+        "judge": ("judge",),
+        "proposer": ("reasoner_proposer", "challenger_proposer"),
+        "reasoner_proposer": ("reasoner_proposer",),
+        "challenger_proposer": ("challenger_proposer",),
+        "generator": ("reasoner_generator", "challenger_generator"),
+        "reasoner_generator": ("reasoner_generator",),
+        "challenger_generator": ("challenger_generator",),
+        "selector_reasoner": ("selector_reasoner",),
+        "selector_judge": ("selector_judge",),
+        "selector": ("selector_judge",),
+    }
+    canonical_stages = {
+        "probe_generator",
+        "reasoner",
+        "judge",
+        "reasoner_proposer",
+        "challenger_proposer",
+        "reasoner_generator",
+        "challenger_generator",
+        "selector_reasoner",
+        "selector_judge",
+    }
+    llms = {stage: default_llm for stage in canonical_stages}
+    raw_models = skill_cfg.get("models", {})
+    if not isinstance(raw_models, dict):
+        return llms
+
+    from .providers import LLMFactory
+
+    for raw_stage, spec in raw_models.items():
+        stages = stage_aliases.get(str(raw_stage))
+        if stages is None:
+            click.secho(
+                f"Warning: ignoring unknown skill model stage: {raw_stage}",
+                fg="yellow",
+            )
+            continue
+        stage_llm = _create_skill_stage_llm(cfg, spec, LLMFactory)
+        for stage in stages:
+            llms[stage] = stage_llm
+
+    return llms
+
+
+def _create_skill_stage_llm(cfg: AfterImageConfig, spec, llm_factory):
+    if isinstance(spec, str):
+        provider = cfg.model.provider
+        model_name = spec
+        api_key_env = cfg.model.api_key_env
+        base_url = cfg.model.base_url
+    elif isinstance(spec, dict):
+        provider = spec.get("provider", cfg.model.provider)
+        model_name = spec.get("model_name") or spec.get("model") or cfg.model.model_name
+        api_key_env = spec.get("api_key_env", cfg.model.api_key_env)
+        base_url = spec.get("base_url", cfg.model.base_url)
+    else:
+        raise ValueError(
+            "skill.models entries must be model name strings or mappings, "
+            f"got {type(spec).__name__}"
+        )
+
+    if api_key_env is None:
+        defaults = {
+            "gemini": "GEMINI_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "deepseek": "DEEPSEEK_API_KEY",
+            "openrouter": "OPENROUTER_API_KEY",
+        }
+        api_key_env = defaults.get(provider)
+
+    api_key = None
+    if provider == "local":
+        api_key = "not-needed"
+    elif api_key_env:
+        api_key = os.environ.get(api_key_env)
+        if api_key is None:
+            raise ValueError(
+                f"API key not found for skill stage model {model_name!r}. "
+                f"Set environment variable: export {api_key_env}=your-key"
+            )
+
+    extras = {"base_url": base_url} if base_url else {}
+    return llm_factory.create(
+        provider=provider,
+        model_name=model_name,
+        api_key=api_key,
+        **extras,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -65,6 +65,11 @@ from afterimage.structured_generator import (
     AsyncStructuredGenerator as AsyncStructuredGenerator,
     StructuredGenerator as StructuredGenerator,
 )
+from afterimage.skills import (  # noqa
+    DirectorySkillStore,
+    SkillDiscoveryPipeline,
+    SkillRespondentPromptModifier,
+)
 from afterimage.types import (  # noqa
     MODEL_PROVIDER_NAMES,
     Document,

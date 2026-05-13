@@ -225,6 +225,14 @@ class DocumentsConfig(BaseModel):
     content_key: str = Field(
         default="text", description="JSON key containing document text"
     )
+    preserve_ids: bool = Field(
+        default=False,
+        description="For jsonl documents, use row id/metadata.context_id as Document.id",
+    )
+    include_metadata: bool = Field(
+        default=False,
+        description="For jsonl documents, preserve row metadata and non-content fields",
+    )
 
 
 class ContextConfig(BaseModel):
@@ -257,6 +265,17 @@ class QualityConfig(BaseModel):
 
     auto_improve: bool = Field(
         default=False, description="Retry low-quality generations"
+    )
+
+
+class SkillsConfig(BaseModel):
+    """Runtime context-specific skill injection settings."""
+
+    enabled: bool = Field(default=False, description="Inject discovered skills")
+    path: str = Field(default="./skills", description="DirectorySkillStore path")
+    mode: Literal["context_id"] = Field(
+        default="context_id",
+        description="Skill lookup mode. Currently uses context hash/context id.",
     )
 
 
@@ -341,6 +360,7 @@ class AfterImageConfig(BaseModel):
     context: ContextConfig = Field(default_factory=ContextConfig)
     personas: PersonasConfig = Field(default_factory=PersonasConfig)
     quality: QualityConfig = Field(default_factory=QualityConfig)
+    skills: SkillsConfig = Field(default_factory=SkillsConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     analytics: AnalyticsConfig = Field(default_factory=AnalyticsConfig)
     preference: Optional[PreferenceGenerationConfig] = Field(

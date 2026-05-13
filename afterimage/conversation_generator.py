@@ -612,6 +612,7 @@ class ConversationGenerator(BaseGenerator):
                 instruction_context = gen_instructions.context
                 persona = gen_instructions.persona
                 response_context = None
+                response_metadata = {}
                 current_respondent_prompt = respondent_prompt
                 if respondent_prompt_modifier:
                     if hasattr(respondent_prompt_modifier, "acall"):
@@ -631,6 +632,7 @@ class ConversationGenerator(BaseGenerator):
                         )
                     current_respondent_prompt = modified_respondent_prompt.prompt
                     response_context = modified_respondent_prompt.context
+                    response_metadata = modified_respondent_prompt.metadata
 
                 conversation = await self.go(
                     turns=turns,
@@ -655,6 +657,7 @@ class ConversationGenerator(BaseGenerator):
                             "persona_generation_depth": (
                                 gen_instructions.persona_generation_depth
                             ),
+                            **response_metadata,
                         },
                     )
 
