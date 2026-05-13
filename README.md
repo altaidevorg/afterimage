@@ -31,6 +31,10 @@ from a single YAML file or a composable Python API.
 
 ## News
 
+### May 13, 2026 — Context2skill
+
+**ctx2skill** is a new method to convert and iteratively optimize large contexts to skills that agents can use, originally proposed in [From context to skills: Can language models learn from context skillfully?](https://arxiv.org/html/2604.27660v1). See the [docs](https://afterimage.altai.dev/context_to_skill_tutorial.html) to learn how to use it.
+
 ### April 23, 2026 — OpenSimula
 
 **OpenSimula** is an experimental, open implementation of mechanism-design ideas from [**Simula**](https://openreview.net/pdf?id=NALsdGEPhB) (Davidson et al., TMLR; see also Google’s [research blog](https://research.google/blog/designing-synthetic-datasets-for-the-real-world-mechanism-design-and-reasoning-from-first-principles/) on the framing). It covers LLM-built **factor taxonomies**, **weighted mix sampling** over those factors, **meta-prompt** diversification (with optional complexification), **requirement critics** with refinement, and an independent **double-critic** gate for verifiable multiple-choice items. Checkpoints live under an `opensimula/` subtree (manifest, taxonomy bundle, sampling strategy); you can stream datapoints to JSONL, hook **`GenerationMonitor`** into **`OpenSimula`**, or bridge scenarios into **`ConversationGenerator`** via **`SimulaInstructionGeneratorCallback`**.
