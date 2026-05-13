@@ -50,6 +50,15 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _iter_jsonl(path: Path):
+    if not path.exists():
+        return
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                yield json.loads(line)
+
+
 class DirectorySkillStore:
     """Persist context-specific skills in a directory tree."""
 
@@ -245,13 +254,18 @@ class DirectorySkillStore:
         with self._lock:
             if self._manifest_loaded:
                 return
-            rows = _load_jsonl(self.manifest_path)
-            self._context_id_by_hash = {}
-            self._context_hash_by_id = {}
-            for row in rows:
-                context_h = row.get("context_hash")
-                context_id = row.get("context_id")
-                if isinstance(context_h, str) and isinstance(context_id, str):
-                    self._context_id_by_hash[context_h] = context_id
-                    self._context_hash_by_id[context_id] = context_h
+
+        context_id_by_hash: dict[str, str] = {}
+        context_hash_by_id: dict[str, str] = {}
+        for row in _iter_jsonl(self.manifest_path):
+            context_h = row.get("context_hash")
+            context_id = row.get("context_id")
+            if isinstance(context_h, str) and isinstance(context_id, str):
+                context_id_by_hash[context_h] = context_id
+                context_hash_by_id[context_id] = context_h
+
+        with self._lock:
+            if not self._manifest_loaded:
+                self._context_id_by_hash.update(context_id_by_hash)
+                self._context_hash_by_id.update(context_hash_by_id)
             self._manifest_loaded = True

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ..base import BaseRespondentPromptModifierCallback
 from ..types import GeneratedResponsePrompt
 from .storage import DirectorySkillStore
@@ -30,6 +32,28 @@ class SkillRespondentPromptModifier(BaseRespondentPromptModifierCallback):
             + skill_content.strip()
         )
 
+    @staticmethod
+    def _metadata_with_skill(
+        metadata: dict[str, Any],
+        *,
+        context_id: str,
+        version_id: str,
+        name: str,
+        iteration: int,
+    ) -> dict[str, Any]:
+        updated = dict(metadata)
+        updated.update(
+            {
+                "skill": {
+                    "context_id": context_id,
+                    "version_id": version_id,
+                    "name": name,
+                    "iteration": iteration,
+                }
+            }
+        )
+        return updated
+
     def generate(
         self, respondent_prompt: str, context: str, instruction: str
     ) -> GeneratedResponsePrompt:
@@ -37,13 +61,13 @@ class SkillRespondentPromptModifier(BaseRespondentPromptModifierCallback):
         skill = self.skill_store.load_selected(context_text=base.context or context)
         if skill is None:
             return base
-        metadata = dict(base.metadata)
-        metadata["skill"] = {
-            "context_id": skill.context_id,
-            "version_id": skill.id,
-            "name": skill.name,
-            "iteration": skill.iteration,
-        }
+        metadata = self._metadata_with_skill(
+            base.metadata,
+            context_id=skill.context_id,
+            version_id=skill.id,
+            name=skill.name,
+            iteration=skill.iteration,
+        )
         return GeneratedResponsePrompt(
             prompt=self._inject(
                 base.prompt, skill.content, skill.name, skill.description
@@ -59,13 +83,13 @@ class SkillRespondentPromptModifier(BaseRespondentPromptModifierCallback):
         skill = self.skill_store.load_selected(context_text=base.context or context)
         if skill is None:
             return base
-        metadata = dict(base.metadata)
-        metadata["skill"] = {
-            "context_id": skill.context_id,
-            "version_id": skill.id,
-            "name": skill.name,
-            "iteration": skill.iteration,
-        }
+        metadata = self._metadata_with_skill(
+            base.metadata,
+            context_id=skill.context_id,
+            version_id=skill.id,
+            name=skill.name,
+            iteration=skill.iteration,
+        )
         return GeneratedResponsePrompt(
             prompt=self._inject(
                 base.prompt, skill.content, skill.name, skill.description
