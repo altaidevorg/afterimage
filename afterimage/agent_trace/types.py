@@ -8,7 +8,9 @@ class ToolParameterSpec(BaseModel):
     type: str = Field(default="str", description="Parameter primitive or schema type")
     description: str = Field(default="", description="Description of the parameter")
     required: bool = Field(default=True, description="Whether parameter is required")
-    default: Optional[Any] = Field(default=None, description="Default value if optional")
+    default: Optional[Any] = Field(
+        default=None, description="Default value if optional"
+    )
 
 
 class ToolActionSpec(BaseModel):
@@ -24,7 +26,9 @@ class ToolActionSpec(BaseModel):
 
 class AppDomainSpec(BaseModel):
     app_name: str = Field(..., description="Unique name of the app domain")
-    description: str = Field(..., description="High-level description of the app domain")
+    description: str = Field(
+        ..., description="High-level description of the app domain"
+    )
     actions: List[ToolActionSpec] = Field(
         default_factory=list, description="API endpoints available in this app"
     )
@@ -42,14 +46,22 @@ class ToolCall(BaseModel):
 
 
 class ToolObservation(BaseModel):
-    observation: Any = Field(..., description="Raw output object or dict returned by tool")
-    status: Literal["success", "error"] = Field(default="success", description="Execution status")
-    latency_ms: float = Field(default=0.0, description="Tool execution latency in milliseconds")
+    observation: Any = Field(
+        ..., description="Raw output object or dict returned by tool"
+    )
+    status: Literal["success", "error"] = Field(
+        default="success", description="Execution status"
+    )
+    latency_ms: float = Field(
+        default=0.0, description="Tool execution latency in milliseconds"
+    )
 
 
 class TrajectoryTurn(BaseModel):
     turn_id: int = Field(..., description="1-indexed turn number")
-    agent_thought: str = Field(..., description="Agent reasoning before action or output")
+    agent_thought: str = Field(
+        ..., description="Agent reasoning before action or output"
+    )
     tool_call: Optional[ToolCall] = Field(
         default=None, description="Tool call made in this turn"
     )

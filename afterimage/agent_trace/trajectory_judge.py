@@ -62,7 +62,9 @@ class TrajectoryJudge:
             turns_lines.append(f"Turn {t.turn_id}:")
             turns_lines.append(f"  Thought: {t.agent_thought}")
             if t.tool_call:
-                turns_lines.append(f"  Tool Call: {t.tool_call.app}.{t.tool_call.action}({t.tool_call.parameters})")
+                turns_lines.append(
+                    f"  Tool Call: {t.tool_call.app}.{t.tool_call.action}({t.tool_call.parameters})"
+                )
             if t.observation:
                 turns_lines.append(f"  Observation: {t.observation.observation}")
 
@@ -83,7 +85,10 @@ class TrajectoryJudge:
             payload = structured_res.parsed
 
             avg_score = (
-                payload.grounding + payload.parameter_correctness + payload.loop_avoidance + payload.task_completion
+                payload.grounding
+                + payload.parameter_correctness
+                + payload.loop_avoidance
+                + payload.task_completion
             ) / 4.0
             is_valid = payload.is_valid and (avg_score >= self.min_quality_threshold)
 

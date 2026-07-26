@@ -60,8 +60,19 @@ class SchemaVerifier:
     ALLOWED_GENERATORS = {"id", "money"}
     ALLOWED_MODULE_IMPORTS = {"pydantic", "typing", "datetime", "uuid"}
     FORBIDDEN_CALL_NAMES = {
-        "eval", "exec", "open", "__import__", "globals", "locals", "compile",
-        "breakpoint", "input", "os", "sys", "subprocess", "shutil"
+        "eval",
+        "exec",
+        "open",
+        "__import__",
+        "globals",
+        "locals",
+        "compile",
+        "breakpoint",
+        "input",
+        "os",
+        "sys",
+        "subprocess",
+        "shutil",
     }
 
     def verify_code(
@@ -116,20 +127,30 @@ class SchemaVerifier:
             )
 
         declared_primary_ids: Set[str] = set(existing_declared_ids or set())
-        field_generator_tags: List[tuple[str, str, dict]] = []  # (model_name, field_name, extra_dict)
+        field_generator_tags: List[
+            tuple[str, str, dict]
+        ] = []  # (model_name, field_name, extra_dict)
 
         # 3. Metadata Format Check & Primary ID Collection
         for model_name, class_node in model_classes.items():
             for stmt in class_node.body:
-                if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+                if isinstance(stmt, ast.AnnAssign) and isinstance(
+                    stmt.target, ast.Name
+                ):
                     field_name = stmt.target.id
                     extra_dict = self._extract_json_schema_extra(stmt.value)
                     if extra_dict:
-                        field_generator_tags.append((model_name, field_name, extra_dict))
+                        field_generator_tags.append(
+                            (model_name, field_name, extra_dict)
+                        )
                         gen = extra_dict.get("generator")
                         if gen == "id":
                             # Register entity.field and model.field primary keys
-                            entity_name = model_name.lower().removesuffix("response").removesuffix("model")
+                            entity_name = (
+                                model_name.lower()
+                                .removesuffix("response")
+                                .removesuffix("model")
+                            )
                             declared_primary_ids.add(f"{entity_name}.{field_name}")
                             declared_primary_ids.add(f"{model_name}.{field_name}")
                             declared_primary_ids.add(field_name)
@@ -155,7 +176,10 @@ class SchemaVerifier:
                 if fk_target not in declared_primary_ids:
                     # Also check fallback entity matching
                     target_field = fk_target.split(".")[-1]
-                    if not any(pid.endswith(f".{target_field}") or pid == target_field for pid in declared_primary_ids):
+                    if not any(
+                        pid.endswith(f".{target_field}") or pid == target_field
+                        for pid in declared_primary_ids
+                    ):
                         errors.append(
                             VerificationErrorDetail(
                                 model_name=model_name,
@@ -225,7 +249,12 @@ class SchemaVerifier:
     def _is_valid_generator_tag(self, gen: str) -> bool:
         if gen in self.ALLOWED_GENERATORS:
             return True
-        if gen.startswith("fk:") or gen.startswith("faker:") or gen.startswith("mutation:") or gen == "enum":
+        if (
+            gen.startswith("fk:")
+            or gen.startswith("faker:")
+            or gen.startswith("mutation:")
+            or gen == "enum"
+        ):
             return True
         return False
 
@@ -255,11 +284,15 @@ class SchemaVerifier:
                     if isinstance(v, ast.Constant):
                         res[k.value] = v.value
                     elif isinstance(v, ast.List):
-                        res[k.value] = [el.value for el in v.elts if isinstance(el, ast.Constant)]
+                        res[k.value] = [
+                            el.value for el in v.elts if isinstance(el, ast.Constant)
+                        ]
             return res
         return None
 
-    def _perform_dry_run(self, code_str: str, model_names: List[str]) -> Optional[VerificationErrorDetail]:
+    def _perform_dry_run(
+        self, code_str: str, model_names: List[str]
+    ) -> Optional[VerificationErrorDetail]:
         """Executes code string in isolated namespace and instantiates models."""
         local_scope: Dict[str, Any] = {}
         try:

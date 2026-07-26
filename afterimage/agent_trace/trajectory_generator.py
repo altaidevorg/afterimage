@@ -160,7 +160,9 @@ class ReActTrajectoryLoop:
 
             return (
                 thought,
-                ToolCall(app=app_name, action=action_name, parameters=action_input_dict),
+                ToolCall(
+                    app=app_name, action=action_name, parameters=action_input_dict
+                ),
                 False,
                 None,
             )

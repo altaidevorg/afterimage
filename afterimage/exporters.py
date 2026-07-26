@@ -112,7 +112,12 @@ def to_agent_sft(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "content": content,
                 }
             )
-        out.append({"messages": messages, "trajectory_id": row.get("metadata", {}).get("trajectory_id")})
+        out.append(
+            {
+                "messages": messages,
+                "trajectory_id": row.get("metadata", {}).get("trajectory_id"),
+            }
+        )
     return out
 
 

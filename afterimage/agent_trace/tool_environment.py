@@ -37,7 +37,10 @@ class DeclarativeTool:
             output_data = result_model.model_dump(mode="json")
         else:
             # Fallback output dict if no Pydantic model registered
-            output_data = {"status": "success", "message": f"Action {self.action_spec.action_name} executed successfully"}
+            output_data = {
+                "status": "success",
+                "message": f"Action {self.action_spec.action_name} executed successfully",
+            }
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
@@ -74,7 +77,9 @@ class DeclarativeEnvironment:
         self.tools[full_key] = tool
 
     def register_app_domain(
-        self, app_spec: AppDomainSpec, model_classes: Optional[Dict[str, Type[BaseModel]]] = None
+        self,
+        app_spec: AppDomainSpec,
+        model_classes: Optional[Dict[str, Type[BaseModel]]] = None,
     ) -> None:
         """Registers an entire AppDomainSpec and attaches resolved Pydantic response models."""
         self.app_domains[app_spec.app_name] = app_spec
@@ -94,7 +99,10 @@ class DeclarativeEnvironment:
 
         # Fallback search if app prefix omitted
         for tool_key, tool in self.tools.items():
-            if tool_key.endswith(f".{action}") or tool.action_spec.action_name == action:
+            if (
+                tool_key.endswith(f".{action}")
+                or tool.action_spec.action_name == action
+            ):
                 return tool.execute(**parameters)
 
         return ToolObservation(
@@ -111,8 +119,14 @@ class DeclarativeEnvironment:
             lines.append(f"Description: {app_spec.description}\nActions:")
             for action in app_spec.actions:
                 params_str = ", ".join(
-                    [f"{p.name}: {p.type}" + (" (optional)" if not p.required else "") for p in action.parameters]
+                    [
+                        f"{p.name}: {p.type}"
+                        + (" (optional)" if not p.required else "")
+                        for p in action.parameters
+                    ]
                 )
-                lines.append(f"- `{app_name}.{action.action_name}({params_str})`: {action.description}")
+                lines.append(
+                    f"- `{app_name}.{action.action_name}({params_str})`: {action.description}"
+                )
             lines.append("")
         return "\n".join(lines)

@@ -65,7 +65,10 @@ class InverseFrequencySampler:
                 all_actions.append((count, key, act.description))
 
         all_actions.sort(key=lambda x: x[0])
-        return [f"- {key}: {desc} (invoked {cnt} times)" for cnt, key, desc in all_actions[:top_k]]
+        return [
+            f"- {key}: {desc} (invoked {cnt} times)"
+            for cnt, key, desc in all_actions[:top_k]
+        ]
 
 
 class GridTaskSynthesizer:
@@ -112,7 +115,9 @@ class GridTaskSynthesizer:
         api_specs_lines = []
         for app_name, spec in selected_domains.items():
             for act in spec.actions:
-                api_specs_lines.append(f"- {app_name}.{act.action_name}: {act.description}")
+                api_specs_lines.append(
+                    f"- {app_name}.{act.action_name}: {act.description}"
+                )
 
         least_invoked = self.sampler.get_least_invoked_actions(selected_domains)
 

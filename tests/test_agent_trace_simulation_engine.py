@@ -2,8 +2,14 @@ import pytest
 import time
 from pydantic import BaseModel, Field, EmailStr
 
-from afterimage.agent_trace.simulation_engine import DeclarativeEngine, SimulationContext
-from afterimage.agent_trace.tool_environment import DeclarativeEnvironment, DeclarativeTool
+from afterimage.agent_trace.simulation_engine import (
+    DeclarativeEngine,
+    SimulationContext,
+)
+from afterimage.agent_trace.tool_environment import (
+    DeclarativeEnvironment,
+    DeclarativeTool,
+)
 from afterimage.agent_trace.types import ToolActionSpec, ToolParameterSpec
 
 

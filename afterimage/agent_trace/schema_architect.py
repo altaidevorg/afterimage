@@ -57,7 +57,10 @@ class SchemaArchitect:
     ) -> Tuple[AppDomainSpec, Dict[str, Type[BaseModel]]]:
         """Generates Pydantic response models code for an app domain with static verification retries."""
         endpoints_desc = "\n".join(
-            [f"- {a.action_name}: {a.description} -> ResponseModel: {a.response_model_name}" for a in actions]
+            [
+                f"- {a.action_name}: {a.description} -> ResponseModel: {a.response_model_name}"
+                for a in actions
+            ]
         )
 
         feedback_section = ""
@@ -80,7 +83,9 @@ class SchemaArchitect:
             raw_text = response.text
             code_str = self._extract_python_code(raw_text)
 
-            report = self.verifier.verify_code(code_str, existing_declared_ids=existing_primary_ids)
+            report = self.verifier.verify_code(
+                code_str, existing_declared_ids=existing_primary_ids
+            )
             if report.is_valid:
                 last_code = code_str
                 break
@@ -132,10 +137,12 @@ class SchemaArchitect:
         ]
         for a in actions:
             model_name = a.response_model_name
-            lines.extend([
-                f"class {model_name}(BaseModel):",
-                f"    id: int = Field(json_schema_extra={{'generator': 'id'}})",
-                f"    status: str = Field(default='success')",
-                f"    message: str = Field(default='Action completed')\n",
-            ])
+            lines.extend(
+                [
+                    f"class {model_name}(BaseModel):",
+                    f"    id: int = Field(json_schema_extra={{'generator': 'id'}})",
+                    f"    status: str = Field(default='success')",
+                    f"    message: str = Field(default='Action completed')\n",
+                ]
+            )
         return "\n".join(lines)

@@ -12,6 +12,7 @@ from pydantic import BaseModel, EmailStr
 
 try:
     from faker import Faker
+
     fake = Faker()
 except ImportError:
     fake = None
@@ -110,7 +111,9 @@ class DeclarativeEngine:
         """
         self.ctx = context or SimulationContext()
 
-    def _extract_constraint(self, field_info: Any, constraint_name: str) -> Optional[Any]:
+    def _extract_constraint(
+        self, field_info: Any, constraint_name: str
+    ) -> Optional[Any]:
         val = getattr(field_info, constraint_name, None)
         if val is not None:
             return val
@@ -159,7 +162,9 @@ class DeclarativeEngine:
         # Tier 2: Specialized Types
         annotation = getattr(field_info, "annotation", None)
         if annotation == EmailStr:
-            return fake.email() if fake else f"user_{random.randint(100,999)}@example.com"
+            return (
+                fake.email() if fake else f"user_{random.randint(100, 999)}@example.com"
+            )
         elif annotation == uuid.UUID:
             val = uuid.uuid4()
             self.ctx.record_entity(field_name, str(val))
@@ -187,13 +192,22 @@ class DeclarativeEngine:
         elif annotation == bool:
             return True
         elif annotation == list or getattr(annotation, "__origin__", None) is list:
-            item_type = getattr(annotation, "__args__", (str,))[0] if hasattr(annotation, "__args__") else str
+            item_type = (
+                getattr(annotation, "__args__", (str,))[0]
+                if hasattr(annotation, "__args__")
+                else str
+            )
             if isinstance(item_type, type) and issubclass(item_type, BaseModel):
-                return [self.generate_response(item_type) for _ in range(random.randint(1, 3))]
+                return [
+                    self.generate_response(item_type)
+                    for _ in range(random.randint(1, 3))
+                ]
             elif item_type == int:
                 return [random.randint(1, 50) for _ in range(random.randint(1, 3))]
             else:
-                return [fake.word() if fake else "item" for _ in range(random.randint(1, 3))]
+                return [
+                    fake.word() if fake else "item" for _ in range(random.randint(1, 3))
+                ]
 
         return None
 

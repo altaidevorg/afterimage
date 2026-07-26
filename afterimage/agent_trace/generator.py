@@ -57,7 +57,9 @@ class AsyncAgentTraceGenerator:
         )
 
         self.environment = DeclarativeEnvironment()
-        self.storage = storage or JSONLStorage(conversations_path="outputs/agent_trajectories.jsonl")
+        self.storage = storage or JSONLStorage(
+            conversations_path="outputs/agent_trajectories.jsonl"
+        )
 
     async def register_app_domain(
         self, app_name: str, app_description: str, actions: List[ToolActionSpec]
@@ -74,7 +76,9 @@ class AsyncAgentTraceGenerator:
     async def generate_single(self, max_turns: int = 6) -> Optional[AgentTrajectory]:
         """Synthesizes a single agent trajectory (task -> ReAct loop -> judge)."""
         if not self.environment.app_domains:
-            raise ValueError("No app domains registered. Call register_app_domain() first.")
+            raise ValueError(
+                "No app domains registered. Call register_app_domain() first."
+            )
 
         # 1. Task synthesis via 360-bucket grid & task rewriter
         task, selected_apps, bucket = await self.synthesizer.synthesize_task(
@@ -144,13 +148,16 @@ class AsyncAgentTraceGenerator:
             if t.observation:
                 entries.append(
                     ConversationEntry(
-                        role=Role.USER, content=f"Observation: {t.observation.observation}"
+                        role=Role.USER,
+                        content=f"Observation: {t.observation.observation}",
                     )
                 )
 
         if traj.final_answer:
             entries.append(
-                ConversationEntry(role=Role.ASSISTANT, content=f"Final Answer: {traj.final_answer}")
+                ConversationEntry(
+                    role=Role.ASSISTANT, content=f"Final Answer: {traj.final_answer}"
+                )
             )
 
         metadata = traj.metadata
