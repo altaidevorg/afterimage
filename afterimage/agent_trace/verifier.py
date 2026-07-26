@@ -63,7 +63,6 @@ class SchemaVerifier:
         "eval",
         "exec",
         "open",
-        "__import__",
         "globals",
         "locals",
         "compile",
@@ -295,8 +294,13 @@ class SchemaVerifier:
     ) -> Optional[VerificationErrorDetail]:
         """Executes code string in isolated namespace and instantiates models."""
         local_scope: Dict[str, Any] = {}
+        exec_globals = {
+            "__builtins__": SAFE_BUILTINS,
+            "BaseModel": BaseModel,
+            "Field": Field,
+        }
         try:
-            exec(code_str, local_scope)
+            exec(code_str, exec_globals, local_scope)
         except Exception as e:
             return VerificationErrorDetail(
                 model_name="Global",

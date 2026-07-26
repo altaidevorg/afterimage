@@ -34,10 +34,9 @@ class SimulationContext:
             seed (Optional[int]): Optional random seed for reproducible entity synthesis.
         """
         self._seed = seed
-        if seed is not None:
-            random.seed(seed)
-            if fake:
-                Faker.seed(seed)
+        self._random = random.Random(seed)
+        if seed is not None and fake:
+            Faker.seed(seed)
         self.store: Dict[str, List[Any]] = {}
 
     def record_entity(self, key: str, value: Any) -> None:
@@ -68,9 +67,9 @@ class SimulationContext:
 
         for c in candidates:
             if c in self.store and self.store[c]:
-                return random.choice(self.store[c])
+                return self._random.choice(self.store[c])
 
-        fallback_id = random.randint(1000, 9999)
+        fallback_id = self._random.randint(1000, 9999)
         self.record_entity(key, fallback_id)
         return fallback_id
 
@@ -139,7 +138,7 @@ class DeclarativeEngine:
         # Tier 1: Explicit Generator Annotations
         if gen_type:
             if gen_type == "id":
-                val = random.randint(10000, 99999)
+                val = self.ctx._random.randint(10000, 99999)
                 self.ctx.record_entity(field_name, val)
                 return val
             elif isinstance(gen_type, str) and gen_type.startswith("fk:"):
@@ -150,10 +149,10 @@ class DeclarativeEngine:
                 le_val = self._extract_constraint(field_info, "le")
                 ge = 0.01 if ge_val is None else float(ge_val)
                 le = 500.0 if le_val is None else float(le_val)
-                return round(random.uniform(ge, le), 2)
+                return round(self.ctx._random.uniform(ge, le), 2)
             elif gen_type == "enum":
                 values = extra.get("values", ["default_1", "default_2"])
-                return random.choice(values)
+                return self.ctx._random.choice(values)
             elif isinstance(gen_type, str) and gen_type.startswith("faker:"):
                 provider = gen_type.split("faker:", 1)[1]
                 if fake and hasattr(fake, provider):
@@ -163,7 +162,9 @@ class DeclarativeEngine:
         annotation = getattr(field_info, "annotation", None)
         if annotation is EmailStr:
             return (
-                fake.email() if fake else f"user_{random.randint(100, 999)}@example.com"
+                fake.email()
+                if fake
+                else f"user_{self.ctx._random.randint(100, 999)}@example.com"
             )
         elif annotation is uuid.UUID:
             val = uuid.uuid4()
@@ -180,13 +181,13 @@ class DeclarativeEngine:
             le_val = self._extract_constraint(field_info, "le")
             ge = 1 if ge_val is None else int(ge_val)
             le = 100 if le_val is None else int(le_val)
-            return random.randint(ge, le)
+            return self.ctx._random.randint(ge, le)
         elif annotation is float:
             ge_val = self._extract_constraint(field_info, "ge")
             le_val = self._extract_constraint(field_info, "le")
             ge = 1.0 if ge_val is None else float(ge_val)
             le = 100.0 if le_val is None else float(le_val)
-            return round(random.uniform(ge, le), 2)
+            return round(self.ctx._random.uniform(ge, le), 2)
         elif annotation is str:
             return fake.word() if fake else f"sample_{field_name}"
         elif annotation is bool:
@@ -200,13 +201,17 @@ class DeclarativeEngine:
             if isinstance(item_type, type) and issubclass(item_type, BaseModel):
                 return [
                     self.generate_response(item_type)
-                    for _ in range(random.randint(1, 3))
+                    for _ in range(self.ctx._random.randint(1, 3))
                 ]
             elif item_type is int:
-                return [random.randint(1, 50) for _ in range(random.randint(1, 3))]
+                return [
+                    self.ctx._random.randint(1, 50)
+                    for _ in range(self.ctx._random.randint(1, 3))
+                ]
             else:
                 return [
-                    fake.word() if fake else "item" for _ in range(random.randint(1, 3))
+                    fake.word() if fake else "item"
+                    for _ in range(self.ctx._random.randint(1, 3))
                 ]
 
         return None

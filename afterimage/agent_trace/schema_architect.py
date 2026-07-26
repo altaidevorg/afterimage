@@ -116,9 +116,15 @@ class SchemaArchitect:
 
     def _compile_model_classes(self, code_str: str) -> Dict[str, Type[BaseModel]]:
         """Compiles Python source code string into live Pydantic BaseModel classes."""
+        from .verifier import SAFE_BUILTINS
+
         local_scope: Dict[str, Any] = {}
+        exec_globals = {
+            "__builtins__": SAFE_BUILTINS,
+            "BaseModel": BaseModel,
+        }
         try:
-            exec(code_str, local_scope)
+            exec(code_str, exec_globals, local_scope)
         except Exception:
             return {}
 

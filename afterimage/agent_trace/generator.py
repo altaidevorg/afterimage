@@ -115,15 +115,20 @@ class AsyncAgentTraceGenerator:
                 try:
                     return await self.generate_single(max_turns=max_turns)
                 except Exception as e:
-                    logger.warning(f"Error during trajectory generation worker: {e}")
+                    logger.warning(
+                        f"Error during trajectory generation worker: {e}", exc_info=True
+                    )
                     return None
 
         tasks = [_worker() for _ in range(num_trajectories)]
-        results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
         conversations = []
         for res in results:
-            if res:
+            if isinstance(res, Exception):
+                logger.error(f"Worker encountered unhandled exception: {res}")
+                continue
+            if isinstance(res, AgentTrajectory):
                 accepted_trajectories.append(res)
                 conv = self._trajectory_to_conversation(res)
                 conversations.append(conv)
