@@ -147,7 +147,7 @@ class ReActTrajectoryLoop:
         if action_match:
             action_str = action_match.group(1).strip()
 
-        input_match = re.search(r"Action Input:\s*(\{.*?\})", text, re.DOTALL)
+        input_match = re.search(r"Action Input:\s*(\{.*\})", text, re.DOTALL)
         if input_match:
             try:
                 action_input_dict = json.loads(input_match.group(1).strip())
