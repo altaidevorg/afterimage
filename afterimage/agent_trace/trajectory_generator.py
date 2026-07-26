@@ -1,7 +1,6 @@
 import json
 import re
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel
+from typing import List, Optional
 
 from ..providers.llm_providers import LLMProvider
 from .tool_environment import DeclarativeEnvironment
@@ -124,7 +123,6 @@ class ReActTrajectoryLoop:
         thought = ""
         action_str = None
         action_input_dict = {}
-        is_final = False
         final_answer = None
 
         if "Final Answer:" in text:

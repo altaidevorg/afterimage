@@ -1,5 +1,3 @@
-import json
-from typing import Optional
 from pydantic import BaseModel, Field
 
 from ..providers.llm_providers import LLMProvider

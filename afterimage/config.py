@@ -440,6 +440,8 @@ def load_config(path: str | Path) -> AfterImageConfig:
             doc_path = config_path.parent / doc_path
         config.documents.path = str(doc_path.resolve())
 
+    return config
+
 
 class AgentTraceConfig(BaseModel):
     """Configuration for Environment-Free Agent-Trace generation."""
@@ -452,8 +454,6 @@ class AgentTraceConfig(BaseModel):
     max_concurrency: int = Field(default=4, ge=1)
 
     # output.path stays relative to cwd (resolved at runtime, not here)
-
-    return config
 
 
 def resolve_api_key(config: AfterImageConfig) -> str | None:

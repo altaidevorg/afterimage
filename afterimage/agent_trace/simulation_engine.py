@@ -161,37 +161,37 @@ class DeclarativeEngine:
 
         # Tier 2: Specialized Types
         annotation = getattr(field_info, "annotation", None)
-        if annotation == EmailStr:
+        if annotation is EmailStr:
             return (
                 fake.email() if fake else f"user_{random.randint(100, 999)}@example.com"
             )
-        elif annotation == uuid.UUID:
+        elif annotation is uuid.UUID:
             val = uuid.uuid4()
             self.ctx.record_entity(field_name, str(val))
             return val
-        elif annotation == datetime.datetime:
+        elif annotation is datetime.datetime:
             return datetime.datetime.now(datetime.timezone.utc)
-        elif annotation == datetime.date:
+        elif annotation is datetime.date:
             return datetime.date.today()
 
         # Tier 3 & Tier 4: Field Constraints & Primitive Fallbacks
-        if annotation == int:
+        if annotation is int:
             ge_val = self._extract_constraint(field_info, "ge")
             le_val = self._extract_constraint(field_info, "le")
             ge = 1 if ge_val is None else int(ge_val)
             le = 100 if le_val is None else int(le_val)
             return random.randint(ge, le)
-        elif annotation == float:
+        elif annotation is float:
             ge_val = self._extract_constraint(field_info, "ge")
             le_val = self._extract_constraint(field_info, "le")
             ge = 1.0 if ge_val is None else float(ge_val)
             le = 100.0 if le_val is None else float(le_val)
             return round(random.uniform(ge, le), 2)
-        elif annotation == str:
+        elif annotation is str:
             return fake.word() if fake else f"sample_{field_name}"
-        elif annotation == bool:
+        elif annotation is bool:
             return True
-        elif annotation == list or getattr(annotation, "__origin__", None) is list:
+        elif annotation is list or getattr(annotation, "__origin__", None) is list:
             item_type = (
                 getattr(annotation, "__args__", (str,))[0]
                 if hasattr(annotation, "__args__")
@@ -202,7 +202,7 @@ class DeclarativeEngine:
                     self.generate_response(item_type)
                     for _ in range(random.randint(1, 3))
                 ]
-            elif item_type == int:
+            elif item_type is int:
                 return [random.randint(1, 50) for _ in range(random.randint(1, 3))]
             else:
                 return [

@@ -1,6 +1,5 @@
 import random
 from typing import Dict, List, Optional
-from pydantic import BaseModel
 
 from ..providers.llm_providers import LLMProvider
 from .types import AppDomainSpec, GridTaskBucket

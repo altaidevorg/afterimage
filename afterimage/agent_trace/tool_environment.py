@@ -1,5 +1,5 @@
 import time
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, Optional, Type
 from pydantic import BaseModel
 
 from .simulation_engine import DeclarativeEngine, SimulationContext

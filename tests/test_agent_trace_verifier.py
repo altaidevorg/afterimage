@@ -1,5 +1,4 @@
-import pytest
-from afterimage.agent_trace.verifier import SchemaVerifier, VerificationReport
+from afterimage.agent_trace.verifier import SchemaVerifier
 
 
 def test_schema_verifier_syntactic_validity():

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Dict, List, Optional, Tuple, Type
 from pydantic import BaseModel
 
 from ..providers.llm_providers import LLMProvider
-from .types import AppDomainSpec, ToolActionSpec, ToolParameterSpec
+from .types import AppDomainSpec, ToolActionSpec
 from .verifier import SchemaVerifier, VerificationReport
 
 
@@ -140,9 +139,9 @@ class SchemaArchitect:
             lines.extend(
                 [
                     f"class {model_name}(BaseModel):",
-                    f"    id: int = Field(json_schema_extra={{'generator': 'id'}})",
-                    f"    status: str = Field(default='success')",
-                    f"    message: str = Field(default='Action completed')\n",
+                    "    id: int = Field(json_schema_extra={'generator': 'id'})",
+                    "    status: str = Field(default='success')",
+                    "    message: str = Field(default='Action completed')\n",
                 ]
             )
         return "\n".join(lines)

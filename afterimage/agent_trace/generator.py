@@ -1,7 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel
+from typing import List, Optional, Union
 
 from ..key_management import SmartKeyPool
 from ..providers.llm_providers import LLMFactory, LLMProvider
