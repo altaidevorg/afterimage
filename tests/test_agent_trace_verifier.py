@@ -49,3 +49,18 @@ class OrderResponse(BaseModel):
     report = verifier.verify_code(valid_code)
     assert report.is_valid
     assert len(report.errors) == 0
+
+
+def test_schema_verifier_ast_security_blocking():
+    verifier = SchemaVerifier()
+    malicious_code = """
+import os
+from pydantic import BaseModel
+
+class UserResponse(BaseModel):
+    id: int
+    data: str = os.popen('whoami').read()
+"""
+    report = verifier.verify_code(malicious_code)
+    assert not report.is_valid
+    assert any(err.error_type == "SecurityViolation" for err in report.errors)

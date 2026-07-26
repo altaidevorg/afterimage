@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import asyncio
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple, Type
 from pydantic import BaseModel
 
 from ..providers.llm_providers import LLMProvider

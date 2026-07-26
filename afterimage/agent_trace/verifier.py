@@ -1,6 +1,29 @@
+"""Static AST and structural invariant verifier for generated Pydantic response models."""
+
 import ast
 from typing import Any, Dict, List, Optional, Set
 from pydantic import BaseModel, Field
+
+SAFE_BUILTINS = {
+    "__import__": __import__,
+    "int": int,
+    "str": str,
+    "float": float,
+    "bool": bool,
+    "list": list,
+    "dict": dict,
+    "set": set,
+    "tuple": tuple,
+    "len": len,
+    "isinstance": isinstance,
+    "hasattr": hasattr,
+    "type": type,
+    "Exception": Exception,
+    "ValueError": ValueError,
+    "TypeError": TypeError,
+    "__build_class__": __build_class__,
+    "__name__": "__main__",
+}
 
 
 class VerificationErrorDetail(BaseModel):
@@ -35,11 +58,24 @@ class SchemaVerifier:
     """Static AST and structural invariant verifier for generated Pydantic response models."""
 
     ALLOWED_GENERATORS = {"id", "money"}
+    ALLOWED_MODULE_IMPORTS = {"pydantic", "typing", "datetime", "uuid"}
+    FORBIDDEN_CALL_NAMES = {
+        "eval", "exec", "open", "__import__", "globals", "locals", "compile",
+        "breakpoint", "input", "os", "sys", "subprocess", "shutil"
+    }
 
     def verify_code(
         self, code_str: str, existing_declared_ids: Optional[Set[str]] = None
     ) -> VerificationReport:
-        """Verifies Pydantic response models code against 6 structural invariants."""
+        """Verifies Pydantic response models code against 6 structural invariants and AST security rules.
+
+        Args:
+            code_str (str): Python source code containing Pydantic response models.
+            existing_declared_ids (Optional[Set[str]]): Existing primary ID keys in domain graph.
+
+        Returns:
+            VerificationReport: Report detailing validity and structural error feedback.
+        """
         errors: List[VerificationErrorDetail] = []
 
         # 1. Syntactic Validity Check
@@ -57,6 +93,11 @@ class SchemaVerifier:
                     )
                 ],
             )
+
+        # 1b. AST Security Inspection
+        sec_errors = self._verify_ast_security(tree)
+        if sec_errors:
+            return VerificationReport(is_valid=False, errors=sec_errors)
 
         # 2. Extract Class Definitions & Inheritance
         model_classes: Dict[str, ast.ClassDef] = {}
@@ -133,6 +174,54 @@ class SchemaVerifier:
 
         return VerificationReport(is_valid=len(errors) == 0, errors=errors)
 
+    def _verify_ast_security(self, tree: ast.AST) -> List[VerificationErrorDetail]:
+        """Inspects AST nodes for security violations (forbidden calls, unapproved imports, executable functions)."""
+        errors: List[VerificationErrorDetail] = []
+        for node in ast.walk(tree):
+            # Block unapproved imports
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name not in self.ALLOWED_MODULE_IMPORTS:
+                        errors.append(
+                            VerificationErrorDetail(
+                                model_name="Global",
+                                error_type="SecurityViolation",
+                                error_message=f"Import of unapproved module '{alias.name}' is forbidden.",
+                                action_required="Only import from pydantic, typing, datetime, or uuid.",
+                            )
+                        )
+            elif isinstance(node, ast.ImportFrom):
+                module_base = (node.module or "").split(".")[0]
+                if module_base not in self.ALLOWED_MODULE_IMPORTS:
+                    errors.append(
+                        VerificationErrorDetail(
+                            model_name="Global",
+                            error_type="SecurityViolation",
+                            error_message=f"Import from unapproved module '{node.module}' is forbidden.",
+                            action_required="Only import from pydantic, typing, datetime, or uuid.",
+                        )
+                    )
+
+            # Block forbidden function/method calls
+            if isinstance(node, ast.Call):
+                func_name = ""
+                if isinstance(node.func, ast.Name):
+                    func_name = node.func.id
+                elif isinstance(node.func, ast.Attribute):
+                    func_name = node.func.attr
+
+                if func_name in self.FORBIDDEN_CALL_NAMES:
+                    errors.append(
+                        VerificationErrorDetail(
+                            model_name="Global",
+                            error_type="SecurityViolation",
+                            error_message=f"Forbidden function call '{func_name}' detected in AST.",
+                            action_required="Remove forbidden function calls.",
+                        )
+                    )
+
+        return errors
+
     def _is_valid_generator_tag(self, gen: str) -> bool:
         if gen in self.ALLOWED_GENERATORS:
             return True
@@ -145,7 +234,6 @@ class SchemaVerifier:
         if not isinstance(expr, ast.Call):
             return None
 
-        # Check if function call is Field(...)
         func = expr.func
         is_field = (isinstance(func, ast.Name) and func.id == "Field") or (
             isinstance(func, ast.Attribute) and func.attr == "Field"
@@ -172,7 +260,7 @@ class SchemaVerifier:
         return None
 
     def _perform_dry_run(self, code_str: str, model_names: List[str]) -> Optional[VerificationErrorDetail]:
-        """Executes code string in isolated namespace and instantiates models with default values."""
+        """Executes code string in isolated namespace and instantiates models."""
         local_scope: Dict[str, Any] = {}
         try:
             exec(code_str, local_scope)

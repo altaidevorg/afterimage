@@ -110,6 +110,16 @@ class DeclarativeEngine:
         """
         self.ctx = context or SimulationContext()
 
+    def _extract_constraint(self, field_info: Any, constraint_name: str) -> Optional[Any]:
+        val = getattr(field_info, constraint_name, None)
+        if val is not None:
+            return val
+        metadata = getattr(field_info, "metadata", [])
+        for meta in metadata:
+            if hasattr(meta, constraint_name):
+                return getattr(meta, constraint_name)
+        return None
+
     def synthesize_field(self, field_name: str, field_info: Any) -> Any:
         """Synthesizes a field value using 4-tier fallback hierarchy.
 
@@ -133,8 +143,10 @@ class DeclarativeEngine:
                 target_key = gen_type.split("fk:", 1)[1]
                 return self.ctx.sample_fk(target_key)
             elif gen_type == "money":
-                ge = getattr(field_info, "ge", 0.01) or 0.01
-                le = getattr(field_info, "le", 500.0) or 500.0
+                ge_val = self._extract_constraint(field_info, "ge")
+                le_val = self._extract_constraint(field_info, "le")
+                ge = 0.01 if ge_val is None else float(ge_val)
+                le = 500.0 if le_val is None else float(le_val)
                 return round(random.uniform(ge, le), 2)
             elif gen_type == "enum":
                 values = extra.get("values", ["default_1", "default_2"])
@@ -159,12 +171,16 @@ class DeclarativeEngine:
 
         # Tier 3 & Tier 4: Field Constraints & Primitive Fallbacks
         if annotation == int:
-            ge = getattr(field_info, "ge", 1) or 1
-            le = getattr(field_info, "le", 100) or 100
+            ge_val = self._extract_constraint(field_info, "ge")
+            le_val = self._extract_constraint(field_info, "le")
+            ge = 1 if ge_val is None else int(ge_val)
+            le = 100 if le_val is None else int(le_val)
             return random.randint(ge, le)
         elif annotation == float:
-            ge = getattr(field_info, "ge", 1.0) or 1.0
-            le = getattr(field_info, "le", 100.0) or 100.0
+            ge_val = self._extract_constraint(field_info, "ge")
+            le_val = self._extract_constraint(field_info, "le")
+            ge = 1.0 if ge_val is None else float(ge_val)
+            le = 100.0 if le_val is None else float(le_val)
             return round(random.uniform(ge, le), 2)
         elif annotation == str:
             return fake.word() if fake else f"sample_{field_name}"

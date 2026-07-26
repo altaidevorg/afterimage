@@ -65,3 +65,15 @@ def test_declarative_tool_execution():
     assert "user_id" in obs.observation
     assert "full_name" in obs.observation
     assert obs.latency_ms < 10.0
+
+
+class ZeroConstraintModel(BaseModel):
+    zero_count: int = Field(ge=0, le=0)
+    zero_amount: float = Field(ge=0.0, le=0.0)
+
+
+def test_numeric_zero_constraints():
+    engine = DeclarativeEngine()
+    res = engine.generate_response(ZeroConstraintModel)
+    assert res.zero_count == 0
+    assert res.zero_amount == 0.0
