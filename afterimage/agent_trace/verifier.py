@@ -225,6 +225,26 @@ class SchemaVerifier:
                         )
                     )
 
+            # Block executable loops and function definitions to prevent infinite loops / resource exhaustion
+            if isinstance(
+                node,
+                (
+                    ast.For,
+                    ast.While,
+                    ast.AsyncFor,
+                    ast.FunctionDef,
+                    ast.AsyncFunctionDef,
+                ),
+            ):
+                errors.append(
+                    VerificationErrorDetail(
+                        model_name="Global",
+                        error_type="SecurityViolation",
+                        error_message=f"Executable constructs ({type(node).__name__}) are forbidden in response model declarations.",
+                        action_required="Only define Pydantic BaseModel classes with field annotations.",
+                    )
+                )
+
             # Block forbidden function/method calls
             if isinstance(node, ast.Call):
                 func_name = ""

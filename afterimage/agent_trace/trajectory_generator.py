@@ -58,56 +58,60 @@ class ReActTrajectoryLoop:
         final_answer: Optional[str] = None
         current_input = f"User Request: {task}"
 
-        for turn_idx in range(1, self.max_turns + 1):
-            response = await chat_session.asend_message(
-                message=current_input,
-                temperature=0.3,
-            )
-            raw_text = response.text.strip()
+        try:
+            for turn_idx in range(1, self.max_turns + 1):
+                response = await chat_session.asend_message(
+                    message=current_input,
+                    temperature=0.3,
+                )
+                raw_text = response.text.strip()
 
-            thought, tool_call, is_final, answer = self._parse_react_response(raw_text)
+                thought, tool_call, is_final, answer = self._parse_react_response(
+                    raw_text
+                )
 
-            if is_final or answer:
-                final_answer = answer or thought
-                turns.append(
-                    TrajectoryTurn(
-                        turn_id=turn_idx,
-                        agent_thought=thought,
-                        tool_call=None,
-                        observation=None,
+                if is_final or answer:
+                    final_answer = answer or thought
+                    turns.append(
+                        TrajectoryTurn(
+                            turn_id=turn_idx,
+                            agent_thought=thought,
+                            tool_call=None,
+                            observation=None,
+                        )
                     )
-                )
-                break
+                    break
 
-            if tool_call:
-                obs = environment.execute_tool(
-                    app=tool_call.app,
-                    action=tool_call.action,
-                    parameters=tool_call.parameters,
-                )
-                turns.append(
-                    TrajectoryTurn(
-                        turn_id=turn_idx,
-                        agent_thought=thought,
-                        tool_call=tool_call,
-                        observation=obs,
+                if tool_call:
+                    obs = environment.execute_tool(
+                        app=tool_call.app,
+                        action=tool_call.action,
+                        parameters=tool_call.parameters,
                     )
-                )
-                current_input = f"Observation: {json.dumps(obs.observation)}"
-            else:
-                # If agent didn't output a valid action or final answer, default turn
-                turns.append(
-                    TrajectoryTurn(
-                        turn_id=turn_idx,
-                        agent_thought=thought,
-                        tool_call=None,
-                        observation=None,
+                    turns.append(
+                        TrajectoryTurn(
+                            turn_id=turn_idx,
+                            agent_thought=thought,
+                            tool_call=tool_call,
+                            observation=obs,
+                        )
                     )
-                )
-                final_answer = raw_text
-                break
-
-        chat_session.close()
+                    current_input = f"Observation: {json.dumps(obs.observation)}"
+                else:
+                    # If agent didn't output a valid action or final answer, default turn
+                    turns.append(
+                        TrajectoryTurn(
+                            turn_id=turn_idx,
+                            agent_thought=thought,
+                            tool_call=None,
+                            observation=None,
+                        )
+                    )
+                    final_answer = raw_text
+                    break
+        finally:
+            if hasattr(chat_session, "close"):
+                chat_session.close()
 
         return AgentTrajectory(
             task=task,

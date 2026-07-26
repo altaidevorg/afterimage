@@ -164,7 +164,7 @@ class AsyncAgentTraceGenerator:
                 )
             )
 
-        metadata = traj.metadata
+        metadata = traj.metadata if traj.metadata is not None else {}
         if traj.judge_verdict:
             metadata["judge_verdict"] = traj.judge_verdict.model_dump()
         metadata["trajectory_id"] = traj.trajectory_id

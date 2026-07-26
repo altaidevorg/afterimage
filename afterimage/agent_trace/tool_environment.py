@@ -25,30 +25,38 @@ class DeclarativeTool:
         """Executes the tool deterministically in sub-millisecond latency."""
         start_time = time.perf_counter()
 
-        # 1. Record input parameters into SimulationContext as existing entity state
-        for k, v in parameters.items():
-            if v is not None:
-                self.engine.ctx.record_entity(f"{self.app_name}.{k}", v)
-                self.engine.ctx.record_entity(k, v)
+        try:
+            # 1. Record input parameters into SimulationContext as existing entity state
+            for k, v in parameters.items():
+                if v is not None:
+                    self.engine.ctx.record_entity(f"{self.app_name}.{k}", v)
+                    self.engine.ctx.record_entity(k, v)
 
-        # 2. Synthesize response payload
-        if self.response_model_cls:
-            result_model = self.engine.generate_response(self.response_model_cls)
-            output_data = result_model.model_dump(mode="json")
-        else:
-            # Fallback output dict if no Pydantic model registered
-            output_data = {
-                "status": "success",
-                "message": f"Action {self.action_spec.action_name} executed successfully",
-            }
+            # 2. Synthesize response payload
+            if self.response_model_cls:
+                result_model = self.engine.generate_response(self.response_model_cls)
+                output_data = result_model.model_dump(mode="json")
+            else:
+                # Fallback output dict if no Pydantic model registered
+                output_data = {
+                    "status": "success",
+                    "message": f"Action {self.action_spec.action_name} executed successfully",
+                }
 
-        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
-        return ToolObservation(
-            observation=output_data,
-            status="success",
-            latency_ms=round(elapsed_ms, 3),
-        )
+            return ToolObservation(
+                observation=output_data,
+                status="success",
+                latency_ms=round(elapsed_ms, 3),
+            )
+        except Exception as e:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+            return ToolObservation(
+                observation={"error": f"Tool execution failed: {str(e)}"},
+                status="error",
+                latency_ms=round(elapsed_ms, 3),
+            )
 
 
 class DeclarativeEnvironment:

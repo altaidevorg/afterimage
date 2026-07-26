@@ -106,8 +106,8 @@ class TrajectoryJudge:
         except Exception as e:
             # Fallback evaluation if structured response fails
             return JudgeVerdict(
-                is_valid=True,
-                confidence_score=0.8,
+                is_valid=False,
+                confidence_score=0.0,
                 evaluator_model=self.model_name,
                 feedback=f"Fallback evaluation due to judge exception: {str(e)}",
             )
