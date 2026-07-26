@@ -440,6 +440,17 @@ def load_config(path: str | Path) -> AfterImageConfig:
             doc_path = config_path.parent / doc_path
         config.documents.path = str(doc_path.resolve())
 
+class AgentTraceConfig(BaseModel):
+    """Configuration for Environment-Free Agent-Trace generation."""
+
+    architect_model: str = Field(default="gemini-3.6-flash")
+    teacher_model: str = Field(default="gemini-3.5-flash-lite")
+    judge_model: str = Field(default="gemini-3.6-flash")
+    num_trajectories: int = Field(default=10, ge=1)
+    max_turns: int = Field(default=6, ge=1)
+    max_concurrency: int = Field(default=4, ge=1)
+
+
     # output.path stays relative to cwd (resolved at runtime, not here)
 
     return config

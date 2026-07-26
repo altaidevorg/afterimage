@@ -1,5 +1,6 @@
 import importlib.metadata
 
+from afterimage.agent_trace import AsyncAgentTraceGenerator  # noqa
 from afterimage.async_conversation_generator import AsyncConversationGenerator  # noqa
 from afterimage.callbacks import (
     AndStoppingCallback,  # noqa

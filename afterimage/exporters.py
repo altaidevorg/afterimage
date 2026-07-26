@@ -97,10 +97,30 @@ def to_messages(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def to_agent_sft(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert AfterImage agent trajectories into structured OpenAI/HuggingFace SFT messages format."""
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        convs = row.get("conversations", [])
+        messages = []
+        for entry in convs:
+            role = entry.get("role", "user")
+            content = entry.get("content", "")
+            messages.append(
+                {
+                    "role": _ROLE_MAP_MESSAGES.get(role, role),
+                    "content": content,
+                }
+            )
+        out.append({"messages": messages, "trajectory_id": row.get("metadata", {}).get("trajectory_id")})
+    return out
+
+
 CONVERTERS = {
     "sharegpt": to_sharegpt,
     "alpaca": to_alpaca,
     "messages": to_messages,
+    "agent_sft": to_agent_sft,
 }
 
 
