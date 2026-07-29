@@ -96,7 +96,7 @@ async def main():
         architect_model="gemini-3.6-flash",
         teacher_model="gemini-3.5-flash-lite",
         judge_model="gemini-3.6-flash",
-        observation_mode="llm",  # Set to "llm" for original ESAT paper LLM observation synthesis mode
+        observation_mode="llm",  # Preferred production mode (ESAT paper LLM observation synthesis). Use "faker" for experimental local mode.
     )
 
     # 2. Define App Domain Endpoints for Banking App (Discovery + Action endpoints)

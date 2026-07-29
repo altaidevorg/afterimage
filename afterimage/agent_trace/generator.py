@@ -27,7 +27,7 @@ class AsyncAgentTraceGenerator:
         architect_model: str = "gemini-3.6-flash",
         teacher_model: str = "gemini-3.5-flash-lite",
         judge_model: str = "gemini-3.6-flash",
-        observation_mode: ObservationMode = "faker",
+        observation_mode: ObservationMode = "llm",  # Preferred production mode (ESAT paper). Use "faker" for experimental sub-millisecond local mode.
         storage: Optional[BaseStorage] = None,
         llm_factory_kwargs: Optional[dict] = None,
     ):

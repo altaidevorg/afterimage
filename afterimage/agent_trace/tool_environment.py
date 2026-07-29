@@ -17,7 +17,7 @@ class DeclarativeTool:
         action_spec: ToolActionSpec,
         response_model_cls: Optional[Type[BaseModel]] = None,
         engine: Optional[DeclarativeEngine] = None,
-        observation_mode: ObservationMode = "faker",
+        observation_mode: ObservationMode = "llm",
         llm_synthesizer: Optional[LLMObservationSynthesizer] = None,
     ):
         self.app_name = app_name
@@ -152,7 +152,7 @@ class DeclarativeEnvironment:
     def __init__(
         self,
         seed: Optional[int] = None,
-        observation_mode: ObservationMode = "faker",
+        observation_mode: ObservationMode = "llm",
         llm_provider: Optional[LLMProvider] = None,
     ):
         self.observation_mode = observation_mode

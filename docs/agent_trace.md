@@ -124,22 +124,22 @@ if __name__ == "__main__":
 
 ---
 
-## Observation Generation Modes (`faker` vs `llm`)
+## Observation Generation Modes (`llm` vs `faker`)
 
 `afterimage.agent_trace` supports two observation generation modes for synthetic tool responses, configurable via `AsyncAgentTraceGenerator(observation_mode=...)`:
 
 ```python
-# Mode 1: Local Faker-driven sub-millisecond declarative engine (Default)
-generator = AsyncAgentTraceGenerator(api_key=api_key, observation_mode="faker")
-
-# Mode 2: Original ESAT Paper LLM-driven structured observation synthesis
+# Mode 1: Preferred production mode (Original ESAT Paper LLM-driven structured observation synthesis)
 generator = AsyncAgentTraceGenerator(api_key=api_key, observation_mode="llm")
+
+# Mode 2: Experimental local sub-millisecond declarative engine
+generator = AsyncAgentTraceGenerator(api_key=api_key, observation_mode="faker")
 ```
 
-| Observation Mode | Latency | Token Cost | Mechanism & Best Use Case |
-|---|---|---|---|
-| **`faker`** (Default) | Sub-millisecond (`< 1 ms`) | **0 tokens** for tool responses | Uses local Pydantic synthesis, Faker generators, parameter echoing annotations, and stateful `SimulationContext` context stores. Ideal for high-throughput, zero-cost dataset generation. |
-| **`llm`** (ESAT Paper) | ~300ms – 800ms per turn | Token cost for LLM synthesis | Uses `LLMObservationSynthesizer` to generate structured JSON payloads guided by target Pydantic schemas, tool parameters, past turn history, and initial state context. |
+| Observation Mode | Status | Latency | Token Cost | Mechanism & Best Use Case |
+|---|---|---|---|---|
+| **`llm`** (Default) | **Preferred / Production** | ~300ms – 800ms per turn | Token cost for LLM synthesis | Uses `LLMObservationSynthesizer` to generate structured, realistic JSON payloads guided by target Pydantic schemas, tool parameters, past turn history, and initial state context. |
+| **`faker`** | **Experimental** | Sub-millisecond (`< 1 ms`) | **0 tokens** for tool responses | Uses local Pydantic synthesis, Faker generators, parameter echoing annotations, and stateful `SimulationContext` context stores for zero-cost execution. |
 
 ---
 

@@ -71,15 +71,33 @@ class AccountResponse(BaseModel):
 
     # agenerate_structured mock
     async def mock_agenerate_structured(prompt, schema, temperature=0.7, **kwargs):
-        parsed = schema(
-            grounding=0.9,
-            parameter_correctness=0.9,
-            loop_avoidance=1.0,
-            task_completion=0.9,
-            is_valid=True,
-            confidence_score=0.95,
-            feedback="Great trajectory",
-        )
+        if hasattr(schema, "model_fields") and "is_valid" in schema.model_fields:
+            parsed = schema(
+                grounding=0.9,
+                parameter_correctness=0.9,
+                loop_avoidance=1.0,
+                task_completion=0.9,
+                is_valid=True,
+                confidence_score=0.95,
+                feedback="Great trajectory",
+            )
+        else:
+            try:
+                parsed = schema()
+            except Exception:
+                # Supply default mock field values
+                field_defaults = {}
+                for name, field in schema.model_fields.items():
+                    if field.annotation is int:
+                        field_defaults[name] = 1001
+                    elif field.annotation is str:
+                        field_defaults[name] = "mock_val"
+                    elif field.annotation is float:
+                        field_defaults[name] = 99.9
+                    else:
+                        field_defaults[name] = None
+                parsed = schema(**field_defaults)
+
         return StructuredLLMResponse(
             text="{}",
             parsed=parsed,
