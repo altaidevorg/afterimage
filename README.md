@@ -33,8 +33,9 @@ from a single YAML file or a composable Python API.
 
 ### July 26, 2026 — Environment-Free Synthetic Agent Traces (`afterimage.agent_trace`)
 
-**afterimage.agent_trace** combines the **ESAT** pipeline (*Environment-free Synthetic Data Generation for API-Calling Agents*, [arXiv:2607.16900](https://arxiv.org/abs/2607.16900)) with a sub-millisecond local **Declarative Tool Simulation Framework**. It enables training data generation for API-calling AI agents without pre-building backend applications or databases. Key highlights:
-- **Sub-Millisecond Execution:** Local Python tool responses (< 1ms execution time, 0% LLM simulator hallucinations).
+**afterimage.agent_trace** combines the **ESAT** pipeline (*Environment-free Synthetic Data Generation for API-Calling Agents*, [arXiv:2607.16900](https://arxiv.org/abs/2607.16900)) with a sub-millisecond local **Declarative Tool Simulation Framework** and **Dual-Mode Observation Generation** (`observation_mode: "faker" | "llm"`). It enables training data generation for API-calling AI agents without pre-building backend applications or databases. Key highlights:
+- **Dual Observation Modes:** Toggle seamlessly between sub-millisecond local execution (`"faker"`, `< 1 ms`, 0 tokens) and LLM-driven structured observation synthesis (`"llm"`, original ESAT paper methodology).
+- **Referential Integrity & Parameter Echoing:** Generator annotations (`param:<name>`, `echo`, `state:account_balance`, `fk:<entity>.<field>`) and explicit Pydantic response models guarantee 100% parameter matching and stateful context mutations.
 - **Static AST Verification:** `SchemaVerifier` checks 6 structural invariants with automatic LLM self-correction feedback loops.
 - **360-Bucket Grid & Inverse Frequency:** Combinatorial task synthesis grid paired with inverse-frequency endpoint sampling.
 - **Trajectory Curation:** Multi-turn ReAct teacher agent interaction (`gemini-3.5-flash-lite`) filtered by a 9-point rubric judge (`gemini-3.6-flash`).

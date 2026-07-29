@@ -124,6 +124,72 @@ if __name__ == "__main__":
 
 ---
 
+## Observation Generation Modes (`faker` vs `llm`)
+
+`afterimage.agent_trace` supports two observation generation modes for synthetic tool responses, configurable via `AsyncAgentTraceGenerator(observation_mode=...)`:
+
+```python
+# Mode 1: Local Faker-driven sub-millisecond declarative engine (Default)
+generator = AsyncAgentTraceGenerator(api_key=api_key, observation_mode="faker")
+
+# Mode 2: Original ESAT Paper LLM-driven structured observation synthesis
+generator = AsyncAgentTraceGenerator(api_key=api_key, observation_mode="llm")
+```
+
+| Observation Mode | Latency | Token Cost | Mechanism & Best Use Case |
+|---|---|---|---|
+| **`faker`** (Default) | Sub-millisecond (`< 1 ms`) | **0 tokens** for tool responses | Uses local Pydantic synthesis, Faker generators, parameter echoing annotations, and stateful `SimulationContext` context stores. Ideal for high-throughput, zero-cost dataset generation. |
+| **`llm`** (ESAT Paper) | ~300ms – 800ms per turn | Token cost for LLM synthesis | Uses `LLMObservationSynthesizer` to generate structured JSON payloads guided by target Pydantic schemas, tool parameters, past turn history, and initial state context. |
+
+---
+
+## Generator Annotations Protocol (for `faker` Mode)
+
+In `faker` mode, referential integrity and parameter matching are guaranteed using explicit generator annotations inside Pydantic field schemas (`json_schema_extra={"generator": "..."}`):
+
+```python
+class AccountBalanceResponse(BaseModel):
+    # Echoes the input 'account_id' argument directly into the response field
+    account_id: int = Field(json_schema_extra={"generator": "param:account_id"})
+    account_type: str = Field(default="checking")
+    total_balance: float = Field(json_schema_extra={"generator": "money"})
+    available_balance: float = Field(json_schema_extra={"generator": "money"})
+
+class TransferResponse(BaseModel):
+    transfer_id: int = Field(json_schema_extra={"generator": "id"})
+    status: str = Field(default="completed")
+    # Echoes the input 'amount' argument directly into the response field
+    amount: float = Field(json_schema_extra={"generator": "param:amount"})
+```
+
+### Supported Annotation Tags
+
+- **`param:<param_name>` / `echo`**: Echoes input argument values (`account_id`, `amount`, `user_id`, `expense_id`) directly into response fields.
+- **`state:account_balance`**: Interacts with persistent account balance tables in `SimulationContext` (e.g. deducting transfer amounts).
+- **`fk:<entity>.<field>`**: Samples foreign key identifiers from state lookup pools across trajectory turns.
+- **`id`**: Generates a primary integer ID and records it into `SimulationContext`.
+- **`money`**: Generates realistic monetary float amounts.
+- **`enum`**: Selects a value from `json_schema_extra={"values": [...]}`.
+- **`faker:<method>`**: Generates Faker strings (e.g., `faker:name`, `faker:email`, `faker:company`).
+
+---
+
+## Explicit Response Models (`response_model_cls`)
+
+Pass explicit Pydantic response models directly into `ToolActionSpec` to eliminate LLM schema generation overhead:
+
+```python
+ToolActionSpec(
+    action_name="get_account_balance",
+    description="Returns total and available balance for a user account.",
+    parameters=[ToolParameterSpec(name="account_id", type="int", description="Account ID")],
+    response_model_name="AccountBalanceResponse",
+    response_model_cls=AccountBalanceResponse,  # Explicit class attached!
+)
+```
+
+---
+
 ## Recommended Model Configuration
 
 | Component | Default Model | Purpose |
@@ -131,6 +197,7 @@ if __name__ == "__main__":
 | **Schema Architect** | `gemini-3.6-flash` | High-quality Pydantic response code generation with metadata tags. |
 | **Task Synthesizer & Rewriter** | `gemini-3.5-flash-lite` | Ultra-fast combinatorial grid task synthesis & natural language rewriter. |
 | **ReAct Teacher Agent** | `gemini-3.5-flash-lite` | Multi-turn reasoning & tool execution loop. |
+| **LLM Observation Synthesizer** | `gemini-3.5-flash-lite` | Structured tool observation generation when `observation_mode="llm"`. |
 | **Trajectory Judge** | `gemini-3.6-flash` | 9-point quality rubric trajectory filtering. |
 
 ---
