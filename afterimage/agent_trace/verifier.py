@@ -313,11 +313,21 @@ class SchemaVerifier:
         self, code_str: str, model_names: List[str]
     ) -> Optional[VerificationErrorDetail]:
         """Executes code string in isolated namespace and instantiates models."""
+        import typing
+        from pydantic import EmailStr
+
         local_scope: Dict[str, Any] = {}
         exec_globals = {
             "__builtins__": SAFE_BUILTINS,
             "BaseModel": BaseModel,
             "Field": Field,
+            "EmailStr": EmailStr,
+            "List": typing.List,
+            "Optional": typing.Optional,
+            "Dict": typing.Dict,
+            "Any": typing.Any,
+            "Set": typing.Set,
+            "Tuple": typing.Tuple,
         }
         try:
             exec(code_str, exec_globals, local_scope)

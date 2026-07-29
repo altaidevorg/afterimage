@@ -83,7 +83,7 @@ class GridTaskSynthesizer:
         model_name: str = "gemini-3.5-flash-lite",
     ):
         self.llm_provider = llm_provider
-        self.model_name = model_name
+        self.model_name = getattr(llm_provider, "model_name", model_name)
         self.sampler = InverseFrequencySampler()
 
     def sample_grid_bucket(self, num_apps_available: int) -> GridTaskBucket:
@@ -130,9 +130,8 @@ class GridTaskSynthesizer:
             num_apps=effective_bucket.num_apps,
         )
 
-        response = await self.llm_provider.agenerate(
+        response = await self.llm_provider.agenerate_content(
             prompt=prompt,
-            model_name=self.model_name,
             temperature=0.7,
         )
         verbose_task = response.text.strip().strip('"')
@@ -150,9 +149,8 @@ class GridTaskSynthesizer:
     async def rewrite_task_intent(self, verbose_task: str) -> str:
         """Compresses verbose procedural directives into natural intent-level user queries."""
         prompt = TASK_REWRITER_PROMPT.format(verbose_task=verbose_task)
-        response = await self.llm_provider.agenerate(
+        response = await self.llm_provider.agenerate_content(
             prompt=prompt,
-            model_name=self.model_name,
             temperature=0.3,
         )
         cleaned = response.text.strip().strip('"')

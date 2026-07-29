@@ -16,18 +16,40 @@ App Description: {app_description}
 Target Endpoints: {endpoints_desc}
 
 ### ANNOTATION PROTOCOL CONSTRAINTS:
-You MUST annotate fields using Pydantic's `Field(json_schema_extra={{...}})` parameter following these exact keys:
-1. `json_schema_extra={{"generator": "id"}}` for primary keys (e.g. user_id, order_id).
-2. `json_schema_extra={{"generator": "fk:<entity>.<field>"}}` for foreign keys (e.g. fk:user.user_id, fk:order.order_id).
-3. `json_schema_extra={{"generator": "money"}}` for monetary float amounts.
-4. `json_schema_extra={{"generator": "faker:<method>"}}` for fake string data (e.g. faker:name, faker:email, faker:company, faker:street_address).
-5. `json_schema_extra={{"generator": "enum", "values": ["v1", "v2"]}}` for categorical strings.
+Annotate fields using Pydantic's `Field(json_schema_extra={{...}})` parameter following these exact guidelines:
+1. `json_schema_extra={{"generator": "id"}}` for primary keys (e.g. `user_id: int`, `expense_id: int`). Ensure primary and foreign key IDs use `int` types.
+2. `json_schema_extra={{"generator": "fk:<entity>.<field>"}}` for foreign keys (e.g. `user_id: int = Field(..., json_schema_extra={{"generator": "fk:user.user_id"}})`).
+3. `json_schema_extra={{"generator": "money"}}` for monetary float amounts (e.g. `amount: float`).
+4. `json_schema_extra={{"generator": "faker:<method>"}}` for fake string data (e.g. `faker:name`, `faker:email`, `faker:company`, `faker:sentence`, `faker:date_time_iso8601`).
+5. `json_schema_extra={{"generator": "enum", "values": ["active", "pending", "completed"]}}` for categorical status strings.
+
+### NESTED COLLECTION REQUIREMENTS:
+- For collection endpoints (e.g. `list_expenses`, `get_transactions`, `list_comments`), construct dedicated item models (e.g. `ExpenseRecord`, `CommentRecord`) and include a list field in the main response model (e.g. `expenses: List[ExpenseRecord]`).
+- Do NOT flatten collection endpoints into simple single-object `id/status/message` fallbacks.
+
+### EXAMPLE SCHEMAS:
+```python
+from pydantic import BaseModel, Field
+from typing import List, Optional
+
+class ExpenseRecord(BaseModel):
+    expense_id: int = Field(json_schema_extra={{"generator": "id"}})
+    user_id: int = Field(json_schema_extra={{"generator": "fk:user.user_id"}})
+    amount: float = Field(json_schema_extra={{"generator": "money"}})
+    category: str = Field(json_schema_extra={{"generator": "enum", "values": ["dining", "travel", "groceries", "utilities"]}})
+    merchant: str = Field(json_schema_extra={{"generator": "faker:company"}})
+    description: str = Field(json_schema_extra={{"generator": "faker:sentence"}})
+    status: str = Field(default="completed", json_schema_extra={{"generator": "enum", "values": ["pending", "completed", "flagged"]}})
+
+class ExpensesListResponse(BaseModel):
+    expenses: List[ExpenseRecord] = Field(default_factory=list)
+    total_count: int = Field(default=1)
+```
 
 ### CODE FORMATTING REQUIREMENTS:
 - Output ONLY valid, executable Python code inside a ```python ``` code block.
-- Import `from pydantic import BaseModel, Field, EmailStr`.
+- Import `from pydantic import BaseModel, Field, EmailStr` and `from typing import List, Optional`.
 - Inherit all response models from `BaseModel`.
-- Ensure every model primary key has `generator: "id"` so foreign key references in other models can resolve safely.
 
 {feedback_section}
 """
@@ -43,7 +65,7 @@ class SchemaArchitect:
         max_retries: int = 3,
     ):
         self.llm_provider = llm_provider
-        self.model_name = model_name
+        self.model_name = getattr(llm_provider, "model_name", model_name)
         self.max_retries = max_retries
         self.verifier = SchemaVerifier()
 
@@ -74,9 +96,8 @@ class SchemaArchitect:
                 feedback_section=feedback_section,
             )
 
-            response = await self.llm_provider.agenerate(
+            response = await self.llm_provider.agenerate_content(
                 prompt=prompt,
-                model_name=self.model_name,
                 temperature=0.2,
             )
             raw_text = response.text
@@ -116,12 +137,22 @@ class SchemaArchitect:
 
     def _compile_model_classes(self, code_str: str) -> Dict[str, Type[BaseModel]]:
         """Compiles Python source code string into live Pydantic BaseModel classes."""
+        import typing
+        from pydantic import EmailStr, Field
         from .verifier import SAFE_BUILTINS
 
         local_scope: Dict[str, Any] = {}
         exec_globals = {
             "__builtins__": SAFE_BUILTINS,
             "BaseModel": BaseModel,
+            "Field": Field,
+            "EmailStr": EmailStr,
+            "List": typing.List,
+            "Optional": typing.Optional,
+            "Dict": typing.Dict,
+            "Any": typing.Any,
+            "Set": typing.Set,
+            "Tuple": typing.Tuple,
         }
         try:
             exec(code_str, exec_globals, local_scope)

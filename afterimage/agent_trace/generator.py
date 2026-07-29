@@ -28,30 +28,58 @@ class AsyncAgentTraceGenerator:
         teacher_model: str = "gemini-3.5-flash-lite",
         judge_model: str = "gemini-3.6-flash",
         storage: Optional[BaseStorage] = None,
+        llm_factory_kwargs: Optional[dict] = None,
     ):
+        extras = dict(llm_factory_kwargs or {})
+
         if llm_provider:
             self.llm_provider = llm_provider
+            architect_llm = llm_provider
+            teacher_llm = llm_provider
+            judge_llm = llm_provider
         else:
-            self.llm_provider = LLMFactory.create(
+            key_pool: Optional[Union[str, SmartKeyPool]] = None
+            if isinstance(api_key, SmartKeyPool):
+                key_pool = api_key
+            elif isinstance(api_key, str):
+                key_pool = SmartKeyPool.from_single_key(api_key)
+            elif isinstance(api_key, list):
+                key_pool = SmartKeyPool(api_keys=api_key)
+
+            architect_llm = LLMFactory.create(
                 provider=provider,
-                api_key=api_key,
+                api_key=key_pool,
                 model_name=architect_model,
+                **extras,
             )
+            teacher_llm = LLMFactory.create(
+                provider=provider,
+                api_key=key_pool,
+                model_name=teacher_model,
+                **extras,
+            )
+            judge_llm = LLMFactory.create(
+                provider=provider,
+                api_key=key_pool,
+                model_name=judge_model,
+                **extras,
+            )
+            self.llm_provider = architect_llm
 
         self.architect = SchemaArchitect(
-            llm_provider=self.llm_provider,
+            llm_provider=architect_llm,
             model_name=architect_model,
         )
         self.synthesizer = GridTaskSynthesizer(
-            llm_provider=self.llm_provider,
+            llm_provider=teacher_llm,
             model_name=teacher_model,
         )
         self.teacher_loop = ReActTrajectoryLoop(
-            llm_provider=self.llm_provider,
+            llm_provider=teacher_llm,
             model_name=teacher_model,
         )
         self.judge = TrajectoryJudge(
-            llm_provider=self.llm_provider,
+            llm_provider=judge_llm,
             model_name=judge_model,
         )
 

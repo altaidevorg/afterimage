@@ -34,7 +34,7 @@ class ReActTrajectoryLoop:
         max_turns: int = 6,
     ):
         self.llm_provider = llm_provider
-        self.model_name = model_name
+        self.model_name = getattr(llm_provider, "model_name", model_name)
         self.max_turns = max_turns
 
     async def run_trajectory(
@@ -49,9 +49,8 @@ class ReActTrajectoryLoop:
             tool_descriptions=tool_descriptions
         )
 
-        chat_session = self.llm_provider.start_chat_session(
+        chat_session = await self.llm_provider.astart_chat(
             system_instruction=system_prompt,
-            model_name=self.model_name,
         )
 
         turns: List[TrajectoryTurn] = []
@@ -110,7 +109,9 @@ class ReActTrajectoryLoop:
                     final_answer = raw_text
                     break
         finally:
-            if hasattr(chat_session, "close"):
+            if hasattr(chat_session, "aclose"):
+                await chat_session.aclose()
+            elif hasattr(chat_session, "close"):
                 chat_session.close()
 
         return AgentTrajectory(

@@ -50,11 +50,31 @@ class TrajectoryJudge:
         min_quality_threshold: float = 0.75,
     ):
         self.llm_provider = llm_provider
-        self.model_name = model_name
+        self.model_name = getattr(llm_provider, "model_name", model_name)
         self.min_quality_threshold = min_quality_threshold
 
     async def evaluate_trajectory(self, trajectory: AgentTrajectory) -> JudgeVerdict:
         """Evaluates a single trajectory and attaches a JudgeVerdict."""
+        # Hard Gate: Automatically reject trajectory if any tool observation produced an error
+        for t in trajectory.turns:
+            if t.observation:
+                if t.observation.status == "error" or (
+                    isinstance(t.observation.observation, dict)
+                    and "error" in t.observation.observation
+                ):
+                    return JudgeVerdict(
+                        is_valid=False,
+                        confidence_score=0.0,
+                        evaluator_model=self.model_name,
+                        rubric_scores=RubricScores(
+                            grounding=0.0,
+                            parameter_correctness=0.0,
+                            loop_avoidance=0.0,
+                            task_completion=0.0,
+                        ),
+                        feedback="Trajectory rejected due to tool execution error in turn observation.",
+                    )
+
         turns_lines = []
         for t in trajectory.turns:
             turns_lines.append(f"Turn {t.turn_id}:")
@@ -76,8 +96,7 @@ class TrajectoryJudge:
         try:
             structured_res = await self.llm_provider.agenerate_structured(
                 prompt=prompt,
-                response_schema=JudgeResponsePayload,
-                model_name=self.model_name,
+                schema=JudgeResponsePayload,
                 temperature=0.1,
             )
             payload = structured_res.parsed

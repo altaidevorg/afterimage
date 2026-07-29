@@ -81,3 +81,26 @@ def test_numeric_zero_constraints():
     res = engine.generate_response(ZeroConstraintModel)
     assert res.zero_count == 0
     assert res.zero_amount == 0.0
+
+
+class StringIDModel(BaseModel):
+    account_id: str = Field(json_schema_extra={"generator": "id"})
+    user_id: str = Field(json_schema_extra={"generator": "fk:user_id"})
+    status: str
+    description: str
+    amount: float
+
+
+def test_type_coercion_and_semantic_heuristics():
+    ctx = SimulationContext(seed=42)
+    engine = DeclarativeEngine(context=ctx)
+
+    model = engine.generate_response(StringIDModel)
+
+    assert isinstance(model.account_id, str)
+    assert model.account_id.isdigit()
+    assert isinstance(model.user_id, str)
+    assert model.status in ["completed", "pending", "active", "success", "failed"]
+    assert len(model.description) > 0
+    assert isinstance(model.amount, float)
+

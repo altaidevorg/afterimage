@@ -122,8 +122,127 @@ class DeclarativeEngine:
                 return getattr(meta, constraint_name)
         return None
 
+    def _coerce_type(self, val: Any, annotation: Any) -> Any:
+        """Coerces a synthesized value to match the target Pydantic field annotation."""
+        if val is None or annotation is None:
+            return val
+
+        if annotation is str:
+            return str(val) if not isinstance(val, str) else val
+
+        if annotation is int:
+            if isinstance(val, int):
+                return val
+            try:
+                return int(float(str(val)))
+            except Exception:
+                return val
+
+        if annotation is float:
+            if isinstance(val, (int, float)):
+                return float(val)
+            try:
+                return float(str(val))
+            except Exception:
+                return val
+
+        if annotation is bool:
+            return bool(val)
+
+        return val
+
+    def _synthesize_semantic_fallback(
+        self, field_name: str, annotation: Any, field_info: Any
+    ) -> Any:
+        """Synthesizes realistic domain data based on field naming semantics when explicit tags are absent."""
+        lower_name = field_name.lower()
+
+        if annotation is str:
+            if lower_name in ("status", "state"):
+                return self.ctx._random.choice(
+                    ["completed", "pending", "active", "success", "failed"]
+                )
+            elif lower_name in (
+                "message",
+                "comment",
+                "description",
+                "note",
+                "summary",
+                "body",
+                "text",
+                "reason",
+            ):
+                return (
+                    fake.sentence()
+                    if fake
+                    else f"Sample {field_name.replace('_', ' ')}."
+                )
+            elif lower_name in (
+                "name",
+                "full_name",
+                "author_name",
+                "customer_name",
+                "user_name",
+            ):
+                return (
+                    fake.name()
+                    if fake
+                    else f"User_{self.ctx._random.randint(100, 999)}"
+                )
+            elif lower_name in ("company", "merchant", "vendor", "organization"):
+                return fake.company() if fake else "Acme Corp"
+            elif lower_name in ("category", "type", "genre"):
+                return self.ctx._random.choice(
+                    [
+                        "general",
+                        "billing",
+                        "support",
+                        "travel",
+                        "groceries",
+                        "dining",
+                        "entertainment",
+                    ]
+                )
+            elif "email" in lower_name:
+                return (
+                    fake.email()
+                    if fake
+                    else f"user_{self.ctx._random.randint(100, 999)}@example.com"
+                )
+            elif any(k in lower_name for k in ("url", "link", "uri")):
+                return fake.url() if fake else "https://example.com"
+            elif "city" in lower_name:
+                return fake.city() if fake else "New York"
+            elif "country" in lower_name:
+                return fake.country() if fake else "United States"
+            elif "address" in lower_name:
+                return fake.address() if fake else "123 Main St"
+            elif "phone" in lower_name:
+                return fake.phone_number() if fake else "+1-555-0199"
+            elif lower_name in ("currency", "currency_code"):
+                return self.ctx._random.choice(["USD", "EUR", "GBP"])
+            else:
+                return (
+                    fake.sentence(nb_words=3).rstrip(".")
+                    if fake
+                    else f"sample_{field_name}"
+                )
+
+        if annotation is float:
+            if any(
+                k in lower_name
+                for k in ("amount", "balance", "price", "cost", "total", "subtotal", "fee")
+            ):
+                ge_val = self._extract_constraint(field_info, "ge")
+                le_val = self._extract_constraint(field_info, "le")
+                ge = 5.0 if ge_val is None else float(ge_val)
+                le = 500.0 if le_val is None else float(le_val)
+                return round(self.ctx._random.uniform(ge, le), 2)
+
+        return None
+
     def synthesize_field(self, field_name: str, field_info: Any) -> Any:
-        """Synthesizes a field value using 4-tier fallback hierarchy.
+        """Synthesizes a field value using 4-tier fallback hierarchy with type coercion and semantic heuristics.
 
         Args:
             field_name (str): Name of the target model field.
@@ -134,32 +253,36 @@ class DeclarativeEngine:
         """
         extra = getattr(field_info, "json_schema_extra", None) or {}
         gen_type = extra.get("generator")
+        annotation = getattr(field_info, "annotation", None)
 
-        # Tier 1: Explicit Generator Annotations
+        # Tier 1: Explicit Generator Annotations (with automatic type coercion)
         if gen_type:
             if gen_type == "id":
                 val = self.ctx._random.randint(10000, 99999)
                 self.ctx.record_entity(field_name, val)
-                return val
+                return self._coerce_type(val, annotation)
             elif isinstance(gen_type, str) and gen_type.startswith("fk:"):
                 target_key = gen_type.split("fk:", 1)[1]
-                return self.ctx.sample_fk(target_key)
+                val = self.ctx.sample_fk(target_key)
+                return self._coerce_type(val, annotation)
             elif gen_type == "money":
                 ge_val = self._extract_constraint(field_info, "ge")
                 le_val = self._extract_constraint(field_info, "le")
                 ge = 0.01 if ge_val is None else float(ge_val)
                 le = 500.0 if le_val is None else float(le_val)
-                return round(self.ctx._random.uniform(ge, le), 2)
+                val = round(self.ctx._random.uniform(ge, le), 2)
+                return self._coerce_type(val, annotation)
             elif gen_type == "enum":
                 values = extra.get("values", ["default_1", "default_2"])
-                return self.ctx._random.choice(values)
+                val = self.ctx._random.choice(values)
+                return self._coerce_type(val, annotation)
             elif isinstance(gen_type, str) and gen_type.startswith("faker:"):
                 provider = gen_type.split("faker:", 1)[1]
                 if fake and hasattr(fake, provider):
-                    return getattr(fake, provider)()
+                    val = getattr(fake, provider)()
+                    return self._coerce_type(val, annotation)
 
         # Tier 2: Specialized Types
-        annotation = getattr(field_info, "annotation", None)
         if annotation is EmailStr:
             return (
                 fake.email()
@@ -175,7 +298,13 @@ class DeclarativeEngine:
         elif annotation is datetime.date:
             return datetime.date.today()
 
-        # Tier 3 & Tier 4: Field Constraints & Primitive Fallbacks
+        # Tier 3 & Tier 4: Field Constraints, Semantic Heuristics & Primitive Fallbacks
+        semantic_val = self._synthesize_semantic_fallback(
+            field_name, annotation, field_info
+        )
+        if semantic_val is not None:
+            return self._coerce_type(semantic_val, annotation)
+
         if annotation is int:
             ge_val = self._extract_constraint(field_info, "ge")
             le_val = self._extract_constraint(field_info, "le")
@@ -189,7 +318,11 @@ class DeclarativeEngine:
             le = 100.0 if le_val is None else float(le_val)
             return round(self.ctx._random.uniform(ge, le), 2)
         elif annotation is str:
-            return fake.word() if fake else f"sample_{field_name}"
+            return (
+                fake.sentence(nb_words=3).rstrip(".")
+                if fake
+                else f"sample_{field_name}"
+            )
         elif annotation is bool:
             return True
         elif annotation is list or getattr(annotation, "__origin__", None) is list:
@@ -210,14 +343,14 @@ class DeclarativeEngine:
                 ]
             else:
                 return [
-                    fake.word() if fake else "item"
+                    fake.sentence(nb_words=2).rstrip(".") if fake else "item"
                     for _ in range(self.ctx._random.randint(1, 3))
                 ]
 
         return None
 
     def generate_response(self, model_cls: Type[T]) -> T:
-        """Recursively populates a Pydantic V2 BaseModel in sub-millisecond execution time.
+        """Recursively populates a Pydantic V2 BaseModel with type-safe validation recovery.
 
         Args:
             model_cls (Type[T]): Target Pydantic V2 BaseModel class.
@@ -229,4 +362,14 @@ class DeclarativeEngine:
         fields = getattr(model_cls, "model_fields", {})
         for field_name, field_info in fields.items():
             payload[field_name] = self.synthesize_field(field_name, field_info)
-        return model_cls(**payload)
+
+        try:
+            return model_cls(**payload)
+        except Exception:
+            # Fallback type coercion across payload fields if validation error occurs
+            coerced_payload: Dict[str, Any] = {}
+            for field_name, field_info in fields.items():
+                raw_val = payload.get(field_name)
+                annotation = getattr(field_info, "annotation", None)
+                coerced_payload[field_name] = self._coerce_type(raw_val, annotation)
+            return model_cls(**coerced_payload)
