@@ -24,6 +24,119 @@ def main():
     """AfterImage -- synthetic conversation dataset generator."""
 
 
+@main.command("agent-trace")
+@click.option(
+    "--app-name", default="banking_app", help="Target application domain name."
+)
+@click.option(
+    "--app-desc",
+    default="Customer banking and money transfer application.",
+    help="App domain description.",
+)
+@click.option(
+    "-n",
+    "--num-trajectories",
+    default=5,
+    type=int,
+    help="Number of synthetic trajectories to generate.",
+)
+@click.option(
+    "-o",
+    "--output",
+    default="outputs/agent_trajectories.jsonl",
+    help="Output JSONL file path.",
+)
+@click.option(
+    "--architect-model", default="gemini-3.6-flash", help="LLM Schema Architect model."
+)
+@click.option(
+    "--teacher-model",
+    default="gemini-3.5-flash-lite",
+    help="ReAct Teacher Agent model.",
+)
+@click.option(
+    "--judge-model", default="gemini-3.6-flash", help="Trajectory Judge model."
+)
+def agent_trace_command(
+    app_name: str,
+    app_desc: str,
+    num_trajectories: int,
+    output: str,
+    architect_model: str,
+    teacher_model: str,
+    judge_model: str,
+):
+    """Generate environment-free synthetic agent execution trajectories."""
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        click.secho(
+            "API key not found. Please set GEMINI_API_KEY or OPENAI_API_KEY environment variable.",
+            fg="red",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    from .agent_trace import AsyncAgentTraceGenerator, ToolActionSpec, ToolParameterSpec
+
+    click.secho(f"Initializing Agent Trace synthesis for app: {app_name}", fg="cyan")
+
+    generator = AsyncAgentTraceGenerator(
+        api_key=api_key,
+        architect_model=architect_model,
+        teacher_model=teacher_model,
+        judge_model=judge_model,
+    )
+
+    # Register default app domain actions
+    actions = [
+        ToolActionSpec(
+            action_name="get_account_balance",
+            description="Returns total and available balance for a user account.",
+            parameters=[
+                ToolParameterSpec(
+                    name="account_id", type="int", description="Account ID"
+                )
+            ],
+            response_model_name="AccountBalanceResponse",
+        ),
+        ToolActionSpec(
+            action_name="transfer_funds",
+            description="Transfers funds from sender account to recipient account.",
+            parameters=[
+                ToolParameterSpec(
+                    name="sender_id", type="int", description="Sender Account ID"
+                ),
+                ToolParameterSpec(
+                    name="receiver_id", type="int", description="Receiver Account ID"
+                ),
+                ToolParameterSpec(
+                    name="amount", type="float", description="Transfer amount"
+                ),
+            ],
+            response_model_name="TransferResponse",
+        ),
+    ]
+
+    async def _run():
+        click.secho(
+            "Running LLM Schema Architect with static verification loop...", fg="yellow"
+        )
+        await generator.register_app_domain(
+            app_name=app_name, app_description=app_desc, actions=actions
+        )
+        click.secho(
+            f"Generating {num_trajectories} synthetic agent trajectories...",
+            fg="yellow",
+        )
+        results = await generator.generate(num_trajectories=num_trajectories)
+        click.secho(
+            f"Successfully generated {len(results)} valid trajectories -> {output}",
+            fg="green",
+        )
+
+    asyncio.run(_run())
+
+
 # ---------------------------------------------------------------------------
 # skill
 # ---------------------------------------------------------------------------

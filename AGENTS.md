@@ -14,6 +14,7 @@
 - **Multiple Storage Backends**: Store conversations in JSONL files or SQL databases (SQLite, PostgreSQL, MySQL).
 - **Save in JSONL Format**: Export datasets directly for downstream applications.
 - **Quality Analysis**: Comprehensive dataset quality checks with visualization support.
+- **Environment-Free Agent Traces**: Generate synthetic agent execution trajectories combining ESAT methodology with sub-millisecond local declarative simulation tools (`afterimage.agent_trace`).
 - **Generation Monitoring**: Real-time monitoring of generation metrics with alerts and visualization.
 
 **See @DESIGN.md for the code design and architecture.**

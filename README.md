@@ -31,6 +31,17 @@ from a single YAML file or a composable Python API.
 
 ## News
 
+### July 26, 2026 — Environment-Free Synthetic Agent Traces (`afterimage.agent_trace`)
+
+**afterimage.agent_trace** combines the **ESAT** pipeline (*Environment-free Synthetic Data Generation for API-Calling Agents*, [arXiv:2607.16900](https://arxiv.org/abs/2607.16900)) with a sub-millisecond local **Declarative Tool Simulation Framework** and **Dual-Mode Observation Generation** (`observation_mode: "faker" | "llm"`). It enables training data generation for API-calling AI agents without pre-building backend applications or databases. Key highlights:
+- **Dual Observation Modes:** Toggle seamlessly between sub-millisecond local execution (`"faker"`, `< 1 ms`, 0 tokens) and LLM-driven structured observation synthesis (`"llm"`, original ESAT paper methodology).
+- **Referential Integrity & Parameter Echoing:** Generator annotations (`param:<name>`, `echo`, `state:account_balance`, `fk:<entity>.<field>`) and explicit Pydantic response models guarantee 100% parameter matching and stateful context mutations.
+- **Static AST Verification:** `SchemaVerifier` checks 6 structural invariants with automatic LLM self-correction feedback loops.
+- **360-Bucket Grid & Inverse Frequency:** Combinatorial task synthesis grid paired with inverse-frequency endpoint sampling.
+- **Trajectory Curation:** Multi-turn ReAct teacher agent interaction (`gemini-3.5-flash-lite`) filtered by a 9-point rubric judge (`gemini-3.6-flash`).
+
+See the [docs](https://afterimage.altai.dev/agent_trace.html) and runnable script [`examples/agent_trace_generator_demo.py`](examples/agent_trace_generator_demo.py).
+
 ### May 13, 2026 — Context2skill
 
 **ctx2skill** is a new method to convert and iteratively optimize large contexts to skills that agents can use, originally proposed in [From context to skills: Can language models learn from context skillfully?](https://arxiv.org/html/2604.27660v1). See the [docs](https://afterimage.altai.dev/context_to_skill_tutorial.html) to learn how to use it.
@@ -86,7 +97,7 @@ Your documents  +  LLM  →  Realistic, diverse, quality-filtered training data
 
 | Category | What's included |
 |---|---|
-| **Generation** | Multi-turn chat · Document-grounded QA · Persona-driven diversity · Structured output · Tool-calling |
+| **Generation** | Multi-turn chat · Document-grounded QA · Persona-driven diversity · Structured output · Tool-calling · Environment-free Agent Traces (ESAT + Declarative Engine) |
 | **Preference Data** | DPO · RLHF · UltraFeedback · Anthropic HH · ORPO |
 | **Quality** | LLM-as-judge · Embedding-based metrics · Auto-improve retries · Composite scoring |
 | **Providers** | Gemini · OpenAI · DeepSeek · OpenRouter · Local (vLLM / Ollama / llama.cpp) |
@@ -169,6 +180,12 @@ afterimage push -c your_config.yaml --repo-id your-org/your-dataset
 afterimage preference -c your_config.yaml
 ```
 
+**Generate environment-free synthetic agent traces:**
+
+```bash
+afterimage agent-trace --app-name "banking_app" -n 10 -o "outputs/agent_trajectories.jsonl"
+```
+
 **Analyze your dataset:**
 
 ```bash
@@ -196,6 +213,38 @@ async def main():
     )
     await gen.generate(num_dialogs=50, max_turns=4, max_concurrency=5)
     print(f"Generated {len(gen.load_conversations())} conversations.")
+
+asyncio.run(main())
+```
+
+**Environment-free synthetic agent trace generation (`afterimage.agent_trace`):**
+
+```python
+import asyncio
+import os
+from afterimage.agent_trace import AsyncAgentTraceGenerator, ToolActionSpec, ToolParameterSpec
+
+async def main():
+    generator = AsyncAgentTraceGenerator(
+        api_key=os.environ["GEMINI_API_KEY"],
+        architect_model="gemini-3.6-flash",
+        teacher_model="gemini-3.5-flash-lite",
+        judge_model="gemini-3.6-flash",
+    )
+    await generator.register_app_domain(
+        app_name="banking_app",
+        app_description="Customer banking application.",
+        actions=[
+            ToolActionSpec(
+                action_name="get_balance",
+                description="Fetch user account balance.",
+                parameters=[ToolParameterSpec(name="account_id", type="int")],
+                response_model_name="BalanceResponse",
+            )
+        ],
+    )
+    trajectories = await generator.generate(num_trajectories=10, max_turns=5)
+    print(f"Generated {len(trajectories)} agent trajectories.")
 
 asyncio.run(main())
 ```

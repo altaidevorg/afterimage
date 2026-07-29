@@ -22,6 +22,7 @@ AfterImage Documentation
    persona_generation
    monitoring
    OpenSimula (Simula-style data) <opensimula>
+   Environment-Free Agent Traces <agent_trace>
    evaluation
    advanced_usage
 
