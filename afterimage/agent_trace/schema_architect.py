@@ -77,12 +77,13 @@ class SchemaArchitect:
         existing_primary_ids: Optional[set[str]] = None,
     ) -> Tuple[AppDomainSpec, Dict[str, Type[BaseModel]]]:
         """Generates Pydantic response models code for an app domain with static verification retries."""
-        endpoints_desc = "\n".join(
-            [
-                f"- {a.action_name}: {a.description} -> ResponseModel: {a.response_model_name}"
-                for a in actions
-            ]
-        )
+        endpoints_desc_lines = []
+        for a in actions:
+            desc = f"- {a.action_name}: {a.description} -> ResponseModel: {a.response_model_name}"
+            if a.response_schema_hint:
+                desc += f" (Schema Hint: {a.response_schema_hint})"
+            endpoints_desc_lines.append(desc)
+        endpoints_desc = "\n".join(endpoints_desc_lines)
 
         feedback_section = ""
         last_code = ""

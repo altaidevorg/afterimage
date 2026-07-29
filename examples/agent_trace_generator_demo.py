@@ -14,12 +14,72 @@ from pathlib import Path
 # Add repository root to python path when running directly
 sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
 
+from typing import List, Optional
+from pydantic import BaseModel, EmailStr, Field
+
 from afterimage.agent_trace import (
     AsyncAgentTraceGenerator,
     ToolActionSpec,
     ToolParameterSpec,
 )
 from afterimage.exporters import export_dataset
+
+
+# --- Explicit Concrete Response Models with Parameter Echoing Annotations ---
+
+class UserProfileResponse(BaseModel):
+    user_id: int = Field(json_schema_extra={"generator": "id"})
+    full_name: str = Field(json_schema_extra={"generator": "faker:name"})
+    email: EmailStr = Field(json_schema_extra={"generator": "faker:email"})
+    primary_checking_account_id: int = Field(json_schema_extra={"generator": "id"})
+    primary_savings_account_id: int = Field(json_schema_extra={"generator": "id"})
+
+
+class UserAccountItem(BaseModel):
+    account_id: int = Field(json_schema_extra={"generator": "param:account_id"})
+    account_type: str = Field(json_schema_extra={"generator": "enum", "values": ["checking", "savings"]})
+    balance: float = Field(json_schema_extra={"generator": "money"})
+
+
+class UserAccountsResponse(BaseModel):
+    accounts: List[UserAccountItem] = Field(default_factory=list)
+
+
+class AccountBalanceResponse(BaseModel):
+    account_id: int = Field(json_schema_extra={"generator": "param:account_id"})
+    account_type: str = Field(default="checking")
+    total_balance: float = Field(json_schema_extra={"generator": "money"})
+    available_balance: float = Field(json_schema_extra={"generator": "money"})
+
+
+class TransferResponse(BaseModel):
+    transfer_id: int = Field(json_schema_extra={"generator": "id"})
+    status: str = Field(default="completed")
+    amount: float = Field(json_schema_extra={"generator": "param:amount"})
+
+
+class ExpenseRecord(BaseModel):
+    expense_id: int = Field(json_schema_extra={"generator": "id"})
+    user_id: int = Field(json_schema_extra={"generator": "param:user_id"})
+    merchant: str = Field(json_schema_extra={"generator": "faker:company"})
+    category: str = Field(json_schema_extra={"generator": "enum", "values": ["office supplies", "travel", "dining"]})
+    amount: float = Field(json_schema_extra={"generator": "money"})
+    description: str = Field(json_schema_extra={"generator": "faker:sentence"})
+
+
+class ExpensesListResponse(BaseModel):
+    expenses: List[ExpenseRecord] = Field(default_factory=list)
+
+
+class CommentRecord(BaseModel):
+    comment_id: int = Field(json_schema_extra={"generator": "id"})
+    expense_id: int = Field(json_schema_extra={"generator": "param:expense_id"})
+    author_name: str = Field(json_schema_extra={"generator": "faker:name"})
+    comment_text: str = Field(json_schema_extra={"generator": "faker:sentence"})
+
+
+class ExpenseCommentsResponse(BaseModel):
+    comments: List[CommentRecord] = Field(default_factory=list)
 
 
 async def main():
@@ -30,16 +90,33 @@ async def main():
 
     print("=== AfterImage Agent Trace Dataset Generator ===")
 
-    # 1. Initialize AsyncAgentTraceGenerator facade
+    # 1. Initialize AsyncAgentTraceGenerator facade (observation_mode="faker" or "llm")
     generator = AsyncAgentTraceGenerator(
         api_key=api_key,
         architect_model="gemini-3.6-flash",
         teacher_model="gemini-3.5-flash-lite",
         judge_model="gemini-3.6-flash",
+        observation_mode="llm",  # Set to "llm" for original ESAT paper LLM observation synthesis mode
     )
 
-    # 2. Define App Domain Endpoints for Banking App
+    # 2. Define App Domain Endpoints for Banking App (Discovery + Action endpoints)
     banking_actions = [
+        ToolActionSpec(
+            action_name="get_current_user_profile",
+            description="Returns current logged-in user profile details including user_id, name, primary_checking_account_id, and primary_savings_account_id.",
+            parameters=[],  # Parameterless self-discovery endpoint!
+            response_model_name="UserProfileResponse",
+            response_model_cls=UserProfileResponse,
+        ),
+        ToolActionSpec(
+            action_name="list_user_accounts",
+            description="Lists checking and savings accounts for a user ID.",
+            parameters=[
+                ToolParameterSpec(name="user_id", type="int", description="User ID")
+            ],
+            response_model_name="UserAccountsResponse",
+            response_model_cls=UserAccountsResponse,
+        ),
         ToolActionSpec(
             action_name="get_account_balance",
             description="Returns total and available balance for a user account.",
@@ -47,6 +124,7 @@ async def main():
                 ToolParameterSpec(name="account_id", type="int", description="User Account ID")
             ],
             response_model_name="AccountBalanceResponse",
+            response_model_cls=AccountBalanceResponse,
         ),
         ToolActionSpec(
             action_name="transfer_money",
@@ -57,6 +135,7 @@ async def main():
                 ToolParameterSpec(name="amount", type="float", description="Amount to transfer"),
             ],
             response_model_name="TransferResponse",
+            response_model_cls=TransferResponse,
         ),
     ]
 
@@ -70,6 +149,7 @@ async def main():
                 ToolParameterSpec(name="category", type="str", description="Expense category filter", required=False),
             ],
             response_model_name="ExpensesListResponse",
+            response_model_cls=ExpensesListResponse,
         ),
         ToolActionSpec(
             action_name="get_expense_comments",
@@ -78,6 +158,7 @@ async def main():
                 ToolParameterSpec(name="expense_id", type="int", description="Expense ID")
             ],
             response_model_name="ExpenseCommentsResponse",
+            response_model_cls=ExpenseCommentsResponse,
         ),
     ]
 

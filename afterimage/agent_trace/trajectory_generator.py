@@ -82,10 +82,12 @@ class ReActTrajectoryLoop:
                     break
 
                 if tool_call:
-                    obs = environment.execute_tool(
+                    obs = await environment.aexecute_tool(
                         app=tool_call.app,
                         action=tool_call.action,
                         parameters=tool_call.parameters,
+                        initial_context=task,
+                        turns=[t.model_dump(mode="json") for t in turns],
                     )
                     turns.append(
                         TrajectoryTurn(

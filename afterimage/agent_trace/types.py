@@ -1,6 +1,8 @@
 import uuid
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Type
 from pydantic import BaseModel, Field
+
+ObservationMode = Literal["faker", "llm"]
 
 
 class ToolParameterSpec(BaseModel):
@@ -21,6 +23,12 @@ class ToolActionSpec(BaseModel):
     )
     response_model_name: str = Field(
         ..., description="Name of the Pydantic V2 response model class"
+    )
+    response_model_cls: Optional[Type[BaseModel]] = Field(
+        default=None, exclude=True, description="Explicit Pydantic response model class if provided"
+    )
+    response_schema_hint: Optional[str] = Field(
+        default=None, description="Schema description hint for SchemaArchitect if explicit class omitted"
     )
 
 

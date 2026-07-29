@@ -3,6 +3,7 @@ AfterImage Agent Trace subpackage for environment-free synthetic agent-trace dat
 """
 
 from .generator import AsyncAgentTraceGenerator
+from .llm_observation_synthesizer import LLMObservationSynthesizer
 from .schema_architect import SchemaArchitect
 from .simulation_engine import DeclarativeEngine, SimulationContext
 from .task_synthesis import GridTaskSynthesizer, InverseFrequencySampler
@@ -14,6 +15,7 @@ from .types import (
     AppDomainSpec,
     GridTaskBucket,
     JudgeVerdict,
+    ObservationMode,
     RubricScores,
     ToolActionSpec,
     ToolCall,
@@ -25,6 +27,7 @@ from .verifier import SchemaVerifier, VerificationReport
 
 __all__ = [
     "AsyncAgentTraceGenerator",
+    "LLMObservationSynthesizer",
     "DeclarativeEngine",
     "SimulationContext",
     "DeclarativeEnvironment",
@@ -40,6 +43,7 @@ __all__ = [
     "AppDomainSpec",
     "GridTaskBucket",
     "JudgeVerdict",
+    "ObservationMode",
     "RubricScores",
     "ToolActionSpec",
     "ToolCall",

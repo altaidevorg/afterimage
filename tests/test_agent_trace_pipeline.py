@@ -149,11 +149,12 @@ async def test_grid_task_synthesizer_llm_calls(mock_llm_provider):
         actions=actions,
     )
 
-    task, selected_apps, bucket = await synthesizer.synthesize_task(
+    task, initial_context, selected_apps, bucket = await synthesizer.synthesize_task(
         app_domains={"bank": app_spec}
     )
 
     assert isinstance(task, str)
+    assert isinstance(initial_context, dict)
     assert selected_apps == ["bank"]
     assert mock_llm_provider.agenerate_content.call_count == 3  # 1 architect + 2 synthesizer
 

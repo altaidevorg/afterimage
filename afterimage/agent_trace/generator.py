@@ -16,6 +16,9 @@ from .types import AgentTrajectory, AppDomainSpec, ToolActionSpec
 logger = logging.getLogger(__name__)
 
 
+from .types import AppDomainSpec, ObservationMode, ToolActionSpec
+
+
 class AsyncAgentTraceGenerator:
     """Async Environment-Free Synthetic Agent-Trace Dataset Generator Facade."""
 
@@ -27,9 +30,11 @@ class AsyncAgentTraceGenerator:
         architect_model: str = "gemini-3.6-flash",
         teacher_model: str = "gemini-3.5-flash-lite",
         judge_model: str = "gemini-3.6-flash",
+        observation_mode: ObservationMode = "faker",
         storage: Optional[BaseStorage] = None,
         llm_factory_kwargs: Optional[dict] = None,
     ):
+        self.observation_mode = observation_mode
         extras = dict(llm_factory_kwargs or {})
 
         if llm_provider:
@@ -83,7 +88,11 @@ class AsyncAgentTraceGenerator:
             model_name=judge_model,
         )
 
-        self.environment = DeclarativeEnvironment()
+        self.environment = DeclarativeEnvironment(
+            observation_mode=self.observation_mode,
+            llm_provider=teacher_llm,
+        )
+        self._global_primary_ids: set[str] = set()
         self.storage = storage or JSONLStorage(
             conversations_path="outputs/agent_trajectories.jsonl"
         )
@@ -91,14 +100,44 @@ class AsyncAgentTraceGenerator:
     async def register_app_domain(
         self, app_name: str, app_description: str, actions: List[ToolActionSpec]
     ) -> AppDomainSpec:
-        """Runs SchemaArchitect to generate and register Pydantic response models for an app domain."""
-        app_spec, model_classes = await self.architect.generate_app_domain_schema(
-            app_name=app_name,
-            app_description=app_description,
-            actions=actions,
-        )
-        self.environment.register_app_domain(app_spec, model_classes=model_classes)
-        return app_spec
+        """Registers an app domain using explicit Pydantic response models or SchemaArchitect dynamic generation."""
+        from pydantic import BaseModel
+        explicit_models: dict[str, type[BaseModel]] = {}
+        unresolved_actions = []
+
+        for act in actions:
+            if act.response_model_cls:
+                explicit_models[act.response_model_name] = act.response_model_cls
+            else:
+                unresolved_actions.append(act)
+
+        if unresolved_actions:
+            app_spec, generated_classes = await self.architect.generate_app_domain_schema(
+                app_name=app_name,
+                app_description=app_description,
+                actions=unresolved_actions,
+                existing_primary_ids=self._global_primary_ids,
+            )
+            merged_models = {**generated_classes, **explicit_models}
+            full_spec = AppDomainSpec(
+                app_name=app_name,
+                description=app_description,
+                actions=actions,
+                response_models_code=app_spec.response_models_code,
+            )
+        else:
+            merged_models = explicit_models
+            full_spec = AppDomainSpec(
+                app_name=app_name,
+                description=app_description,
+                actions=actions,
+                response_models_code="# Explicit response model classes provided",
+            )
+
+        self.environment.register_app_domain(full_spec, model_classes=merged_models)
+        for act in actions:
+            self._global_primary_ids.add(f"{app_name}.{act.action_name}_id")
+        return full_spec
 
     async def generate_single(self, max_turns: int = 6) -> Optional[AgentTrajectory]:
         """Synthesizes a single agent trajectory (task -> ReAct loop -> judge)."""
@@ -107,12 +146,15 @@ class AsyncAgentTraceGenerator:
                 "No app domains registered. Call register_app_domain() first."
             )
 
-        # 1. Task synthesis via 360-bucket grid & task rewriter
-        task, selected_apps, bucket = await self.synthesizer.synthesize_task(
+        # 1. Task synthesis via 360-bucket grid, task rewriter, and initial state generator
+        task, initial_context, selected_apps, bucket = await self.synthesizer.synthesize_task(
             app_domains=self.environment.app_domains
         )
 
-        # 2. ReAct teacher trajectory loop against DeclarativeEnvironment (< 1ms tool calls)
+        # 2. Seed initial context state into environment context store
+        self.environment.seed_initial_context(initial_context)
+
+        # 3. ReAct teacher trajectory loop against DeclarativeEnvironment (< 1ms tool calls)
         trajectory = await self.teacher_loop.run_trajectory(
             task=task,
             environment=self.environment,

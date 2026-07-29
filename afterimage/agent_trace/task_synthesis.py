@@ -1,12 +1,12 @@
 import random
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ..providers.llm_providers import LLMProvider
 from .types import AppDomainSpec, GridTaskBucket
 
 
-TASK_SYNTHESIZER_PROMPT = """You are an expert agentic task synthesizer.
-Generate a realistic, grounded multi-turn agent task based on the following app APIs and structural constraints.
+TASK_SYNTHESIZER_PROMPT = """You are an expert agentic task and environment state synthesizer.
+Generate a realistic, grounded multi-turn agent task AND a matching initial environment seed state based on the following app APIs and structural constraints.
 
 Target Apps: {app_names}
 Available APIs:
@@ -21,22 +21,42 @@ Bucket Constraints:
 - Task Focus: {task_focus}
 - Number of Apps: {num_apps}
 
-Instruction: Generate a single clear, realistic task requirement that a user would ask an AI agent to perform using these apps.
-Output only the procedural task text.
+Instruction:
+1. Generate a single clear, realistic task requirement that a user would ask an AI agent to perform using these apps.
+2. If the task requires specific entity identifiers (e.g. account numbers, expense IDs, user IDs), include those specific numbers in the task text or ensure a discovery endpoint exists.
+3. Provide a JSON block at the end with initial seed context data (e.g. user_id, account_ids, expense records, comments) matching the task scenario.
+
+Format Output:
+PROMPT: <procedural task text>
+INITIAL_CONTEXT:
+```json
+{{
+  "user_id": 101,
+  "account_id": 1001,
+  "checking_balance": 1250.0,
+  "savings_account_id": 1002,
+  "expense_id": 5001,
+  "category": "office supplies",
+  "merchant": "Staples",
+  "comment": "Purchased 5 reams of A4 paper and 2 boxes of gel pens"
+}}
+```
 """
 
 
 TASK_REWRITER_PROMPT = """You are an expert natural language task rewriter for AI user interfaces.
 Your job is to rewrite a verbose, step-by-step synthetic procedural directive into a natural, direct user request.
 
+CRITICAL CONSTRAINT: Preserve all specific account numbers, IDs, merchant names, category filters, and monetary amounts mentioned in the verbose directive.
+
 Verbose Directive: "{verbose_task}"
 
 Examples:
-- Verbose: "Go to my expenses app, find non-group expenses, iterate over all comments on them, count unique commenter user IDs, and tell me the total count."
-- Rewritten Intent: "How many unique people have commented on my non-group expenses and payments in total on ExpensesApp?"
+- Verbose: "Go to my expenses app, find non-group expenses for user 101, iterate over all comments on them, count unique commenter user IDs, and tell me the total count."
+- Rewritten Intent: "How many unique people have commented on my non-group expenses and payments in total on ExpensesApp for user 101?"
 
-- Verbose: "Call banking.get_transactions with status=unread, get reference_id 5001, then call banking.get_comments for 5001."
-- Rewritten Intent: "Check my unread notifications for transactions with comments and tell me who commented."
+- Verbose: "Call banking.get_account_balance with account_id=1001, check if balance >= 500, then call banking.transfer_money from 1001 to 1002 for 250."
+- Rewritten Intent: "Check if I have at least $500 in my checking account (1001), and if so, transfer $250 to my savings account (1002)."
 
 Rewritten Natural User Request:
 """
@@ -100,8 +120,8 @@ class GridTaskSynthesizer:
         self,
         app_domains: Dict[str, AppDomainSpec],
         bucket: Optional[GridTaskBucket] = None,
-    ) -> tuple[str, List[str], GridTaskBucket]:
-        """Synthesizes a natural agent task grounded in registered app domains."""
+    ) -> tuple[str, Dict[str, Any], List[str], GridTaskBucket]:
+        """Synthesizes a natural agent task grounded in registered app domains along with initial state payload."""
         if not app_domains:
             raise ValueError("No app domains registered for task synthesis.")
 
@@ -134,7 +154,8 @@ class GridTaskSynthesizer:
             prompt=prompt,
             temperature=0.7,
         )
-        verbose_task = response.text.strip().strip('"')
+        raw_text = response.text.strip()
+        verbose_task, initial_context = self._parse_synthesizer_output(raw_text)
 
         # Procedural Task Rewriting step to compress step-by-step input into natural user intent
         rewritten_task = await self.rewrite_task_intent(verbose_task)
@@ -144,7 +165,37 @@ class GridTaskSynthesizer:
             for act in app_domains[app_name].actions:
                 self.sampler.record_usage(app_name, act.action_name)
 
-        return rewritten_task, selected_app_names, effective_bucket
+        return rewritten_task, initial_context, selected_app_names, effective_bucket
+
+    def _parse_synthesizer_output(self, text: str) -> tuple[str, Dict[str, Any]]:
+        """Parses prompt text and initial context JSON from synthesizer output."""
+        import json
+
+        verbose_task = text
+        initial_context: Dict[str, Any] = {}
+
+        if "PROMPT:" in text:
+            parts = text.split("PROMPT:", 1)[1]
+            if "INITIAL_CONTEXT:" in parts:
+                prompt_part, json_part = parts.split("INITIAL_CONTEXT:", 1)
+                verbose_task = prompt_part.strip()
+                if "```json" in json_part:
+                    json_str = (
+                        json_part.split("```json", 1)[1].split("```", 1)[0].strip()
+                    )
+                elif "```" in json_part:
+                    json_str = json_part.split("```", 1)[1].split("```", 1)[0].strip()
+                else:
+                    json_str = json_part.strip()
+
+                try:
+                    initial_context = json.loads(json_str)
+                except Exception:
+                    initial_context = {}
+            else:
+                verbose_task = parts.strip()
+
+        return verbose_task.strip().strip('"'), initial_context
 
     async def rewrite_task_intent(self, verbose_task: str) -> str:
         """Compresses verbose procedural directives into natural intent-level user queries."""

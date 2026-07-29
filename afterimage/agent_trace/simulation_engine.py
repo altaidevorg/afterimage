@@ -21,45 +21,26 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class SimulationContext:
-    """Stores generated stateful entities and foreign key lookup pools across turns.
-
-    Attributes:
-        store (Dict[str, List[Any]]): Internal mapping from entity keys to list of generated IDs.
-    """
+    """Stores generated stateful entities, account balances, and foreign key lookup pools across turns."""
 
     def __init__(self, seed: Optional[int] = None) -> None:
-        """Initializes a new SimulationContext instance.
-
-        Args:
-            seed (Optional[int]): Optional random seed for reproducible entity synthesis.
-        """
+        """Initializes a new SimulationContext instance."""
         self._seed = seed
         self._random = random.Random(seed)
         if seed is not None and fake:
             Faker.seed(seed)
         self.store: Dict[str, List[Any]] = {}
+        self.account_balances: Dict[int, Dict[str, float]] = {}
 
     def record_entity(self, key: str, value: Any) -> None:
-        """Stores a primary identifier or generated entity attribute into state.
-
-        Args:
-            key (str): Entity key identifier (e.g. ``"user.user_id"``).
-            value (Any): Primitive value or identifier to record.
-        """
+        """Stores a primary identifier or generated entity attribute into state."""
         if key not in self.store:
             self.store[key] = []
         if value not in self.store[key]:
             self.store[key].append(value)
 
     def sample_fk(self, key: str) -> Any:
-        """Samples an existing foreign key identifier from state, or synthesizes a fresh record.
-
-        Args:
-            key (str): Foreign key lookup string (e.g. ``"user.user_id"`` or ``"fk:user.user_id"``).
-
-        Returns:
-            Any: A sampled existing identifier or a freshly registered integer identifier.
-        """
+        """Samples an existing foreign key identifier from state, or synthesizes a fresh record."""
         candidates = [key]
         if "." in key:
             entity, field = key.split(".", 1)
@@ -73,13 +54,41 @@ class SimulationContext:
         self.record_entity(key, fallback_id)
         return fallback_id
 
-    def mutate_state(self, mutation_tag: str, entity_value: Any) -> None:
-        """Applies state mutation directive during stateful API calls (e.g. POST/PATCH).
+    def get_or_create_account_balance(self, account_id: Any) -> Dict[str, float]:
+        """Retrieves persistent stateful account balance or initializes a realistic balance record."""
+        try:
+            account_id_int = int(account_id)
+        except Exception:
+            account_id_int = self._random.randint(10000, 99999)
 
-        Args:
-            mutation_tag (str): Directive tag such as ``"append:user_orders"``.
-            entity_value (Any): Entity payload to record into context.
-        """
+        if account_id_int not in self.account_balances:
+            total = round(self._random.uniform(500.0, 5000.0), 2)
+            avail = round(total * self._random.uniform(0.7, 0.95), 2)
+            self.account_balances[account_id_int] = {
+                "total_balance": total,
+                "available_balance": avail,
+            }
+        return self.account_balances[account_id_int]
+
+    def apply_transfer(self, sender_id: Any, receiver_id: Any, amount: Any) -> None:
+        """Applies a fund transfer mutation, deducting from sender and crediting receiver."""
+        try:
+            s_id = int(sender_id)
+            r_id = int(receiver_id)
+            amt = float(amount)
+        except Exception:
+            return
+
+        s_bal = self.get_or_create_account_balance(s_id)
+        r_bal = self.get_or_create_account_balance(r_id)
+
+        s_bal["available_balance"] = round(s_bal["available_balance"] - amt, 2)
+        s_bal["total_balance"] = round(s_bal["total_balance"] - amt, 2)
+        r_bal["available_balance"] = round(r_bal["available_balance"] + amt, 2)
+        r_bal["total_balance"] = round(r_bal["total_balance"] + amt, 2)
+
+    def mutate_state(self, mutation_tag: str, entity_value: Any) -> None:
+        """Applies state mutation directive during stateful API calls."""
         if mutation_tag.startswith("append:"):
             target_key = mutation_tag.split("append:", 1)[1]
             self.record_entity(target_key, entity_value)
@@ -87,27 +96,13 @@ class SimulationContext:
     def clear(self) -> None:
         """Clears all stored context state."""
         self.store.clear()
+        self.account_balances.clear()
 
 
 class DeclarativeEngine:
-    """Core sub-millisecond local declarative simulation generator engine.
-
-    Uses a 4-tier fallback resolution hierarchy:
-        1. Explicit Generator Annotations (``id``, ``fk``, ``money``, ``faker``, ``enum``).
-        2. Specialized Pydantic / standard library types (``EmailStr``, ``UUID``, ``datetime``).
-        3. Field constraints (``ge``, ``le``, ``min_length``, ``max_length``).
-        4. Primitive fallbacks (``int``, ``str``, ``float``, ``bool``).
-
-    Attributes:
-        ctx (SimulationContext): Stateful entity lookup context.
-    """
+    """Core sub-millisecond local declarative simulation generator engine."""
 
     def __init__(self, context: Optional[SimulationContext] = None) -> None:
-        """Initializes DeclarativeEngine.
-
-        Args:
-            context (Optional[SimulationContext]): Context instance or None to create fresh context.
-        """
         self.ctx = context or SimulationContext()
 
     def _extract_constraint(
@@ -241,19 +236,59 @@ class DeclarativeEngine:
 
         return None
 
-    def synthesize_field(self, field_name: str, field_info: Any) -> Any:
-        """Synthesizes a field value using 4-tier fallback hierarchy with type coercion and semantic heuristics.
+    def _match_parameter_echo(
+        self, field_name: str, annotation: Any, extra: Dict[str, Any], parameters: Dict[str, Any]
+    ) -> Optional[Any]:
+        """Checks for explicit parameter generator annotations, direct name matches, or semantic synonym echoes."""
+        gen_type = extra.get("generator")
 
-        Args:
-            field_name (str): Name of the target model field.
-            field_info (Any): Pydantic FieldInfo object.
+        # 1. Explicit generator annotation: "param:<param_name>" or "echo"
+        if isinstance(gen_type, str):
+            if gen_type == "echo" and field_name in parameters:
+                return self._coerce_type(parameters[field_name], annotation)
+            elif gen_type.startswith("param:"):
+                target_p = gen_type.split("param:", 1)[1]
+                if target_p in parameters and parameters[target_p] is not None:
+                    return self._coerce_type(parameters[target_p], annotation)
 
-        Returns:
-            Any: Generated schema-compliant field value.
-        """
+        # 2. Direct parameter name match
+        if field_name in parameters and parameters[field_name] is not None:
+            return self._coerce_type(parameters[field_name], annotation)
+
+        # 3. Semantic Synonym Parameter Matching
+        lower_field = field_name.lower()
+        if lower_field == "account_id" and "account_id" in parameters:
+            return self._coerce_type(parameters["account_id"], annotation)
+        elif lower_field in ("sender_account_id", "sender_id") and "sender_id" in parameters:
+            return self._coerce_type(parameters["sender_id"], annotation)
+        elif lower_field in ("recipient_account_id", "receiver_account_id", "receiver_id", "recipient_id"):
+            val = parameters.get("receiver_id") if "receiver_id" in parameters else parameters.get("recipient_id")
+            if val is not None:
+                return self._coerce_type(val, annotation)
+        elif lower_field == "amount" and "amount" in parameters:
+            return self._coerce_type(parameters["amount"], annotation)
+        elif lower_field == "user_id" and "user_id" in parameters:
+            return self._coerce_type(parameters["user_id"], annotation)
+        elif lower_field == "expense_id" and "expense_id" in parameters:
+            return self._coerce_type(parameters["expense_id"], annotation)
+        elif lower_field == "category" and "category" in parameters:
+            return self._coerce_type(parameters["category"], annotation)
+
+        return None
+
+    def synthesize_field(
+        self, field_name: str, field_info: Any, parameters: Optional[Dict[str, Any]] = None
+    ) -> Any:
+        """Synthesizes a field value using parameter echoing and 4-tier fallback hierarchy."""
         extra = getattr(field_info, "json_schema_extra", None) or {}
         gen_type = extra.get("generator")
         annotation = getattr(field_info, "annotation", None)
+        params = parameters or {}
+
+        # Tier 0: Parameter Echoing & Synonym Matching
+        echoed_val = self._match_parameter_echo(field_name, annotation, extra, params)
+        if echoed_val is not None:
+            return echoed_val
 
         # Tier 1: Explicit Generator Annotations (with automatic type coercion)
         if gen_type:
@@ -333,7 +368,7 @@ class DeclarativeEngine:
             )
             if isinstance(item_type, type) and issubclass(item_type, BaseModel):
                 return [
-                    self.generate_response(item_type)
+                    self.generate_response(item_type, parameters=params)
                     for _ in range(self.ctx._random.randint(1, 3))
                 ]
             elif item_type is int:
@@ -349,24 +384,44 @@ class DeclarativeEngine:
 
         return None
 
-    def generate_response(self, model_cls: Type[T]) -> T:
-        """Recursively populates a Pydantic V2 BaseModel with type-safe validation recovery.
-
-        Args:
-            model_cls (Type[T]): Target Pydantic V2 BaseModel class.
-
-        Returns:
-            T: Instantiated schema-compliant response model instance.
-        """
+    def generate_response(
+        self, model_cls: Type[T], parameters: Optional[Dict[str, Any]] = None
+    ) -> T:
+        """Recursively populates a Pydantic V2 BaseModel with parameter echoing and stateful context lookup."""
+        params = parameters or {}
         payload: Dict[str, Any] = {}
         fields = getattr(model_cls, "model_fields", {})
+
         for field_name, field_info in fields.items():
-            payload[field_name] = self.synthesize_field(field_name, field_info)
+            payload[field_name] = self.synthesize_field(
+                field_name, field_info, parameters=params
+            )
+
+        # Stateful Account Balance Lookup
+        if "account_id" in params and any(
+            f in fields for f in ("available_balance", "total_balance")
+        ):
+            acc_id = params["account_id"]
+            bal = self.ctx.get_or_create_account_balance(acc_id)
+            if "available_balance" in fields:
+                payload["available_balance"] = bal["available_balance"]
+            if "total_balance" in fields:
+                payload["total_balance"] = bal["total_balance"]
+
+        # Record synthesized entity IDs into context entity stores
+        for field_name, val in payload.items():
+            if val is not None and (
+                "_id" in field_name or field_name in ("id", "user_id", "account_id", "expense_id")
+            ):
+                self.ctx.record_entity(field_name, val)
+                if "account" in field_name:
+                    self.ctx.record_entity("account_id", val)
+                if "user" in field_name:
+                    self.ctx.record_entity("user_id", val)
 
         try:
             return model_cls(**payload)
         except Exception:
-            # Fallback type coercion across payload fields if validation error occurs
             coerced_payload: Dict[str, Any] = {}
             for field_name, field_info in fields.items():
                 raw_val = payload.get(field_name)
