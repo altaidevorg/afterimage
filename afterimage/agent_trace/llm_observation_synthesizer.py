@@ -53,7 +53,10 @@ class LLMObservationSynthesizer:
         turns_summary = ""
         if turns:
             turns_summary = "\n".join(
-                [f"Turn {i+1}: {t.get('role', '')} -> {t.get('content', '')[:120]}" for i, t in enumerate(turns[-4:])]
+                [
+                    f"Turn {i + 1}: {t.get('role', '')} -> {t.get('content', '')[:120]}"
+                    for i, t in enumerate(turns[-4:])
+                ]
             )
 
         prompt = (
@@ -91,7 +94,11 @@ class LLMObservationSynthesizer:
                 prompt=prompt,
                 system_instruction="Return ONLY raw JSON matching the requested model schema. No markdown formatting.",
             )
-            raw_text = resp.text.strip() if hasattr(resp, "text") else getattr(resp, "content", "").strip()
+            raw_text = (
+                resp.text.strip()
+                if hasattr(resp, "text")
+                else getattr(resp, "content", "").strip()
+            )
             if raw_text.startswith("```"):
                 lines = raw_text.splitlines()
                 if lines[0].startswith("```"):

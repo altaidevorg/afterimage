@@ -11,7 +11,6 @@ from afterimage.agent_trace import (
     TrajectoryJudge,
 )
 from afterimage.providers.llm_providers import (
-    CommonLLMResponse,
     LLMProvider,
     LLMResponse,
     StructuredLLMResponse,
@@ -98,7 +97,7 @@ class AccountResponse(BaseModel):
     async def mock_astart_chat(temperature=0.7, **kwargs):
         return MockChatSession(
             [
-                "Thought: Need to check account details\nAction: bank.get_account\nAction Input: {\"account_id\": 1001}",
+                'Thought: Need to check account details\nAction: bank.get_account\nAction Input: {"account_id": 1001}',
                 "Thought: Account details obtained\nFinal Answer: Account is active.",
             ]
         )
@@ -156,7 +155,9 @@ async def test_grid_task_synthesizer_llm_calls(mock_llm_provider):
     assert isinstance(task, str)
     assert isinstance(initial_context, dict)
     assert selected_apps == ["bank"]
-    assert mock_llm_provider.agenerate_content.call_count == 3  # 1 architect + 2 synthesizer
+    assert (
+        mock_llm_provider.agenerate_content.call_count == 3
+    )  # 1 architect + 2 synthesizer
 
 
 @pytest.mark.asyncio
@@ -267,4 +268,3 @@ async def test_async_agent_trace_generator_facade(mock_llm_provider):
     trajectory = await generator.generate_single()
     assert trajectory is not None
     assert trajectory.judge_verdict.is_valid is True
-

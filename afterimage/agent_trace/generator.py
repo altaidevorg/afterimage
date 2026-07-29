@@ -11,12 +11,9 @@ from .task_synthesis import GridTaskSynthesizer
 from .tool_environment import DeclarativeEnvironment
 from .trajectory_generator import ReActTrajectoryLoop
 from .trajectory_judge import TrajectoryJudge
-from .types import AgentTrajectory, AppDomainSpec, ToolActionSpec
+from .types import AgentTrajectory, AppDomainSpec, ObservationMode, ToolActionSpec
 
 logger = logging.getLogger(__name__)
-
-
-from .types import AppDomainSpec, ObservationMode, ToolActionSpec
 
 
 class AsyncAgentTraceGenerator:
@@ -102,6 +99,7 @@ class AsyncAgentTraceGenerator:
     ) -> AppDomainSpec:
         """Registers an app domain using explicit Pydantic response models or SchemaArchitect dynamic generation."""
         from pydantic import BaseModel
+
         explicit_models: dict[str, type[BaseModel]] = {}
         unresolved_actions = []
 
@@ -112,7 +110,10 @@ class AsyncAgentTraceGenerator:
                 unresolved_actions.append(act)
 
         if unresolved_actions:
-            app_spec, generated_classes = await self.architect.generate_app_domain_schema(
+            (
+                app_spec,
+                generated_classes,
+            ) = await self.architect.generate_app_domain_schema(
                 app_name=app_name,
                 app_description=app_description,
                 actions=unresolved_actions,
@@ -147,7 +148,12 @@ class AsyncAgentTraceGenerator:
             )
 
         # 1. Task synthesis via 360-bucket grid, task rewriter, and initial state generator
-        task, initial_context, selected_apps, bucket = await self.synthesizer.synthesize_task(
+        (
+            task,
+            initial_context,
+            selected_apps,
+            bucket,
+        ) = await self.synthesizer.synthesize_task(
             app_domains=self.environment.app_domains
         )
 

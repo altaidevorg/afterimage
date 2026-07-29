@@ -103,4 +103,3 @@ def test_type_coercion_and_semantic_heuristics():
     assert model.status in ["completed", "pending", "active", "success", "failed"]
     assert len(model.description) > 0
     assert isinstance(model.amount, float)
-

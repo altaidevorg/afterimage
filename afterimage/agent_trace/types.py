@@ -25,10 +25,13 @@ class ToolActionSpec(BaseModel):
         ..., description="Name of the Pydantic V2 response model class"
     )
     response_model_cls: Optional[Type[BaseModel]] = Field(
-        default=None, exclude=True, description="Explicit Pydantic response model class if provided"
+        default=None,
+        exclude=True,
+        description="Explicit Pydantic response model class if provided",
     )
     response_schema_hint: Optional[str] = Field(
-        default=None, description="Schema description hint for SchemaArchitect if explicit class omitted"
+        default=None,
+        description="Schema description hint for SchemaArchitect if explicit class omitted",
     )
 
 

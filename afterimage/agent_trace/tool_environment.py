@@ -45,14 +45,24 @@ class DeclarativeTool:
 
             # 2. Check for stateful transfer action mutations
             if "transfer" in self.action_spec.action_name.lower():
-                s_id = parameters.get("sender_id") or parameters.get("sender_account_id")
-                r_id = parameters.get("receiver_id") or parameters.get("recipient_id") or parameters.get("recipient_account_id")
+                s_id = parameters.get("sender_id") or parameters.get(
+                    "sender_account_id"
+                )
+                r_id = (
+                    parameters.get("receiver_id")
+                    or parameters.get("recipient_id")
+                    or parameters.get("recipient_account_id")
+                )
                 amt = parameters.get("amount")
                 if s_id is not None and r_id is not None and amt is not None:
                     self.engine.ctx.apply_transfer(s_id, r_id, amt)
 
             # 3. Synthesize response payload via LLM or local Faker engine
-            if self.observation_mode == "llm" and self.llm_synthesizer and self.response_model_cls:
+            if (
+                self.observation_mode == "llm"
+                and self.llm_synthesizer
+                and self.response_model_cls
+            ):
                 result_model = await self.llm_synthesizer.synthesize_observation(
                     app_name=self.app_name,
                     action_name=self.action_spec.action_name,
@@ -98,8 +108,14 @@ class DeclarativeTool:
                     self.engine.ctx.record_entity(k, v)
 
             if "transfer" in self.action_spec.action_name.lower():
-                s_id = parameters.get("sender_id") or parameters.get("sender_account_id")
-                r_id = parameters.get("receiver_id") or parameters.get("recipient_id") or parameters.get("recipient_account_id")
+                s_id = parameters.get("sender_id") or parameters.get(
+                    "sender_account_id"
+                )
+                r_id = (
+                    parameters.get("receiver_id")
+                    or parameters.get("recipient_id")
+                    or parameters.get("recipient_account_id")
+                )
                 amt = parameters.get("amount")
                 if s_id is not None and r_id is not None and amt is not None:
                     self.engine.ctx.apply_transfer(s_id, r_id, amt)
@@ -207,7 +223,10 @@ class DeclarativeEnvironment:
             target_tool = self.tools[full_key]
         else:
             for tool_key, tool in self.tools.items():
-                if tool_key.endswith(f".{action}") or tool.action_spec.action_name == action:
+                if (
+                    tool_key.endswith(f".{action}")
+                    or tool.action_spec.action_name == action
+                ):
                     target_tool = tool
                     break
 
@@ -231,7 +250,10 @@ class DeclarativeEnvironment:
             return self.tools[full_key].execute(**parameters)
 
         for tool_key, tool in self.tools.items():
-            if tool_key.endswith(f".{action}") or tool.action_spec.action_name == action:
+            if (
+                tool_key.endswith(f".{action}")
+                or tool.action_spec.action_name == action
+            ):
                 return tool.execute(**parameters)
 
         return ToolObservation(

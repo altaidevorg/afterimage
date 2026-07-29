@@ -226,7 +226,15 @@ class DeclarativeEngine:
         if annotation is float:
             if any(
                 k in lower_name
-                for k in ("amount", "balance", "price", "cost", "total", "subtotal", "fee")
+                for k in (
+                    "amount",
+                    "balance",
+                    "price",
+                    "cost",
+                    "total",
+                    "subtotal",
+                    "fee",
+                )
             ):
                 ge_val = self._extract_constraint(field_info, "ge")
                 le_val = self._extract_constraint(field_info, "le")
@@ -237,7 +245,11 @@ class DeclarativeEngine:
         return None
 
     def _match_parameter_echo(
-        self, field_name: str, annotation: Any, extra: Dict[str, Any], parameters: Dict[str, Any]
+        self,
+        field_name: str,
+        annotation: Any,
+        extra: Dict[str, Any],
+        parameters: Dict[str, Any],
     ) -> Optional[Any]:
         """Checks for explicit parameter generator annotations, direct name matches, or semantic synonym echoes."""
         gen_type = extra.get("generator")
@@ -259,10 +271,22 @@ class DeclarativeEngine:
         lower_field = field_name.lower()
         if lower_field == "account_id" and "account_id" in parameters:
             return self._coerce_type(parameters["account_id"], annotation)
-        elif lower_field in ("sender_account_id", "sender_id") and "sender_id" in parameters:
+        elif (
+            lower_field in ("sender_account_id", "sender_id")
+            and "sender_id" in parameters
+        ):
             return self._coerce_type(parameters["sender_id"], annotation)
-        elif lower_field in ("recipient_account_id", "receiver_account_id", "receiver_id", "recipient_id"):
-            val = parameters.get("receiver_id") if "receiver_id" in parameters else parameters.get("recipient_id")
+        elif lower_field in (
+            "recipient_account_id",
+            "receiver_account_id",
+            "receiver_id",
+            "recipient_id",
+        ):
+            val = (
+                parameters.get("receiver_id")
+                if "receiver_id" in parameters
+                else parameters.get("recipient_id")
+            )
             if val is not None:
                 return self._coerce_type(val, annotation)
         elif lower_field == "amount" and "amount" in parameters:
@@ -277,7 +301,10 @@ class DeclarativeEngine:
         return None
 
     def synthesize_field(
-        self, field_name: str, field_info: Any, parameters: Optional[Dict[str, Any]] = None
+        self,
+        field_name: str,
+        field_info: Any,
+        parameters: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """Synthesizes a field value using parameter echoing and 4-tier fallback hierarchy."""
         extra = getattr(field_info, "json_schema_extra", None) or {}
@@ -411,7 +438,8 @@ class DeclarativeEngine:
         # Record synthesized entity IDs into context entity stores
         for field_name, val in payload.items():
             if val is not None and (
-                "_id" in field_name or field_name in ("id", "user_id", "account_id", "expense_id")
+                "_id" in field_name
+                or field_name in ("id", "user_id", "account_id", "expense_id")
             ):
                 self.ctx.record_entity(field_name, val)
                 if "account" in field_name:

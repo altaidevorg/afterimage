@@ -5,8 +5,6 @@ from pydantic import BaseModel, Field
 from afterimage.agent_trace import (
     DeclarativeEngine,
     DeclarativeEnvironment,
-    DeclarativeTool,
-    LLMObservationSynthesizer,
     SimulationContext,
     ToolActionSpec,
     ToolParameterSpec,
@@ -51,11 +49,16 @@ def test_faker_mode_parameter_echoing():
     engine = DeclarativeEngine(context=ctx)
 
     # 1. Parameter Echoing on get_account_balance
-    bal_res = engine.generate_response(AccountBalanceResponse, parameters={"account_id": 68635})
+    bal_res = engine.generate_response(
+        AccountBalanceResponse, parameters={"account_id": 68635}
+    )
     assert bal_res.account_id == 68635
 
     # 2. Parameter Echoing on transfer_money
-    tr_res = engine.generate_response(TransferResponse, parameters={"sender_id": 68635, "receiver_id": 34337, "amount": 150.0})
+    tr_res = engine.generate_response(
+        TransferResponse,
+        parameters={"sender_id": 68635, "receiver_id": 34337, "amount": 150.0},
+    )
     assert tr_res.amount == 150.0
 
 
@@ -79,7 +82,9 @@ def test_stateful_account_balance_deductions():
         response_model_name="TransferResponse",
     )
 
-    env.register_tool("banking_app", bal_action, response_model_cls=AccountBalanceResponse)
+    env.register_tool(
+        "banking_app", bal_action, response_model_cls=AccountBalanceResponse
+    )
     env.register_tool("banking_app", tr_action, response_model_cls=TransferResponse)
 
     # Turn 1: Initial balance check for account 68635
@@ -104,7 +109,9 @@ def test_stateful_account_balance_deductions():
 @pytest.mark.asyncio
 async def test_llm_observation_mode():
     """Tests LLM observation synthesis mode integration with DeclarativeTool."""
-    mock_llm = DummyLLMProvider({"account_id": 77777, "total_balance": 500.0, "available_balance": 450.0})
+    mock_llm = DummyLLMProvider(
+        {"account_id": 77777, "total_balance": 500.0, "available_balance": 450.0}
+    )
     env = DeclarativeEnvironment(observation_mode="llm", llm_provider=mock_llm)
 
     bal_action = ToolActionSpec(
@@ -113,8 +120,12 @@ async def test_llm_observation_mode():
         parameters=[ToolParameterSpec(name="account_id", type="int")],
         response_model_name="AccountBalanceResponse",
     )
-    env.register_tool("banking_app", bal_action, response_model_cls=AccountBalanceResponse)
+    env.register_tool(
+        "banking_app", bal_action, response_model_cls=AccountBalanceResponse
+    )
 
-    obs = await env.aexecute_tool("banking_app", "get_account_balance", {"account_id": 77777})
+    obs = await env.aexecute_tool(
+        "banking_app", "get_account_balance", {"account_id": 77777}
+    )
     assert obs.status == "success"
     assert obs.observation["account_id"] == 77777
