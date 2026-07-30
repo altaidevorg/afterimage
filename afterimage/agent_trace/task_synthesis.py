@@ -1,12 +1,14 @@
+import json
 import random
 from typing import Any, Dict, List, Optional
 
 from ..providers.llm_providers import LLMProvider
+from .context import BaseContextGenerator, VirtualUserContextGenerator
 from .types import AppDomainSpec, GridTaskBucket
 
 
 TASK_SYNTHESIZER_PROMPT = """You are an expert agentic task and environment state synthesizer.
-Generate a realistic, grounded multi-turn agent task AND a matching initial environment seed state based on the following app APIs and structural constraints.
+Generate a realistic, grounded multi-turn agent task AND a matching initial environment seed state based on the following app APIs, structural constraints, and virtual user identity profile.
 
 Target Apps: {app_names}
 Available APIs:
@@ -21,24 +23,22 @@ Bucket Constraints:
 - Task Focus: {task_focus}
 - Number of Apps: {num_apps}
 
+Virtual User Identity & Initial Seed Context Blueprint:
+```json
+{context_seed_snippet}
+```
+
 Instruction:
-1. Generate a single clear, realistic task requirement that a user would ask an AI agent to perform using these apps.
-2. If the task requires specific entity identifiers (e.g. account numbers, expense IDs, user IDs), include those specific numbers in the task text or ensure a discovery endpoint exists.
-3. Provide a JSON block at the end with initial seed context data (e.g. user_id, account_ids, expense records, comments) matching the task scenario.
+1. Generate a single clear, realistic task requirement that the virtual user above would ask an AI agent to perform using these apps.
+2. Ensure specific entity identifiers (e.g., user_id, account_id, entity records) in the task text or initial state match or build upon the Virtual User Blueprint provided above.
+3. Provide a JSON block at the end with the complete initial seed context data (e.g. user_id, account_ids, expense/item records, comments) matching the synthesized task scenario.
 
 Format Output:
 PROMPT: <procedural task text>
 INITIAL_CONTEXT:
 ```json
 {{
-  "user_id": 101,
-  "account_id": 1001,
-  "checking_balance": 1250.0,
-  "savings_account_id": 1002,
-  "expense_id": 5001,
-  "category": "office supplies",
-  "merchant": "Staples",
-  "comment": "Purchased 5 reams of A4 paper and 2 boxes of gel pens"
+  ...
 }}
 ```
 """
@@ -63,19 +63,37 @@ Rewritten Natural User Request:
 
 
 class InverseFrequencySampler:
-    """Tracks API usage frequency across generated tasks to prevent endpoint coverage collapse."""
+    """Tracks API usage frequency across generated tasks to prevent endpoint coverage collapse.
+
+    Attributes:
+        invocation_counts: Mapping from ``"app.action"`` endpoint string to invocation frequency.
+    """
 
     def __init__(self):
-        self.invocation_counts: Dict[str, int] = {}  # "app.action" -> count
+        self.invocation_counts: Dict[str, int] = {}
 
     def record_usage(self, app_name: str, action_name: str) -> None:
+        """Records an API endpoint invocation.
+
+        Args:
+            app_name: Name of the application domain.
+            action_name: Name of the action endpoint.
+        """
         key = f"{app_name}.{action_name}"
         self.invocation_counts[key] = self.invocation_counts.get(key, 0) + 1
 
     def get_least_invoked_actions(
         self, app_domains: Dict[str, AppDomainSpec], top_k: int = 10
     ) -> List[str]:
-        """Returns top_k least invoked action endpoints across given app domains."""
+        """Returns top_k least invoked action endpoints across given app domains.
+
+        Args:
+            app_domains: Registered application domain specifications.
+            top_k: Number of least invoked actions to return. Defaults to 10.
+
+        Returns:
+            List[str]: Formatted descriptions of least invoked API endpoints.
+        """
         all_actions = []
         for app_name, spec in app_domains.items():
             for act in spec.actions:
@@ -91,7 +109,21 @@ class InverseFrequencySampler:
 
 
 class GridTaskSynthesizer:
-    """Combinatorial grid synthesizer and procedural rewriter for synthetic agent tasks."""
+    """Combinatorial grid synthesizer and procedural rewriter for synthetic agent tasks.
+
+    Uses a 360-bucket grid across difficulties, action types, task foci, and app counts
+    to synthesize grounded user tasks and matching initial context states.
+
+    Args:
+        llm_provider: LLM provider instance for task generation and rewriting.
+        model_name: Default LLM model name. Defaults to ``"gemini-3.5-flash-lite"``.
+        context_generator: Extensible context generator instance. Defaults to
+            :class:`VirtualUserContextGenerator`.
+
+    Example:
+        >>> synthesizer = GridTaskSynthesizer(llm_provider)
+        >>> task, context, apps, bucket = await synthesizer.synthesize_task(app_domains)
+    """
 
     DIFFICULTIES = ["easy", "medium", "hard"]
     ACTION_TYPES = ["read", "write", "mixed"]
@@ -101,13 +133,26 @@ class GridTaskSynthesizer:
         self,
         llm_provider: LLMProvider,
         model_name: str = "gemini-3.5-flash-lite",
+        context_generator: Optional[BaseContextGenerator] = None,
     ):
         self.llm_provider = llm_provider
         self.model_name = getattr(llm_provider, "model_name", model_name)
         self.sampler = InverseFrequencySampler()
+        self.context_generator = (
+            context_generator
+            if context_generator is not None
+            else VirtualUserContextGenerator()
+        )
 
     def sample_grid_bucket(self, num_apps_available: int) -> GridTaskBucket:
-        """Samples a combinatorial bucket from the task grid."""
+        """Samples a combinatorial bucket from the task complexity grid.
+
+        Args:
+            num_apps_available: Number of registered app domains available.
+
+        Returns:
+            GridTaskBucket: Sampled grid bucket.
+        """
         max_apps = min(num_apps_available, 3)
         return GridTaskBucket(
             difficulty=random.choice(self.DIFFICULTIES),
@@ -121,7 +166,22 @@ class GridTaskSynthesizer:
         app_domains: Dict[str, AppDomainSpec],
         bucket: Optional[GridTaskBucket] = None,
     ) -> tuple[str, Dict[str, Any], List[str], GridTaskBucket]:
-        """Synthesizes a natural agent task grounded in registered app domains along with initial state payload."""
+        """Synthesizes a natural agent task grounded in registered app domains.
+
+        Args:
+            app_domains: Map of registered application domain specifications.
+            bucket: Optional pre-sampled grid bucket.
+
+        Returns:
+            tuple[str, Dict[str, Any], List[str], GridTaskBucket]: A tuple containing:
+                - Natural language user task directive.
+                - Initial context dictionary.
+                - List of target app domain names.
+                - Effective grid task bucket.
+
+        Raises:
+            ValueError: If app_domains map is empty.
+        """
         if not app_domains:
             raise ValueError("No app domains registered for task synthesis.")
 
@@ -130,6 +190,12 @@ class GridTaskSynthesizer:
             list(app_domains.keys()), min(effective_bucket.num_apps, len(app_domains))
         )
         selected_domains = {k: app_domains[k] for k in selected_app_names}
+
+        # Synthesize initial seed context payload dynamically
+        seed_context = await self.context_generator.generate_context(
+            app_domains=selected_domains, bucket=effective_bucket
+        )
+        context_snippet = self.context_generator.render_prompt_snippet(seed_context)
 
         api_specs_lines = []
         for app_name, spec in selected_domains.items():
@@ -148,6 +214,7 @@ class GridTaskSynthesizer:
             action_type=effective_bucket.action_type,
             task_focus=effective_bucket.task_focus,
             num_apps=effective_bucket.num_apps,
+            context_seed_snippet=context_snippet,
         )
 
         response = await self.llm_provider.agenerate_content(
@@ -155,9 +222,14 @@ class GridTaskSynthesizer:
             temperature=0.7,
         )
         raw_text = response.text.strip()
-        verbose_task, initial_context = self._parse_synthesizer_output(raw_text)
+        verbose_task, parsed_context = self._parse_synthesizer_output(raw_text)
 
-        # Procedural Task Rewriting step to compress step-by-step input into natural user intent
+        # Merge generated seed context with LLM output context
+        final_context = dict(seed_context)
+        if parsed_context:
+            final_context.update(parsed_context)
+
+        # Procedural Task Rewriting step to compress step-by-step directive into natural user intent
         rewritten_task = await self.rewrite_task_intent(verbose_task)
 
         # Record API usages for sampled domains
@@ -165,11 +237,17 @@ class GridTaskSynthesizer:
             for act in app_domains[app_name].actions:
                 self.sampler.record_usage(app_name, act.action_name)
 
-        return rewritten_task, initial_context, selected_app_names, effective_bucket
+        return rewritten_task, final_context, selected_app_names, effective_bucket
 
     def _parse_synthesizer_output(self, text: str) -> tuple[str, Dict[str, Any]]:
-        """Parses prompt text and initial context JSON from synthesizer output."""
-        import json
+        """Parses prompt text and initial context JSON from synthesizer output.
+
+        Args:
+            text: Raw output string from LLM task synthesizer.
+
+        Returns:
+            tuple[str, Dict[str, Any]]: Verbose task text and parsed context dictionary.
+        """
 
         verbose_task = text
         initial_context: Dict[str, Any] = {}
@@ -198,7 +276,14 @@ class GridTaskSynthesizer:
         return verbose_task.strip().strip('"'), initial_context
 
     async def rewrite_task_intent(self, verbose_task: str) -> str:
-        """Compresses verbose procedural directives into natural intent-level user queries."""
+        """Compresses verbose procedural directives into natural intent-level user queries.
+
+        Args:
+            verbose_task: Detailed step-by-step procedural instruction.
+
+        Returns:
+            str: Compressed natural language user query.
+        """
         prompt = TASK_REWRITER_PROMPT.format(verbose_task=verbose_task)
         response = await self.llm_provider.agenerate_content(
             prompt=prompt,

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "afterimage"
-version = "0.17.0"
+version = "0.18.0"
 keywords = ["afterimage", "dataset-generation", "synthetic-dataset", "tool-calling", "structured-output", "preference-data", "persona-driven"]
 authors = [
     { name = "Yusuf Sarıgöz", email = "yusuf@altai.dev"}

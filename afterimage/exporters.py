@@ -4,6 +4,11 @@ Supported formats:
 - **sharegpt**: ``{"conversations": [{"from": "human", ...}, {"from": "gpt", ...}]}``
 - **alpaca**: ``{"instruction": ..., "input": "", "output": ...}`` (first turn only)
 - **messages**: ``{"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}``
+- **agent_sft**: ``{"messages": [...], "trajectory_id": ...}``
+- **openai_tools**: OpenAI Chat Completions tool calling JSON schema.
+- **anthropic_tools**: Anthropic Messages API tool use JSON schema.
+- **hermes_tools**: Nous Hermes / Qwen 2.5 XML tool calling format.
+- **agent_dpo**: Preference pairs for DPO/ORPO tuning.
 """
 
 from __future__ import annotations
@@ -121,11 +126,285 @@ def to_agent_sft(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def to_openai_tools(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert AfterImage agent trajectories into OpenAI Chat Completions tool-calling format.
+
+    Args:
+        rows: List of AfterImage dataset rows (from JSONL).
+
+    Returns:
+        list[dict[str, Any]]: OpenAI Chat Completions tool calling objects.
+    """
+    out: list[dict[str, Any]] = []
+    call_idx = 0
+
+    for row in rows:
+        convs = row.get("conversations", [])
+        messages = []
+        for entry in convs:
+            role = entry.get("role", "user")
+            content = entry.get("content", "")
+
+            if role == "user":
+                if content.startswith("Observation:"):
+                    obs_content = content.replace("Observation:", "", 1).strip()
+                    call_id = f"call_{call_idx}"
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "content": obs_content,
+                        }
+                    )
+                else:
+                    messages.append({"role": "user", "content": content})
+            elif role == "assistant":
+                if "Action:" in content:
+                    call_idx += 1
+                    call_id = f"call_{call_idx}"
+                    thought_part = (
+                        content.split("Action:", 1)[0].replace("Thought:", "").strip()
+                    )
+                    action_part = content.split("Action:", 1)[1]
+                    action_name = (
+                        action_part.split("Action Input:", 1)[0]
+                        .strip()
+                        .replace(".", "__")
+                    )
+                    args_str = "{}"
+                    if "Action Input:" in action_part:
+                        args_str = action_part.split("Action Input:", 1)[1].strip()
+
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": thought_part or None,
+                            "tool_calls": [
+                                {
+                                    "id": call_id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": action_name,
+                                        "arguments": args_str,
+                                    },
+                                }
+                            ],
+                        }
+                    )
+                else:
+                    text = (
+                        content.replace("Final Answer:", "")
+                        .replace("Thought:", "")
+                        .strip()
+                    )
+                    messages.append({"role": "assistant", "content": text})
+
+        out.append(
+            {
+                "messages": messages,
+                "trajectory_id": row.get("metadata", {}).get("trajectory_id"),
+            }
+        )
+    return out
+
+
+def to_anthropic_tools(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert AfterImage agent trajectories into Anthropic Messages API tool format.
+
+    Args:
+        rows: List of AfterImage dataset rows.
+
+    Returns:
+        list[dict[str, Any]]: Anthropic Messages tool use objects.
+    """
+    out: list[dict[str, Any]] = []
+    call_idx = 0
+
+    for row in rows:
+        convs = row.get("conversations", [])
+        messages = []
+        for entry in convs:
+            role = entry.get("role", "user")
+            content = entry.get("content", "")
+
+            if role == "user":
+                if content.startswith("Observation:"):
+                    obs_content = content.replace("Observation:", "", 1).strip()
+                    call_id = f"toolu_{call_idx}"
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": call_id,
+                                    "content": obs_content,
+                                }
+                            ],
+                        }
+                    )
+                else:
+                    messages.append({"role": "user", "content": content})
+            elif role == "assistant":
+                if "Action:" in content:
+                    call_idx += 1
+                    call_id = f"toolu_{call_idx}"
+                    thought_part = (
+                        content.split("Action:", 1)[0].replace("Thought:", "").strip()
+                    )
+                    action_part = content.split("Action:", 1)[1]
+                    action_name = (
+                        action_part.split("Action Input:", 1)[0]
+                        .strip()
+                        .replace(".", "__")
+                    )
+                    args_str = "{}"
+                    if "Action Input:" in action_part:
+                        args_str = action_part.split("Action Input:", 1)[1].strip()
+
+                    try:
+                        args_dict = json.loads(args_str)
+                    except Exception:
+                        args_dict = {}
+
+                    content_blocks = []
+                    if thought_part:
+                        content_blocks.append({"type": "text", "text": thought_part})
+                    content_blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": call_id,
+                            "name": action_name,
+                            "input": args_dict,
+                        }
+                    )
+                    messages.append({"role": "assistant", "content": content_blocks})
+                else:
+                    text = (
+                        content.replace("Final Answer:", "")
+                        .replace("Thought:", "")
+                        .strip()
+                    )
+                    messages.append({"role": "assistant", "content": text})
+
+        out.append(
+            {
+                "messages": messages,
+                "trajectory_id": row.get("metadata", {}).get("trajectory_id"),
+            }
+        )
+    return out
+
+
+def to_hermes_tools(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert AfterImage agent trajectories into Hermes / Qwen 2.5 tool calling format.
+
+    Args:
+        rows: List of AfterImage dataset rows.
+
+    Returns:
+        list[dict[str, Any]]: Hermes XML tool call messages.
+    """
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        convs = row.get("conversations", [])
+        messages = []
+        for entry in convs:
+            role = entry.get("role", "user")
+            content = entry.get("content", "")
+
+            if role == "user":
+                if content.startswith("Observation:"):
+                    obs_content = content.replace("Observation:", "", 1).strip()
+                    messages.append({"role": "tool", "content": obs_content})
+                else:
+                    messages.append({"role": "user", "content": content})
+            elif role == "assistant":
+                if "Action:" in content:
+                    thought_part = (
+                        content.split("Action:", 1)[0].replace("Thought:", "").strip()
+                    )
+                    action_part = content.split("Action:", 1)[1]
+                    action_name = (
+                        action_part.split("Action Input:", 1)[0]
+                        .strip()
+                        .replace(".", "__")
+                    )
+                    args_str = "{}"
+                    if "Action Input:" in action_part:
+                        args_str = action_part.split("Action Input:", 1)[1].strip()
+
+                    try:
+                        args_dict = json.loads(args_str)
+                    except Exception:
+                        args_dict = {}
+
+                    tool_payload = json.dumps(
+                        {"name": action_name, "arguments": args_dict}
+                    )
+                    text = (
+                        f"{thought_part}\n<tool_call>{tool_payload}</tool_call>".strip()
+                    )
+                    messages.append({"role": "assistant", "content": text})
+                else:
+                    text = (
+                        content.replace("Final Answer:", "")
+                        .replace("Thought:", "")
+                        .strip()
+                    )
+                    messages.append({"role": "assistant", "content": text})
+
+        out.append(
+            {
+                "messages": messages,
+                "trajectory_id": row.get("metadata", {}).get("trajectory_id"),
+            }
+        )
+    return out
+
+
+def to_agent_dpo(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert AfterImage agent trajectories into DPO / preference pair format.
+
+    Args:
+        rows: List of AfterImage dataset rows.
+
+    Returns:
+        list[dict[str, Any]]: Preference pairs (prompt, chosen, rejected).
+    """
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        convs = row.get("conversations", [])
+        if not convs:
+            continue
+        prompt = convs[0].get("content", "")
+        chosen = [c.get("content", "") for c in convs[1:]]
+        rejected = (
+            chosen[: len(chosen) // 2]
+            if len(chosen) > 1
+            else ["Unable to fulfill request."]
+        )
+
+        out.append(
+            {
+                "prompt": prompt,
+                "chosen": "\n".join(chosen),
+                "rejected": "\n".join(rejected),
+                "trajectory_id": row.get("metadata", {}).get("trajectory_id"),
+            }
+        )
+    return out
+
+
 CONVERTERS = {
     "sharegpt": to_sharegpt,
     "alpaca": to_alpaca,
     "messages": to_messages,
     "agent_sft": to_agent_sft,
+    "openai_tools": to_openai_tools,
+    "anthropic_tools": to_anthropic_tools,
+    "hermes_tools": to_hermes_tools,
+    "agent_dpo": to_agent_dpo,
 }
 
 
@@ -138,7 +417,8 @@ def export_dataset(
 
     Args:
         input_path: Path to the source JSONL file.
-        format_name: One of ``"sharegpt"``, ``"alpaca"``, ``"messages"``.
+        format_name: One of ``"sharegpt"``, ``"alpaca"``, ``"messages"``, ``"agent_sft"``,
+            ``"openai_tools"``, ``"anthropic_tools"``, ``"hermes_tools"``, ``"agent_dpo"``.
         output_path: Destination path. If *None*, derived from *input_path*.
 
     Returns:

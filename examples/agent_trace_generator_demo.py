@@ -21,6 +21,7 @@ from afterimage.agent_trace import (
     AsyncAgentTraceGenerator,
     ToolActionSpec,
     ToolParameterSpec,
+    VirtualUserContextGenerator,
 )
 from afterimage.exporters import export_dataset
 
@@ -90,13 +91,15 @@ async def main():
 
     print("=== AfterImage Agent Trace Dataset Generator ===")
 
-    # 1. Initialize AsyncAgentTraceGenerator facade (observation_mode="faker" or "llm")
+    # 1. Initialize AsyncAgentTraceGenerator facade with VirtualUserContextGenerator
     generator = AsyncAgentTraceGenerator(
         api_key=api_key,
         architect_model="gemini-3.6-flash",
         teacher_model="gemini-3.5-flash-lite",
         judge_model="gemini-3.6-flash",
-        observation_mode="llm",  # Preferred production mode (ESAT paper LLM observation synthesis). Use "faker" for experimental local mode.
+        observation_mode="llm",  # Preferred production mode (ESAT paper LLM observation synthesis).
+        task_synthesis_mode="simula",
+        context_generator=VirtualUserContextGenerator(seed=42),
     )
 
     # 2. Define App Domain Endpoints for Banking App (Discovery + Action endpoints)
@@ -177,15 +180,15 @@ async def main():
 
     print("Schemas successfully generated and verified cleanly!")
 
-    # 5. Generate Synthetic Trajectories
+    # 5. Generate Synthetic Trajectories with Progress Bar
     num_trajectories = 4
-    output_jsonl = "outputs/agent_trajectories_demo.jsonl"
 
     print(f"\n[Phase 4] Generating {num_trajectories} agent trajectories in parallel...")
     trajectories = await generator.generate(
         num_trajectories=num_trajectories,
         max_turns=5,
         max_concurrency=4,
+        show_progress=True,
     )
 
     print(f"\nSuccessfully generated {len(trajectories)} accepted trajectories.")
@@ -196,14 +199,15 @@ async def main():
         if traj.judge_verdict:
             print(f"  Judge Verdict: Accepted (Confidence: {traj.judge_verdict.confidence_score})")
 
-    # 6. Export Dataset to Agent SFT Format
+    # 6. Export Dataset to OpenAI Tools Format
     output_path = export_dataset(
         input_path="outputs/agent_trajectories.jsonl",
-        format_name="agent_sft",
-        output_path="outputs/agent_sft_dataset_demo.jsonl",
+        format_name="openai_tools",
+        output_path="outputs/agent_openai_tools_demo.jsonl",
     )
-    print(f"\nExported dataset to SFT messages format: {output_path}")
+    print(f"\nExported dataset to OpenAI tool calling format: {output_path}")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
+

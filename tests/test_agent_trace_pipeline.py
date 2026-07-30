@@ -286,3 +286,42 @@ async def test_async_agent_trace_generator_facade(mock_llm_provider):
     trajectory = await generator.generate_single()
     assert trajectory is not None
     assert trajectory.judge_verdict.is_valid is True
+
+
+@pytest.mark.asyncio
+async def test_async_agent_trace_generator_monitoring_and_storage(
+    mock_llm_provider, tmp_path
+):
+    from afterimage.monitoring import GenerationMonitor
+    from afterimage.storage import JSONLStorage
+
+    log_dir = tmp_path / "monitor_logs"
+    storage_file = tmp_path / "agent_trajectories.jsonl"
+
+    monitor = GenerationMonitor(log_dir=log_dir)
+    storage = JSONLStorage(conversations_path=storage_file)
+
+    generator = AsyncAgentTraceGenerator(
+        llm_provider=mock_llm_provider,
+        storage=storage,
+        monitor=monitor,
+    )
+
+    actions = [
+        ToolActionSpec(
+            action_name="get_account",
+            description="Get account details",
+            response_model_name="AccountResponse",
+        )
+    ]
+    await generator.register_app_domain(
+        app_name="bank",
+        app_description="Banking App",
+        actions=actions,
+    )
+
+    results = await generator.generate(num_trajectories=2, show_progress=False)
+
+    assert len(results) == 2
+    assert storage_file.exists()
+    assert len(storage.load_conversations()) == 2

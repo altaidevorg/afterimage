@@ -1,12 +1,27 @@
+"""Facade generator for environment-free synthetic agent execution trace datasets.
+
+Coordinates schema architecture, task synthesis (combinatorial grid or Simula taxonomy),
+declarative local simulation, ReAct teacher execution loops, trajectory quality judging,
+and multi-format exporters.
+"""
+
+from __future__ import annotations
+
 import asyncio
 import logging
-from typing import List, Optional, Union
+import time
+from typing import Any, Callable, List, Literal, Optional, Union
+
+from tqdm.asyncio import tqdm
 
 from ..key_management import SmartKeyPool
+from ..monitoring import GenerationMonitor
 from ..providers.llm_providers import LLMFactory, LLMProvider
 from ..storage import BaseStorage, JSONLStorage
 from ..types import Conversation, ConversationEntry, Role
+from .context import BaseContextGenerator, VirtualUserContextGenerator
 from .schema_architect import SchemaArchitect
+from .simula_task_synthesis import SimulaTaskSynthesizer
 from .task_synthesis import GridTaskSynthesizer
 from .tool_environment import DeclarativeEnvironment
 from .trajectory_generator import ReActTrajectoryLoop
@@ -17,7 +32,30 @@ logger = logging.getLogger(__name__)
 
 
 class AsyncAgentTraceGenerator:
-    """Async Environment-Free Synthetic Agent-Trace Dataset Generator Facade."""
+    """Async Environment-Free Synthetic Agent-Trace Dataset Generator Facade.
+
+    Coordinates SchemaArchitect, GridTaskSynthesizer, SimulaTaskSynthesizer,
+    ReActTrajectoryLoop, DeclarativeEnvironment, TrajectoryJudge, and GenerationMonitor.
+
+    Args:
+        api_key: Optional API key string, list of keys, or :class:`SmartKeyPool`.
+        llm_provider: Optional shared LLMProvider instance.
+        provider: Provider vendor name (e.g. ``"gemini"``, ``"openai"``). Defaults to ``"gemini"``.
+        architect_model: Model name for SchemaArchitect. Defaults to ``"gemini-3.6-flash"``.
+        teacher_model: Model name for ReAct teacher loop. Defaults to ``"gemini-3.5-flash-lite"``.
+        judge_model: Model name for TrajectoryJudge. Defaults to ``"gemini-3.6-flash"``.
+        observation_mode: Tool response synthesis mode (``"llm"`` or ``"faker"``). Defaults to ``"llm"``.
+        task_synthesis_mode: Synthesis strategy (``"grid"`` or ``"simula"``). Defaults to ``"grid"``.
+        context_generator: Extensible initial context generator. Defaults to :class:`VirtualUserContextGenerator`.
+        storage: Optional storage backend. Defaults to :class:`JSONLStorage`.
+        monitor: Optional generation monitor instance for real-time tracking and metrics.
+        llm_factory_kwargs: Extra keyword arguments for LLM initialization.
+
+    Example:
+        >>> generator = AsyncAgentTraceGenerator(api_key="your_api_key")
+        >>> await generator.register_app_domain("e_commerce", "Shopping platform", actions=[...])
+        >>> trajectories = await generator.generate(num_trajectories=10, show_progress=True)
+    """
 
     def __init__(
         self,
@@ -27,11 +65,21 @@ class AsyncAgentTraceGenerator:
         architect_model: str = "gemini-3.6-flash",
         teacher_model: str = "gemini-3.5-flash-lite",
         judge_model: str = "gemini-3.6-flash",
-        observation_mode: ObservationMode = "llm",  # Preferred production mode (ESAT paper). Use "faker" for experimental sub-millisecond local mode.
+        observation_mode: ObservationMode = "llm",
+        task_synthesis_mode: Literal["grid", "simula"] = "grid",
+        context_generator: Optional[BaseContextGenerator] = None,
         storage: Optional[BaseStorage] = None,
+        monitor: Optional[GenerationMonitor] = None,
         llm_factory_kwargs: Optional[dict] = None,
     ):
         self.observation_mode = observation_mode
+        self.task_synthesis_mode = task_synthesis_mode
+        self.context_generator = (
+            context_generator
+            if context_generator is not None
+            else VirtualUserContextGenerator()
+        )
+        self.monitor = monitor
         extras = dict(llm_factory_kwargs or {})
 
         if llm_provider:
@@ -72,9 +120,15 @@ class AsyncAgentTraceGenerator:
             llm_provider=architect_llm,
             model_name=architect_model,
         )
-        self.synthesizer = GridTaskSynthesizer(
+        self.grid_synthesizer = GridTaskSynthesizer(
             llm_provider=teacher_llm,
             model_name=teacher_model,
+            context_generator=self.context_generator,
+        )
+        self.simula_synthesizer = SimulaTaskSynthesizer(
+            llm_provider=teacher_llm,
+            context_generator=self.context_generator,
+            monitor=self.monitor,
         )
         self.teacher_loop = ReActTrajectoryLoop(
             llm_provider=teacher_llm,
@@ -97,7 +151,16 @@ class AsyncAgentTraceGenerator:
     async def register_app_domain(
         self, app_name: str, app_description: str, actions: List[ToolActionSpec]
     ) -> AppDomainSpec:
-        """Registers an app domain using explicit Pydantic response models or SchemaArchitect dynamic generation."""
+        """Registers an application domain and resolves response model schemas.
+
+        Args:
+            app_name: Unique name of the app domain.
+            app_description: Detailed description of domain functionality.
+            actions: List of tool action endpoint specifications.
+
+        Returns:
+            AppDomainSpec: Fully resolved app domain specification.
+        """
         from pydantic import BaseModel
 
         explicit_models: dict[str, type[BaseModel]] = {}
@@ -141,21 +204,43 @@ class AsyncAgentTraceGenerator:
         return full_spec
 
     async def generate_single(self, max_turns: int = 6) -> Optional[AgentTrajectory]:
-        """Synthesizes a single agent trajectory (task -> ReAct loop -> judge)."""
+        """Synthesizes a single agent trajectory (task -> ReAct loop -> judge).
+
+        Args:
+            max_turns: Maximum reasoning turns per trajectory. Defaults to 6.
+
+        Returns:
+            Optional[AgentTrajectory]: Validated trajectory object, or None if rejected by judge.
+
+        Raises:
+            ValueError: If no app domains are registered.
+        """
         if not self.environment.app_domains:
             raise ValueError(
                 "No app domains registered. Call register_app_domain() first."
             )
 
-        # 1. Task synthesis via 360-bucket grid, task rewriter, and initial state generator
-        (
-            task,
-            initial_context,
-            selected_apps,
-            bucket,
-        ) = await self.synthesizer.synthesize_task(
-            app_domains=self.environment.app_domains
-        )
+        start_time = time.perf_counter()
+
+        # 1. Task synthesis via Grid or Simula synthesizer
+        if self.task_synthesis_mode == "simula":
+            (
+                task,
+                initial_context,
+                selected_apps,
+                bucket,
+            ) = await self.simula_synthesizer.synthesize_task(
+                app_domains=self.environment.app_domains
+            )
+        else:
+            (
+                task,
+                initial_context,
+                selected_apps,
+                bucket,
+            ) = await self.grid_synthesizer.synthesize_task(
+                app_domains=self.environment.app_domains
+            )
 
         # 2. Seed initial context state into environment context store
         self.environment.seed_initial_context(initial_context)
@@ -167,10 +252,21 @@ class AsyncAgentTraceGenerator:
             domain_apps=selected_apps,
         )
         trajectory.metadata["grid_bucket"] = bucket.model_dump()
+        trajectory.metadata["initial_context"] = initial_context
 
-        # 3. Trajectory Judge Quality Filtering
+        # 4. Trajectory Judge Quality Filtering
         verdict = await self.judge.evaluate_trajectory(trajectory)
         trajectory.judge_verdict = verdict
+
+        elapsed = time.perf_counter() - start_time
+
+        if self.monitor:
+            self.monitor.track_generation(
+                duration=elapsed,
+                success=verdict.is_valid,
+                turns=len(trajectory.turns),
+                metadata={"task_synthesis_mode": self.task_synthesis_mode},
+            )
 
         if verdict.is_valid:
             return trajectory
@@ -181,41 +277,83 @@ class AsyncAgentTraceGenerator:
         num_trajectories: int = 10,
         max_turns: int = 6,
         max_concurrency: int = 4,
+        show_progress: bool = True,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> List[AgentTrajectory]:
-        """Generates multiple synthetic agent trajectories concurrently."""
+        """Generates multiple synthetic agent trajectories concurrently with incremental storage & progress tracking.
+
+        Args:
+            num_trajectories: Total requested trajectories to generate. Defaults to 10.
+            max_turns: Maximum ReAct turns per trajectory. Defaults to 6.
+            max_concurrency: Concurrency limit for parallel workers. Defaults to 4.
+            show_progress: Whether to display a tqdm terminal progress bar. Defaults to True.
+            progress_callback: Optional callback receiving (completed_count, total_count).
+
+        Returns:
+            List[AgentTrajectory]: List of accepted synthetic agent trajectories.
+        """
         sem = asyncio.Semaphore(max_concurrency)
         accepted_trajectories: List[AgentTrajectory] = []
+        completed_count = 0
 
-        async def _worker() -> Optional[AgentTrajectory]:
+        async def _worker(pbar: Optional[Any] = None) -> Optional[AgentTrajectory]:
+            nonlocal completed_count
             async with sem:
                 try:
-                    return await self.generate_single(max_turns=max_turns)
+                    res = await self.generate_single(max_turns=max_turns)
+                    completed_count += 1
+                    if pbar:
+                        pbar.update(1)
+                    if progress_callback:
+                        progress_callback(completed_count, num_trajectories)
+
+                    if res is not None:
+                        accepted_trajectories.append(res)
+                        conv = self._trajectory_to_conversation(res)
+                        # Incremental storage save so progress/file creation is never lost!
+                        self.storage.save_conversations([conv])
+                        if self.monitor:
+                            self.monitor.log_info(
+                                "Generated and stored valid agent trajectory",
+                                trajectory_id=res.trajectory_id,
+                            )
+                    return res
                 except Exception as e:
-                    logger.warning(
+                    completed_count += 1
+                    if pbar:
+                        pbar.update(1)
+                    if progress_callback:
+                        progress_callback(completed_count, num_trajectories)
+                    logger.error(
                         f"Error during trajectory generation worker: {e}", exc_info=True
                     )
+                    if self.monitor:
+                        self.monitor.log_error(
+                            "Trajectory generation worker encountered exception",
+                            error=e,
+                        )
+                        self.monitor.record_metric("error_rate", 1.0)
                     return None
 
-        tasks = [_worker() for _ in range(num_trajectories)]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        conversations = []
-        for res in results:
-            if isinstance(res, Exception):
-                logger.error(f"Worker encountered unhandled exception: {res}")
-                continue
-            if isinstance(res, AgentTrajectory):
-                accepted_trajectories.append(res)
-                conv = self._trajectory_to_conversation(res)
-                conversations.append(conv)
-
-        if conversations:
-            self.storage.save_conversations(conversations)
+        if show_progress:
+            with tqdm(total=num_trajectories, desc="Generating Agent Traces") as pbar:
+                tasks = [_worker(pbar=pbar) for _ in range(num_trajectories)]
+                await asyncio.gather(*tasks, return_exceptions=True)
+        else:
+            tasks = [_worker(pbar=None) for _ in range(num_trajectories)]
+            await asyncio.gather(*tasks, return_exceptions=True)
 
         return accepted_trajectories
 
     def _trajectory_to_conversation(self, traj: AgentTrajectory) -> Conversation:
-        """Converts an AgentTrajectory into AfterImage's base Conversation schema."""
+        """Converts an AgentTrajectory into AfterImage's base Conversation schema.
+
+        Args:
+            traj: Synthesized AgentTrajectory instance.
+
+        Returns:
+            Conversation: Converted Conversation object for storage.
+        """
         entries: List[ConversationEntry] = [
             ConversationEntry(role=Role.USER, content=traj.task)
         ]
