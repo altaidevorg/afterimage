@@ -1,6 +1,6 @@
 # Environment-Free Agent Traces (`afterimage.agent_trace`)
 
-`afterimage.agent_trace` provides an environment-free synthetic data generation pipeline for training API-calling AI agents. It combines the methodology from the **ESAT** research paper (*Environment-free Synthetic Data Generation for API-Calling Agents*, arXiv:2607.16900) with a sub-millisecond local **Declarative Tool Simulation Framework**.
+`afterimage.agent_trace` provides an environment-free synthetic data generation pipeline for training API-calling AI agents. It combines the methodology from the **ESAT** research paper (*Environment-free Synthetic Data Generation for API-Calling Agents*, arXiv:2607.16900) and **Simula** paper (*Reasoning-Driven Synthetic Data Generation and Evaluation*, arXiv:2603.29791) with a sub-millisecond local **Declarative Tool Simulation Framework**.
 
 Instead of setting up complex, executable backend applications or real databases, `afterimage.agent_trace` uses LLMs as offline schema architects and online teacher/judge agents, while delegating tool observation generation to a deterministic, local Python simulation engine.
 
@@ -10,42 +10,42 @@ Instead of setting up complex, executable backend applications or real databases
 
 - **Sub-Millisecond Execution:** Tool calls complete locally in `< 1 ms` (vs. 1,500 ms – 4,000 ms for LLM-simulated passes).
 - **Zero Simulator Hallucinations:** Pydantic V2 response models guarantee 100% schema compliance.
-- **Stateful Entity Context:** `SimulationContext` maintains entity pools across multi-turn trajectories so foreign key relationships (`user_id`, `order_id`, etc.) remain consistent.
-- **60% Token Cost Reduction:** Eliminates simulator prompting overhead during multi-turn ReAct loops.
-- **360-Bucket Combinatorial Grid:** Guarantees task diversity across difficulties, action types, task foci, and application counts.
+- **Dynamic Virtual User Identities:** Synthesizes localized identity context profiles (`VirtualUserContextGenerator`) using Faker for grounded entity references across multi-turn trajectories.
+- **Simula Integration:** Integrates `afterimage.simula` factor taxonomy trees and meta-prompt diversification for deep, challenging agent tasks (`task_synthesis_mode="simula"`).
+- **Multi-Format Agent Tool Exporters:** Export trajectories natively into OpenAI Tool Calls, Anthropic Messages API, Hermes XML `<tool_call>`, and DPO preference pair formats.
+- **Terminal Progress Indicators:** Terminal progress bar (`tqdm.asyncio`) and custom callback monitoring (`show_progress=True`).
 
 ---
 
 ## Architecture Overview
 
 ```
-                          ┌────────────────────────┐
-                          │   LLM Schema Architect │ (gemini-3.6-flash)
-                          └───────────┬────────────┘
-                                      │ (Generates Pydantic response models)
-                                      ▼
-                          ┌────────────────────────┐
-                          │  Static AST Verifier   │ (6 Structural Invariants)
-                          └───────────┬────────────┘
-                                      │ (Self-correction feedback loop)
-                                      ▼
-                          ┌────────────────────────┐
-                          │  Declarative Engine    │ (< 1ms local Python simulation)
-                          └───────────┬────────────┘
-                                      │
-     ┌────────────────────────┐       │       ┌────────────────────────┐
-     │  360-Bucket Grid Task  ├───────┴───────►   ReAct Teacher Loop   │ (gemini-3.5-flash-lite)
-     │       Synthesizer      │               └───────────┬────────────┘
-     └────────────────────────┘                           │
-                                                          ▼
-                                              ┌────────────────────────┐
-                                              │    Trajectory Judge    │ (gemini-3.6-flash)
-                                              └───────────┬────────────┘
-                                                          │
-                                                          ▼
-                                              ┌────────────────────────┐
-                                              │  JSONL / SQL Storage   │
-                                              └────────────────────────┘
+                                  ┌───────────────────────────┐
+                                  │   BaseContextGenerator    │
+                                  └─────────────┬─────────────┘
+                                                │
+          ┌───────────────────────┬─────────────┴─────────────┬─────────────────────────┐
+          │                       │                           │                         │
+┌─────────┴──────────────┐ ┌──────┴────────────────┐ ┌────────┴───────────────┐ ┌───────┴────────────────┐
+│VirtualUserContextGen   │ │PersonaContextGenerator│ │CallableContextGen     │ │CompositeContextGen     │
+│(Faker Identities/IDs)  │ │(Persona Integration)  │ │(User custom functions)│ │(Combines generators)   │
+└─────────┬──────────────┘ └──────┬────────────────┘ └────────┬───────────────┘ └───────┬────────────────┘
+          │                       │                           │                         │
+          └───────────────────────┴─────────────┬─────────────┴─────────────────────────┘
+                                                ▼
+                                  ┌───────────────────────────┐
+                                  │    Task Synthesizer       │ (Grid or Simula Mode)
+                                  └─────────────┬─────────────┘
+                                                │ (Context Seed + Task Directive)
+                                                ▼
+                                  ┌───────────────────────────┐
+                                  │   ReAct Teacher Loop      │ (< 1ms Declarative Simulation)
+                                  └─────────────┬─────────────┘
+                                                │
+                                                ▼
+                                  ┌───────────────────────────┐
+                                  │ Multi-Format Exporters    │ (OpenAI, Anthropic, Hermes, DPO)
+                                  └───────────────────────────┘
 ```
 
 ---
@@ -57,6 +57,7 @@ import asyncio
 import os
 from afterimage.agent_trace import (
     AsyncAgentTraceGenerator,
+    VirtualUserContextGenerator,
     ToolActionSpec,
     ToolParameterSpec,
 )
@@ -65,12 +66,13 @@ from afterimage.exporters import export_dataset
 async def main():
     api_key = os.getenv("GEMINI_API_KEY")
 
-    # 1. Initialize the Generator with Provider Models
+    # 1. Initialize the Generator with Virtual User Context and Progress Indicator
     generator = AsyncAgentTraceGenerator(
         api_key=api_key,
         architect_model="gemini-3.6-flash",
         teacher_model="gemini-3.5-flash-lite",
         judge_model="gemini-3.6-flash",
+        context_generator=VirtualUserContextGenerator(seed=42),
     )
 
     # 2. Define App Domain Endpoints
@@ -102,20 +104,21 @@ async def main():
         actions=actions,
     )
 
-    # 4. Generate Synthetic Agent Trajectories Concurrently
+    # 4. Generate Synthetic Agent Trajectories Concurrently with Progress Bar
     trajectories = await generator.generate(
         num_trajectories=10,
         max_turns=5,
         max_concurrency=4,
+        show_progress=True,
     )
 
     print(f"Generated {len(trajectories)} valid synthetic agent trajectories.")
 
-    # 5. Export Trajectories to SFT Messages Format
+    # 5. Export Trajectories to Structured Tool Calling Format
     export_dataset(
         input_path="outputs/agent_trajectories.jsonl",
-        format_name="agent_sft",
-        output_path="outputs/agent_sft_dataset.jsonl",
+        format_name="openai_tools",
+        output_path="outputs/agent_openai_tools.jsonl",
     )
 
 if __name__ == "__main__":
@@ -124,69 +127,28 @@ if __name__ == "__main__":
 
 ---
 
-## Observation Generation Modes (`llm` vs `faker`)
+## Initial Context Architecture (`BaseContextGenerator`)
 
-`afterimage.agent_trace` supports two observation generation modes for synthetic tool responses, configurable via `AsyncAgentTraceGenerator(observation_mode=...)`:
+`afterimage.agent_trace` features a highly composable context generation system to seed virtual identities and initial database states into task synthesis prompts and declarative execution environments:
 
-```python
-# Mode 1: Preferred production mode (Original ESAT Paper LLM-driven structured observation synthesis)
-generator = AsyncAgentTraceGenerator(api_key=api_key, observation_mode="llm")
-
-# Mode 2: Experimental local sub-millisecond declarative engine
-generator = AsyncAgentTraceGenerator(api_key=api_key, observation_mode="faker")
-```
-
-| Observation Mode | Status | Latency | Token Cost | Mechanism & Best Use Case |
-|---|---|---|---|---|
-| **`llm`** (Default) | **Preferred / Production** | ~300ms – 800ms per turn | Token cost for LLM synthesis | Uses `LLMObservationSynthesizer` to generate structured, realistic JSON payloads guided by target Pydantic schemas, tool parameters, past turn history, and initial state context. |
-| **`faker`** | **Experimental** | Sub-millisecond (`< 1 ms`) | **0 tokens** for tool responses | Uses local Pydantic synthesis, Faker generators, parameter echoing annotations, and stateful `SimulationContext` context stores for zero-cost execution. |
+| Context Generator | Class Name | Description |
+|---|---|---|
+| **Virtual User** | `VirtualUserContextGenerator` | Generates realistic localized user identities, names, emails, addresses, user IDs, and account numbers using `Faker`. |
+| **Persona Wrapper** | `PersonaContextGenerator` | Integrates `PersonaEntry` profiles (from `afterimage.persona_generator`) directly into initial state context. |
+| **Custom Callable** | `CallableContextGenerator` | Wraps user-defined sync or async state seed functions. |
+| **Composite** | `CompositeContextGenerator` | Merges state dictionaries produced by multiple context generators. |
 
 ---
 
-## Generator Annotations Protocol (for `faker` Mode)
+## Export Formats for Agent Training
 
-In `faker` mode, referential integrity and parameter matching are guaranteed using explicit generator annotations inside Pydantic field schemas (`json_schema_extra={"generator": "..."}`):
+Use `export_dataset(input_path, format_name)` or the CLI to export trajectories into standard tool calling formats:
 
-```python
-class AccountBalanceResponse(BaseModel):
-    # Echoes the input 'account_id' argument directly into the response field
-    account_id: int = Field(json_schema_extra={"generator": "param:account_id"})
-    account_type: str = Field(default="checking")
-    total_balance: float = Field(json_schema_extra={"generator": "money"})
-    available_balance: float = Field(json_schema_extra={"generator": "money"})
-
-class TransferResponse(BaseModel):
-    transfer_id: int = Field(json_schema_extra={"generator": "id"})
-    status: str = Field(default="completed")
-    # Echoes the input 'amount' argument directly into the response field
-    amount: float = Field(json_schema_extra={"generator": "param:amount"})
-```
-
-### Supported Annotation Tags
-
-- **`param:<param_name>` / `echo`**: Echoes input argument values (`account_id`, `amount`, `user_id`, `expense_id`) directly into response fields.
-- **`state:account_balance`**: Interacts with persistent account balance tables in `SimulationContext` (e.g. deducting transfer amounts).
-- **`fk:<entity>.<field>`**: Samples foreign key identifiers from state lookup pools across trajectory turns.
-- **`id`**: Generates a primary integer ID and records it into `SimulationContext`.
-- **`money`**: Generates realistic monetary float amounts.
-- **`enum`**: Selects a value from `json_schema_extra={"values": [...]}`.
-- **`faker:<method>`**: Generates Faker strings (e.g., `faker:name`, `faker:email`, `faker:company`).
-
----
-
-## Explicit Response Models (`response_model_cls`)
-
-Pass explicit Pydantic response models directly into `ToolActionSpec` to eliminate LLM schema generation overhead:
-
-```python
-ToolActionSpec(
-    action_name="get_account_balance",
-    description="Returns total and available balance for a user account.",
-    parameters=[ToolParameterSpec(name="account_id", type="int", description="Account ID")],
-    response_model_name="AccountBalanceResponse",
-    response_model_cls=AccountBalanceResponse,  # Explicit class attached!
-)
-```
+- **`openai_tools`**: Standard OpenAI Chat Completions tool-calling format (`tools` specification, `tool_calls` array, `role: "tool"`).
+- **`anthropic_tools`**: Anthropic Messages API format with `tool_use` and `tool_result` content blocks.
+- **`hermes_tools`**: Nous Hermes 2/3 and Qwen 2.5 XML `<tool_call>` format.
+- **`agent_dpo`**: Trajectory preference pair format (`prompt`, `chosen`, `rejected`) for DPO/ORPO training.
+- **`agent_sft`**: Sequential multi-turn message string format.
 
 ---
 
@@ -195,7 +157,7 @@ ToolActionSpec(
 | Component | Default Model | Purpose |
 |---|---|---|
 | **Schema Architect** | `gemini-3.6-flash` | High-quality Pydantic response code generation with metadata tags. |
-| **Task Synthesizer & Rewriter** | `gemini-3.5-flash-lite` | Ultra-fast combinatorial grid task synthesis & natural language rewriter. |
+| **Task Synthesizer & Rewriter** | `gemini-3.5-flash-lite` | Combinatorial grid task synthesis & natural language rewriter. |
 | **ReAct Teacher Agent** | `gemini-3.5-flash-lite` | Multi-turn reasoning & tool execution loop. |
 | **LLM Observation Synthesizer** | `gemini-3.5-flash-lite` | Structured tool observation generation when `observation_mode="llm"`. |
 | **Trajectory Judge** | `gemini-3.6-flash` | 9-point quality rubric trajectory filtering. |
