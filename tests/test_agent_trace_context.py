@@ -1,6 +1,5 @@
 import pytest
 from afterimage.agent_trace.context import (
-    BaseContextGenerator,
     CallableContextGenerator,
     CompositeContextGenerator,
     PersonaContextGenerator,

@@ -139,7 +139,9 @@ class GridTaskSynthesizer:
         self.model_name = getattr(llm_provider, "model_name", model_name)
         self.sampler = InverseFrequencySampler()
         self.context_generator = (
-            context_generator if context_generator is not None else VirtualUserContextGenerator()
+            context_generator
+            if context_generator is not None
+            else VirtualUserContextGenerator()
         )
 
     def sample_grid_bucket(self, num_apps_available: int) -> GridTaskBucket:
@@ -246,7 +248,7 @@ class GridTaskSynthesizer:
         Returns:
             tuple[str, Dict[str, Any]]: Verbose task text and parsed context dictionary.
         """
-        
+
         verbose_task = text
         initial_context: Dict[str, Any] = {}
 
@@ -289,4 +291,3 @@ class GridTaskSynthesizer:
         )
         cleaned = response.text.strip().strip('"')
         return cleaned or verbose_task
-

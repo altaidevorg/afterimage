@@ -1,5 +1,4 @@
-"""AfterImage Agent Trace subpackage for environment-free synthetic agent-trace dataset generation.
-"""
+"""AfterImage Agent Trace subpackage for environment-free synthetic agent-trace dataset generation."""
 
 from .context import (
     BaseContextGenerator,

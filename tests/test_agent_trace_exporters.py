@@ -1,7 +1,5 @@
-import json
 import pytest
 from afterimage.exporters import (
-    export_dataset,
     to_agent_dpo,
     to_anthropic_tools,
     to_hermes_tools,
@@ -17,7 +15,7 @@ def mock_trajectory_rows():
                 {"role": "user", "content": "Check balance for account 1001"},
                 {
                     "role": "assistant",
-                    "content": "Thought: Need balance.\nAction: banking.get_account_balance\nAction Input: {\"account_id\": 1001}",
+                    "content": 'Thought: Need balance.\nAction: banking.get_account_balance\nAction Input: {"account_id": 1001}',
                 },
                 {
                     "role": "user",
@@ -40,7 +38,9 @@ def test_to_openai_tools(mock_trajectory_rows):
     assert msgs[0]["role"] == "user"
     assert msgs[1]["role"] == "assistant"
     assert "tool_calls" in msgs[1]
-    assert msgs[1]["tool_calls"][0]["function"]["name"] == "banking__get_account_balance"
+    assert (
+        msgs[1]["tool_calls"][0]["function"]["name"] == "banking__get_account_balance"
+    )
     assert msgs[2]["role"] == "tool"
     assert msgs[2]["tool_call_id"] == msgs[1]["tool_calls"][0]["id"]
 

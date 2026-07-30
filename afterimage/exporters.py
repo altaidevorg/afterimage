@@ -162,9 +162,15 @@ def to_openai_tools(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 if "Action:" in content:
                     call_idx += 1
                     call_id = f"call_{call_idx}"
-                    thought_part = content.split("Action:", 1)[0].replace("Thought:", "").strip()
+                    thought_part = (
+                        content.split("Action:", 1)[0].replace("Thought:", "").strip()
+                    )
                     action_part = content.split("Action:", 1)[1]
-                    action_name = action_part.split("Action Input:", 1)[0].strip().replace(".", "__")
+                    action_name = (
+                        action_part.split("Action Input:", 1)[0]
+                        .strip()
+                        .replace(".", "__")
+                    )
                     args_str = "{}"
                     if "Action Input:" in action_part:
                         args_str = action_part.split("Action Input:", 1)[1].strip()
@@ -186,7 +192,11 @@ def to_openai_tools(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         }
                     )
                 else:
-                    text = content.replace("Final Answer:", "").replace("Thought:", "").strip()
+                    text = (
+                        content.replace("Final Answer:", "")
+                        .replace("Thought:", "")
+                        .strip()
+                    )
                     messages.append({"role": "assistant", "content": text})
 
         out.append(
@@ -239,9 +249,15 @@ def to_anthropic_tools(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 if "Action:" in content:
                     call_idx += 1
                     call_id = f"toolu_{call_idx}"
-                    thought_part = content.split("Action:", 1)[0].replace("Thought:", "").strip()
+                    thought_part = (
+                        content.split("Action:", 1)[0].replace("Thought:", "").strip()
+                    )
                     action_part = content.split("Action:", 1)[1]
-                    action_name = action_part.split("Action Input:", 1)[0].strip().replace(".", "__")
+                    action_name = (
+                        action_part.split("Action Input:", 1)[0]
+                        .strip()
+                        .replace(".", "__")
+                    )
                     args_str = "{}"
                     if "Action Input:" in action_part:
                         args_str = action_part.split("Action Input:", 1)[1].strip()
@@ -264,7 +280,11 @@ def to_anthropic_tools(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     )
                     messages.append({"role": "assistant", "content": content_blocks})
                 else:
-                    text = content.replace("Final Answer:", "").replace("Thought:", "").strip()
+                    text = (
+                        content.replace("Final Answer:", "")
+                        .replace("Thought:", "")
+                        .strip()
+                    )
                     messages.append({"role": "assistant", "content": text})
 
         out.append(
@@ -301,9 +321,15 @@ def to_hermes_tools(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     messages.append({"role": "user", "content": content})
             elif role == "assistant":
                 if "Action:" in content:
-                    thought_part = content.split("Action:", 1)[0].replace("Thought:", "").strip()
+                    thought_part = (
+                        content.split("Action:", 1)[0].replace("Thought:", "").strip()
+                    )
                     action_part = content.split("Action:", 1)[1]
-                    action_name = action_part.split("Action Input:", 1)[0].strip().replace(".", "__")
+                    action_name = (
+                        action_part.split("Action Input:", 1)[0]
+                        .strip()
+                        .replace(".", "__")
+                    )
                     args_str = "{}"
                     if "Action Input:" in action_part:
                         args_str = action_part.split("Action Input:", 1)[1].strip()
@@ -313,11 +339,19 @@ def to_hermes_tools(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     except Exception:
                         args_dict = {}
 
-                    tool_payload = json.dumps({"name": action_name, "arguments": args_dict})
-                    text = f"{thought_part}\n<tool_call>{tool_payload}</tool_call>".strip()
+                    tool_payload = json.dumps(
+                        {"name": action_name, "arguments": args_dict}
+                    )
+                    text = (
+                        f"{thought_part}\n<tool_call>{tool_payload}</tool_call>".strip()
+                    )
                     messages.append({"role": "assistant", "content": text})
                 else:
-                    text = content.replace("Final Answer:", "").replace("Thought:", "").strip()
+                    text = (
+                        content.replace("Final Answer:", "")
+                        .replace("Thought:", "")
+                        .strip()
+                    )
                     messages.append({"role": "assistant", "content": text})
 
         out.append(
@@ -345,7 +379,11 @@ def to_agent_dpo(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         prompt = convs[0].get("content", "")
         chosen = [c.get("content", "") for c in convs[1:]]
-        rejected = chosen[: len(chosen) // 2] if len(chosen) > 1 else ["Unable to fulfill request."]
+        rejected = (
+            chosen[: len(chosen) // 2]
+            if len(chosen) > 1
+            else ["Unable to fulfill request."]
+        )
 
         out.append(
             {

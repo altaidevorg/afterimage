@@ -77,7 +77,9 @@ class SimulaTaskSynthesizer:
         self.monitor = monitor
         self.simula = OpenSimula(llm=llm_provider, temperature=0.5, monitor=monitor)
         self.context_generator = (
-            context_generator if context_generator is not None else VirtualUserContextGenerator()
+            context_generator
+            if context_generator is not None
+            else VirtualUserContextGenerator()
         )
 
     async def synthesize_task(
@@ -146,7 +148,9 @@ class SimulaTaskSynthesizer:
         if bundle and bundle.taxonomies:
             tax = random.choice(bundle.taxonomies)
             root_node = tax.nodes.get(tax.root_id)
-            child_nodes = [node for node in tax.nodes.values() if node.parent_id == tax.root_id]
+            child_nodes = [
+                node for node in tax.nodes.values() if node.parent_id == tax.root_id
+            ]
             if child_nodes:
                 target_node = random.choice(child_nodes)
                 taxonomy_focus = f"{target_node.label}"

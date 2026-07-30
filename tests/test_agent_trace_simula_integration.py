@@ -13,7 +13,7 @@ from afterimage.agent_trace import (
 async def test_simula_task_synthesizer():
     mock_llm = MagicMock()
     mock_response = MagicMock()
-    mock_response.text = "PROMPT: Transfer Money to account 1002\nINITIAL_CONTEXT: ```json\n{\"user_id\": 101}\n```"
+    mock_response.text = 'PROMPT: Transfer Money to account 1002\nINITIAL_CONTEXT: ```json\n{"user_id": 101}\n```'
     mock_llm.agenerate_content = AsyncMock(return_value=mock_response)
 
     synthesizer = SimulaTaskSynthesizer(
@@ -30,7 +30,9 @@ async def test_simula_task_synthesizer():
         )
     ]
     app_domains = {
-        "banking": MagicMock(app_name="banking", description="Banking app", actions=actions)
+        "banking": MagicMock(
+            app_name="banking", description="Banking app", actions=actions
+        )
     }
 
     # Mock build_taxonomy to return bundle with FactorTaxonomy
@@ -44,7 +46,9 @@ async def test_simula_task_synthesizer():
     mock_bundle.taxonomies = [mock_taxonomy]
     synthesizer.simula.build_taxonomy = AsyncMock(return_value=mock_bundle)
 
-    task_text, context, selected_apps, bucket = await synthesizer.synthesize_task(app_domains)
+    task_text, context, selected_apps, bucket = await synthesizer.synthesize_task(
+        app_domains
+    )
 
     assert isinstance(task_text, str)
     assert "Transfer Money" in task_text

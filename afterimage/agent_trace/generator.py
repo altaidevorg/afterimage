@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Callable, List, Literal, Optional, Union
+from typing import Any, Callable, List, Literal, Optional, Union
 
 from tqdm.asyncio import tqdm
 
@@ -75,7 +75,9 @@ class AsyncAgentTraceGenerator:
         self.observation_mode = observation_mode
         self.task_synthesis_mode = task_synthesis_mode
         self.context_generator = (
-            context_generator if context_generator is not None else VirtualUserContextGenerator()
+            context_generator
+            if context_generator is not None
+            else VirtualUserContextGenerator()
         )
         self.monitor = monitor
         extras = dict(llm_factory_kwargs or {})

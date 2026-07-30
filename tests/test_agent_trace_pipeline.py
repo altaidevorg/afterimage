@@ -289,7 +289,9 @@ async def test_async_agent_trace_generator_facade(mock_llm_provider):
 
 
 @pytest.mark.asyncio
-async def test_async_agent_trace_generator_monitoring_and_storage(mock_llm_provider, tmp_path):
+async def test_async_agent_trace_generator_monitoring_and_storage(
+    mock_llm_provider, tmp_path
+):
     from afterimage.monitoring import GenerationMonitor
     from afterimage.storage import JSONLStorage
 
@@ -323,4 +325,3 @@ async def test_async_agent_trace_generator_monitoring_and_storage(mock_llm_provi
     assert len(results) == 2
     assert storage_file.exists()
     assert len(storage.load_conversations()) == 2
-
