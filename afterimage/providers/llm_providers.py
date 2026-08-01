@@ -131,6 +131,46 @@ def _gemini_retry_delay(
     return random.uniform(base * 0.5, base * 1.5)
 
 
+def _extract_gemini_text_and_reasoning(response: Any) -> tuple[str, str | None]:
+    """Safely extract main output text and reasoning content from a Gemini response."""
+    try:
+        candidates = getattr(response, "candidates", None)
+        if not candidates:
+            return getattr(response, "text", "") or "", None
+
+        candidate = candidates[0]
+        content = getattr(candidate, "content", None)
+        if not content:
+            return getattr(response, "text", "") or "", None
+
+        parts = getattr(content, "parts", None)
+        if not parts:
+            return getattr(response, "text", "") or "", None
+
+        text_pieces: list[str] = []
+        thought_pieces: list[str] = []
+
+        for part in parts:
+            is_thought = getattr(part, "thought", False)
+            part_text = getattr(part, "text", None)
+            if part_text:
+                if is_thought:
+                    thought_pieces.append(part_text)
+                else:
+                    text_pieces.append(part_text)
+
+        main_text = (
+            "".join(text_pieces)
+            if text_pieces
+            else (getattr(response, "text", "") or "")
+        )
+        reasoning = "\n".join(thought_pieces).strip() if thought_pieces else None
+        return main_text, reasoning
+    except Exception:
+        return getattr(response, "text", "") or "", None
+
+
+
 class GeminiChatSession(ChatSession):
     """Gemini chat session implementation."""
 
@@ -172,14 +212,16 @@ class GeminiChatSession(ChatSession):
                     raise
                 time.sleep(self._retry_delay(attempt))
 
+        text, reasoning = _extract_gemini_text_and_reasoning(response)
         return LLMResponse(
-            text=response.text,
+            text=text,
             finish_reason=str(response.candidates[0].finish_reason),
             prompt_token_count=response.usage_metadata.prompt_token_count,
             completion_token_count=response.usage_metadata.candidates_token_count,
             total_token_count=response.usage_metadata.total_token_count,
             model_name=self.model_name,
             raw_response=response,
+            reasoning_content=reasoning,
         )
 
     def close(self) -> None:
@@ -230,16 +272,18 @@ class AsyncGeminiChatSession(ChatSession):
                     raise
                 await asyncio.sleep(self._retry_delay(attempt))
 
+        text, reasoning = _extract_gemini_text_and_reasoning(response)
         total_token_count = response.usage_metadata.total_token_count
         self.token_count = total_token_count
         return LLMResponse(
-            text=response.text,
+            text=text,
             finish_reason=str(response.candidates[0].finish_reason),
             prompt_token_count=response.usage_metadata.prompt_token_count,
             completion_token_count=response.usage_metadata.candidates_token_count,
             total_token_count=total_token_count,
             model_name=self.model_name,
             raw_response=response,
+            reasoning_content=reasoning,
         )
 
     async def aclose(self) -> None:
@@ -535,14 +579,16 @@ class GeminiProvider(LLMProvider):
                     config=generation_config,
                 )
 
+                text, reasoning = _extract_gemini_text_and_reasoning(response)
                 return LLMResponse(
-                    text=response.text,
+                    text=text,
                     prompt_token_count=response.usage_metadata.prompt_token_count,
                     completion_token_count=response.usage_metadata.candidates_token_count,
                     total_token_count=response.usage_metadata.total_token_count,
                     finish_reason=str(response.candidates[0].finish_reason),
                     model_name=self.model_name,
                     raw_response=response,
+                    reasoning_content=reasoning,
                 )
 
             except Exception as exc:
@@ -584,14 +630,16 @@ class GeminiProvider(LLMProvider):
                     config=generation_config,
                 )
 
+                text, reasoning = _extract_gemini_text_and_reasoning(response)
                 return LLMResponse(
-                    text=response.text,
+                    text=text,
                     prompt_token_count=response.usage_metadata.prompt_token_count,
                     completion_token_count=response.usage_metadata.candidates_token_count,
                     total_token_count=response.usage_metadata.total_token_count,
                     finish_reason=str(response.candidates[0].finish_reason),
                     model_name=self.model_name,
                     raw_response=response,
+                    reasoning_content=reasoning,
                 )
 
             except Exception as exc:
@@ -630,17 +678,22 @@ class GeminiProvider(LLMProvider):
                     config=generation_config,
                 )
 
+                text, reasoning = _extract_gemini_text_and_reasoning(response)
+                parsed_val = (
+                    response.parsed
+                    if hasattr(response, "parsed") and response.parsed is not None
+                    else schema.model_validate_json(text)
+                )
                 return StructuredLLMResponse(
-                    text=response.text or "",
-                    parsed=response.parsed
-                    if hasattr(response, "parsed")
-                    else schema.model_validate_json(response.text),
+                    text=text,
+                    parsed=parsed_val,
                     prompt_token_count=response.usage_metadata.prompt_token_count,
                     completion_token_count=response.usage_metadata.candidates_token_count,
                     total_token_count=response.usage_metadata.total_token_count,
                     finish_reason=str(response.candidates[0].finish_reason),
                     model_name=self.model_name,
                     raw_response=response,
+                    reasoning_content=reasoning,
                 )
 
             except Exception as exc:
@@ -678,17 +731,22 @@ class GeminiProvider(LLMProvider):
                     contents=prompt,
                     config=generation_config,
                 )
+                text, reasoning = _extract_gemini_text_and_reasoning(response)
+                parsed_val = (
+                    response.parsed
+                    if hasattr(response, "parsed") and response.parsed is not None
+                    else schema.model_validate_json(text)
+                )
                 return StructuredLLMResponse(
-                    text=response.text or "",
-                    parsed=response.parsed
-                    if hasattr(response, "parsed")
-                    else schema.model_validate_json(response.text),
+                    text=text,
+                    parsed=parsed_val,
                     prompt_token_count=response.usage_metadata.prompt_token_count,
                     completion_token_count=response.usage_metadata.candidates_token_count,
                     total_token_count=response.usage_metadata.total_token_count,
                     finish_reason=str(response.candidates[0].finish_reason),
                     model_name=self.model_name,
                     raw_response=response,
+                    reasoning_content=reasoning,
                 )
 
             except Exception as exc:

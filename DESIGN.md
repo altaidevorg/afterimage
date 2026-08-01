@@ -11,7 +11,7 @@ The library is designed around a few core concepts:
 - **SamplingStrategy**: Encapsulates persona selection, context/document sampling, and instruction dispatch logic. Infers target usage counts from stopping callbacks and configures sampling for both context and persona pipelines.
 - **QualityGate**: Wraps the evaluator (ConversationJudge) and retry logic for the `auto_improve` workflow. Determines whether a generated conversation meets quality thresholds or needs regeneration.
 - **PersonaGenerator**: Analyzes documents to generate diverse user personas, enhancing dataset variety.
-- **LLMProvider**: An abstraction over different language model providers (Gemini, OpenAI compatible).
+- **LLMProvider**: An abstraction over different language model providers (Gemini, OpenAI compatible). The `google-genai` package dependency is upgraded (`>=1.50.0`) with built-in support for Gemini thought signatures in multi-turn conversations and automatic reasoning extraction (`reasoning_content`) from candidate thought parts.
 - **EmbeddingProvider**: Async-first text embeddings (`async def embed(texts) -> list[list[float]]`). API backends (`OpenAIEmbeddingProvider`, `GeminiEmbeddingProvider`) use each vendor’s async client and `SmartKeyPool`; `ProcessEmbeddingProvider` runs SentenceTransformer in a `ProcessPoolExecutor` so the asyncio loop is not blocked by local inference (install the `embeddings-local` extra for `sentence-transformers`). Use `EmbeddingProviderFactory.create({...})` in `afterimage/providers/embedding_providers.py`.
 - **DatasetStorage**: An abstraction for storing and loading generated conversations and documents. It supports JSONL and SQL backends.
 - **Callbacks**: These allow for customization of the generation process.
@@ -61,7 +61,7 @@ The code is organized into the following directories and files:
     - `retrievers.py`: Context retrieval strategies for RAG (`ContextRetriever`, `RetrievalResult`, optional `*_context_with_metadata`, `QdrantRetriever`, `StaticContextRetriever`, composite retrievers).
     - `storage.py`: Storage backends (JSONL, SQL).
     - `types.py`: Data models using Pydantic.
-    - `simula/`: **OpenSimula (experimental)** — `OpenSimula` orchestrator, `taxonomy_builder` (optional `show_progress` + tqdm), `cli_logging` (`configure_example_console`, `silence_noisy_third_party_loggers`), `sampling`, `meta_prompt`, `critics`, `double_critic`, `evaluation`, `document_context`, and `tasks/` (single QA, MCQ, multiturn instruction callback).
+    - `simula/`: **OpenSimula (experimental)** — `OpenSimula` orchestrator, `taxonomy_builder` (optional `show_progress` + tqdm), `cli_logging` (`configure_example_console`, `silence_noisy_third_party_loggers` with default `ERROR` level to mute `google_genai` API key warnings and HTTP noise), `sampling`, `meta_prompt`, `critics`, `double_critic`, `evaluation`, `document_context`, and `tasks/` (single QA, MCQ, multiturn instruction callback).
     - `evaluation/`: The new evaluation framework.
         - `__init__.py`: Exposes evaluation classes.
         - `base.py`: Base classes for evaluators.
