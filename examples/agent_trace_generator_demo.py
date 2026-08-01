@@ -98,7 +98,7 @@ async def main():
         teacher_model="gemini-3.5-flash-lite",
         judge_model="gemini-3.6-flash",
         observation_mode="llm",  # Preferred production mode (ESAT paper LLM observation synthesis).
-        task_synthesis_mode="simula",
+        task_synthesis_mode="grid",
         context_generator=VirtualUserContextGenerator(seed=42),
     )
 

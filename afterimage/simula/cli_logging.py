@@ -4,22 +4,7 @@ from __future__ import annotations
 
 import logging
 
-_NOISY_LOGGERS = (
-    "httpx",
-    "httpcore",
-    "httpcore.connection",
-    "httpcore.http11",
-    "google_genai",
-    "google_genai.models",
-    "google.auth",
-    "google.auth.transport",
-)
-
-
-def silence_noisy_third_party_loggers(level: int = logging.WARNING) -> None:
-    """Turn down chatty HTTP and google-genai log lines during OpenSimula runs."""
-    for name in _NOISY_LOGGERS:
-        logging.getLogger(name).setLevel(level)
+from ..logging import silence_noisy_third_party_loggers
 
 
 def configure_example_console(
