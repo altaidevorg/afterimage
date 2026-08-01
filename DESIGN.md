@@ -54,6 +54,7 @@ The code is organized into the following directories and files:
         It also holds provider-aware concurrency defaults.
     - `evaluator.py`: `ConversationJudge` and embedding defaults for auto-improve.
     - `key_management.py`: Smart API key management with rate limiting.
+    - `logging.py`: Central logging utilities (`silence_noisy_third_party_loggers` with default `ERROR` level to suppress `google_genai` API key warnings and HTTP noise).
     - `monitoring.py`: Monitoring system implementation.
     - `persona_generator.py`: **[NEW]** Logic for generating personas from documents.
     - `prompts.py`: Default prompts (instruction generation, respondent persona etc.).

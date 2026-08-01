@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from ..common import default_safety_settings
 from ..key_management import SmartKeyPool
+from ..logging import silence_noisy_third_party_loggers
 from ..types import MODEL_PROVIDER_NAMES, ConversationEntry, ModelProviderName
 
 T = TypeVar("T", bound=BaseModel)
@@ -540,6 +541,7 @@ class GeminiProvider(LLMProvider):
         self.retry_initial_delay = retry_initial_delay
         self.retry_max_delay = retry_max_delay
         self.kwargs = kwargs
+        silence_noisy_third_party_loggers()
 
     def _retry_delay(self, attempt: int) -> float:
         return _gemini_retry_delay(

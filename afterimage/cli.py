@@ -22,6 +22,9 @@ from .config import AfterImageConfig, load_config, resolve_api_key
 @click.version_option(package_name="afterimage")
 def main():
     """AfterImage -- synthetic conversation dataset generator."""
+    from .logging import silence_noisy_third_party_loggers
+
+    silence_noisy_third_party_loggers()
 
 
 @main.command("agent-trace")
