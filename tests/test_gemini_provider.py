@@ -110,4 +110,3 @@ def test_gemini_provider_init():
     provider = GeminiProvider(api_key="test_key", model_name="gemini-2.0-flash")
     assert provider.model_name == "gemini-2.0-flash"
     assert provider.key_pool is not None
-

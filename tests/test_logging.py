@@ -16,6 +16,7 @@ def test_google_genai_warning_suppressed(capsys):
     silence_noisy_third_party_loggers(logging.ERROR)
 
     from google import genai
+
     _ = genai.Client()
 
     captured = capsys.readouterr()

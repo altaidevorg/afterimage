@@ -7,7 +7,6 @@ import logging
 from ..logging import silence_noisy_third_party_loggers
 
 
-
 def configure_example_console(
     *,
     simula_level: int = logging.WARNING,

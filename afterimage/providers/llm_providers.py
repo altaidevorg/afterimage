@@ -171,7 +171,6 @@ def _extract_gemini_text_and_reasoning(response: Any) -> tuple[str, str | None]:
         return getattr(response, "text", "") or "", None
 
 
-
 class GeminiChatSession(ChatSession):
     """Gemini chat session implementation."""
 
